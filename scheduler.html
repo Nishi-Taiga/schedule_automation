@@ -411,27 +411,49 @@
       });
       const times = [...new Set(lastAssignments.map(a=>a.time))].sort();
 
-      let html = '<thead><tr><th>時間</th>';
-      for(const date of dates){
-        for(const booth of booths){
-          html += `<th>${date}<br/>${booth}</th>`;
-        }
-      }
-      html += '</tr></thead><tbody>';
+      // ブース表フォーマットに揃える: 日付行、曜日行、時間列、ブース番号＋講師名の2列構造
+      let html = '<thead>';
 
+      // 行0: 日付（各日2列×ブース数分を結合）
+      html += '<tr><th style="border:1px solid #d1d5db; background:#f3f4f6;"></th>'; // 左上空白
+      for(const date of dates){
+        const day = new Date(date).getDate();
+        html += `<th colspan="${booths.length * 2}" style="border:1px solid #d1d5db; background:#f3f4f6; text-align:center;">${day}</th>`;
+      }
+      html += '</tr>';
+
+      // 行1: 曜日（各日2列×ブース数分を結合）
+      html += '<tr><th style="border:1px solid #d1d5db; background:#f3f4f6;"></th>';
+      const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+      for(const date of dates){
+        const d = new Date(date);
+        const weekday = weekdays[d.getDay()];
+        html += `<th colspan="${booths.length * 2}" style="border:1px solid #d1d5db; background:#f3f4f6; text-align:center;">${weekday}</th>`;
+      }
+      html += '</tr>';
+      html += '</thead><tbody>';
+
+      // 時間行
       for(const time of times){
-        html += `<tr><td style="font-weight:600;">${time}</td>`;
+        html += `<tr><td style="font-weight:600; border:1px solid #d1d5db; padding:6px 8px; background:#f9fafb;">${time}</td>`;
         for(const date of dates){
           for(const booth of booths){
             const a = lastAssignments.find(x=>x.date===date && x.time===time && x.boothId===booth);
             const cls = (a && a.teacherId) ? 'assigned' : 'empty';
+
+            // ブース番号セル（丸数字に変換）
+            const boothNum = booth.replace('B','');
+            const circledNum = String.fromCodePoint(0x245F + parseInt(boothNum)); // ①②③...
+            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${circledNum}</td>`;
+
+            // 講師名セル
             let text = '';
             if(a){
               text = a.teacherName || a.teacherId || '';
               if(a.studentId) text += '<br/><small>' + a.studentId + '</small>';
               if(a.subject) text += '<br/><small>(' + a.subject + ')</small>';
             }
-            html += `<td class="${cls}">${text}</td>`;
+            html += `<td class="${cls}" style="border:1px solid #d1d5db; padding:4px; min-width:80px;">${text}</td>`;
           }
         }
         html += '</tr>';
@@ -738,6 +760,10 @@
 
     // ================= 優先ブース設定 =================
     function showPreferenceSettings(){
+      console.log('showPreferenceSettings called');
+      console.log('teacherData.length:', teacherData.length);
+      console.log('boothData.length:', boothData.length);
+
       if(teacherData.length === 0 || boothData.length === 0){
         toast('先にブース表と元シートを読み込んでください', 'warn');
         return;
@@ -752,12 +778,17 @@
         teachers[t.teacherId] = t.teacherName;
       }
 
+      console.log('講師数:', Object.keys(teachers).length);
+
       // ブースリストを取得（重複排除）
       const booths = [...new Set(boothData.map(b => b.boothId))].sort((a,b) => {
         const na = parseInt(a.replace(/\D/g,'')) || 0;
         const nb = parseInt(b.replace(/\D/g,'')) || 0;
         return na - nb;
       });
+
+      console.log('ブース数:', booths.length);
+      console.log('ブースリスト:', booths);
 
       // テーブルを構築
       tbody.innerHTML = '';
@@ -802,8 +833,10 @@
           const tid = e.target.dataset.teacherId;
           if(e.target.value){
             teacherPreferences[tid] = e.target.value;
+            console.log('優先ブース設定:', tid, '->', e.target.value);
           } else {
             delete teacherPreferences[tid];
+            console.log('優先ブース解除:', tid);
           }
         };
 
@@ -813,11 +846,15 @@
         tbody.appendChild(tr);
       }
 
+      console.log('テーブル構築完了');
+
       // コンテナを表示
       if(container.style.display === 'none'){
         container.style.display = 'block';
+        toast('優先ブース設定を表示しました（' + Object.keys(teachers).length + '人）', 'ok');
       } else {
         container.style.display = 'none';
+        toast('優先ブース設定を非表示にしました', 'ok');
       }
     }
 
