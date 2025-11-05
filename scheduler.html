@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>時間割 自動割当（スケジューラ）</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Meiryo, sans-serif; padding: 24px; line-height: 1.6; }
+    h1 { font-size: 1.25rem; margin: 0 0 12px; }
+    h2 { font-size: 1.1rem; margin: 18px 0 8px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 12px 0; }
+    .row { margin: 8px 0; }
+    textarea { width: 100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    button { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; background: #f9fafb; }
+    button + button { margin-left: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .small { font-size: 12px; color: #6b7280; }
+    .ok { color: #16a34a; font-weight: 600; }
+    .warn { color: #b45309; font-weight: 600; }
+    .err { color: #dc2626; font-weight: 600; }
+    .nowrap { white-space: nowrap; }
+    #previewTable { width: 100%; }
+    #previewTable th, #previewTable td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
+    #previewTable th { background: #f3f4f6; font-weight: 600; }
+    #previewTable .empty { background: #fef3c7; }
+    #previewTable .assigned { background: #d1fae5; }
+  </style>
+</head>
+<body>
+  <h1>時間割 自動作成システム</h1>
+
+  <div class="card">
+    <div class="row">
+      <div class="small">ブース表と元シート（講師表）のExcelファイルを読み込んで、講師を自動配置します。</div>
+    </div>
+
+    <div class="row" style="margin-top:20px;">
+      <h2>① ブース表（.xlsx）を読み込む</h2>
+      <div class="row">
+        <input type="file" id="boothExcelFile" accept=".xlsx,.xls" />
+        <span id="boothExcelStatus" class="small"></span>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:20px;">
+      <h2>② 元シート（講師表 .xlsx）を読み込む</h2>
+      <div class="row">
+        <input type="file" id="teacherExcelFile" accept=".xlsx,.xls" />
+        <span id="teacherExcelStatus" class="small"></span>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:24px;">
+      <button id="runBtn" style="font-size:16px; padding:12px 24px; font-weight:600;">③ 講師を割り当てる</button>
+      <span id="status" class="small"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <h2>④ 結果を保存</h2>
+      <div class="small">講師が配置されたブース表をExcelファイルで保存します</div>
+    </div>
+    <div class="row">
+      <button id="saveTeacherExcelBtn" style="font-size:16px; padding:12px 24px; font-weight:600; background:#10b981; color:white; border:none;">講師配置済みブース表.xlsxを保存</button>
+      <span id="excelStatus" class="small"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row nowrap"><strong>割当結果プレビュー</strong></div>
+    <div class="row">
+      <button id="togglePreviewBtn">プレビューを表示/非表示</button>
+    </div>
+    <div id="previewContainer" style="display:none; margin-top:12px; overflow-x:auto;">
+      <table id="previewTable" style="border-collapse:collapse; font-size:12px; min-width:100%;">
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="display:none;" id="advancedCard">
+    <div class="row">
+      <button id="toggleAdvancedBtn">詳細設定・その他の出力を表示</button>
+    </div>
+    <div id="advancedContent" style="display:none; margin-top:12px;">
+      <div class="row">
+        <strong>検知レポート</strong>
+        <div class="small">未割当や警告の一覧</div>
+      </div>
+      <textarea id="reportOut" placeholder="警告・エラー・未割当などがここに表示されます" style="min-height:100px;"></textarea>
+      <div class="row">
+        <button id="copyReportBtn">レポートをコピー</button>
+        <button id="saveReportBtn">レポート(CSV)保存</button>
+      </div>
+
+      <div class="row" style="margin-top:16px;">
+        <strong>CSV出力</strong>
+        <div class="small">詳細データ（date,time,boothId,teacherId,teacherName,studentId,subject）</div>
+      </div>
+      <textarea id="assignmentsOut" placeholder="実行後にここへ出力" style="min-height:100px;"></textarea>
+      <div class="row">
+        <button id="copyCsvBtn">CSVをコピー</button>
+        <button id="saveCsvBtn">CSVで保存</button>
+      </div>
+
+      <div class="row" style="margin-top:16px;">
+        <button id="saveLogBtn">実行ログ(JSON)保存</button>
+        <button id="saveStudentExcelBtn">生徒配置済みブース表.xlsx（生徒情報含む）</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    const $ = id => document.getElementById(id);
+
+    const assignmentsOut = $('assignmentsOut');
+    const reportOut = $('reportOut');
+    const status = $('status');
+    const excelStatus = $('excelStatus');
+
+    // ファイル選択時に自動で読み込み
+    $('boothExcelFile').onchange = () => parseBoothExcel($('boothExcelFile'));
+    $('teacherExcelFile').onchange = () => parseTeacherExcel($('teacherExcelFile'));
+
+    $('runBtn').onclick = run;
+    $('saveTeacherExcelBtn').onclick = () => saveAsExcel('teacher');
+    $('togglePreviewBtn').onclick = togglePreview;
+    $('toggleAdvancedBtn').onclick = toggleAdvanced;
+
+    // 詳細設定
+    $('copyCsvBtn').onclick = () => copyToClipboard(assignmentsOut.value);
+    $('saveCsvBtn').onclick = () => downloadText(assignmentsOut.value, makeTsPrefix() + '_assignments.csv', 'text/csv');
+    $('saveLogBtn').onclick = () => downloadText(JSON.stringify(lastLog, null, 2), makeTsPrefix() + '_run_log.json', 'application/json');
+    $('saveStudentExcelBtn').onclick = () => saveAsExcel('student');
+    $('copyReportBtn').onclick = () => copyToClipboard(reportOut.value);
+    $('saveReportBtn').onclick = () => downloadText(reportOut.value, makeTsPrefix() + '_report.csv', 'text/csv');
+
+    function toggleAdvanced(){
+      const content = $('advancedContent');
+      if(content.style.display === 'none'){
+        content.style.display = 'block';
+      } else {
+        content.style.display = 'none';
+      }
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        toast('CSVをコピーしました', 'ok');
+      }).catch(() => toast('コピーに失敗しました', 'err'));
+    }
+
+    function downloadText(content, filename, mime) {
+      const blob = new Blob([content], { type: mime || 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function toast(msg, cls) { status.textContent = msg; status.className = 'small ' + (cls || ''); }
+    function pad2(n){ return String(n).padStart(2,'0'); }
+    function makeTsPrefix(){ const d=new Date(); return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`; }
+
+    // ---- Core ----
+    let lastLog = { startedAt: null, warnings: [], decisions: [] };
+    let lastAssignments = []; // 割当結果を保存
+    let boothData = []; // ブース表から読み込んだデータ
+    let teacherData = []; // 元シートから読み込んだデータ
+    let originalBoothWorkbook = null; // 元のブース表Excelワークブック
+    let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
+
+    function key(dt){ return dt.date + ' ' + dt.time; }
+    function sameTime(a,b){ return a.date===b.date && a.time===b.time; }
+
+    function groupBy(arr, f){
+      const m = new Map();
+      for(const x of arr){
+        const k = f(x);
+        const g = m.get(k); if(g) g.push(x); else m.set(k, [x]);
+      }
+      return m;
+    }
+
+    function run(){
+      lastLog = { startedAt: new Date().toISOString(), warnings: [], decisions: [] };
+      lastAssignments = [];
+      assignmentsOut.value = '';
+      reportOut.value = '';
+      try{
+        if(boothData.length === 0){
+          throw new Error('ブース表を先に読み込んでください');
+        }
+        if(teacherData.length === 0){
+          throw new Error('元シート（講師表）を先に読み込んでください');
+        }
+
+        const slots = boothData;
+        const teachers = teacherData;
+        const demands = []; // 生徒需要は簡略版では使用しない
+
+        // index by time
+        const slotsByTime = groupBy(slots, s => key(s));
+        const teachersByTime = groupBy(teachers, t => key(t));
+        const demandByTime = groupBy(demands, d => key(d));
+
+        // track usage
+        const usedTeacherAt = new Set(); // key(time + teacherId)
+        const teacherDailyCount = new Map(); // key(date + teacherId) -> count
+
+        const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
+
+        // Iterate over time slots in chronological order
+        const times = Array.from(new Set([...slots.map(key)])).sort();
+        for(const tkey of times){
+          const sList = slotsByTime.get(tkey) || [];
+          const thList = (teachersByTime.get(tkey) || []).slice();
+          const ddList = (demandByTime.get(tkey) || []).slice();
+
+          // Sort teachers by simple availability score (fewer assigned today first)
+          thList.sort((a,b) => (teacherDailyCount.get(a.date+' '+a.teacherId)||0) - (teacherDailyCount.get(b.date+' '+b.teacherId)||0));
+
+          // Sort demands by priority desc
+          ddList.sort((a,b) => (b.priority||0) - (a.priority||0));
+
+          // Build NG map for quick check
+          const ngTeachersMap = new Map();
+          for(const d of ddList){
+            const ng = new Set(d.ngTeachers || []);
+            ngTeachersMap.set(d.studentId, ng);
+          }
+
+          // Try to satisfy demands first per booth
+          for(const slot of sList){
+            let assignedTeacher = null;
+            let assignedDemand = null;
+
+            // find demand preferring preferredTeacher first
+            let candidates = ddList;
+            for(const demand of candidates){
+              // skip if NG teacher list prohibits preferred teacher and we will try others
+              const preferred = demand.preferredTeacherId || null;
+              const ngSet = ngTeachersMap.get(demand.studentId) || new Set();
+
+              // Attempt preferred first
+              if (preferred && !ngSet.has(preferred)){
+                const th = thList.find(x => x.teacherId === preferred && !usedTeacherAt.has(tkey+' '+x.teacherId));
+                if (th){ assignedTeacher = th; assignedDemand = demand; }
+              }
+
+              if (!assignedTeacher){
+                // pick any available teacher not in NG
+                const th2 = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId) && !ngSet.has(x.teacherId));
+                if (th2){ assignedTeacher = th2; assignedDemand = demand; }
+              }
+
+              if (assignedTeacher) break;
+            }
+
+            // If no demand or none matched, assign teacher-only if available
+            if (!assignedTeacher){
+              assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
+            }
+
+            if (assignedTeacher){
+              usedTeacherAt.add(tkey+' '+assignedTeacher.teacherId);
+              teacherDailyCount.set(assignedTeacher.date+' '+assignedTeacher.teacherId, (teacherDailyCount.get(assignedTeacher.date+' '+assignedTeacher.teacherId)||0) + 1);
+
+              if (assignedDemand){
+                // remove selected demand from pool
+                const i = ddList.indexOf(assignedDemand);
+                if (i >= 0) ddList.splice(i,1);
+              }
+
+              const assignmentRecord = {
+                date: slot.date,
+                time: slot.time,
+                boothId: slot.boothId,
+                teacherId: assignedTeacher.teacherId,
+                teacherName: assignedTeacher.teacherName||'',
+                studentId: assignedDemand?.studentId||'',
+                subject: assignedDemand?.subject||''
+              };
+              lastAssignments.push(assignmentRecord);
+              lines.push([slot.date, slot.time, slot.boothId, assignedTeacher.teacherId, (assignedTeacher.teacherName||''), (assignedDemand?.studentId||''), (assignedDemand?.subject||'')].join(','));
+              lastLog.decisions.push({ tkey, boothId: slot.boothId, teacherId: assignedTeacher.teacherId, studentId: assignedDemand?.studentId || null });
+            } else {
+              // No teacher available
+              const assignmentRecord = {
+                date: slot.date,
+                time: slot.time,
+                boothId: slot.boothId,
+                teacherId: '',
+                teacherName: '',
+                studentId: ddList[0]?.studentId||'',
+                subject: ddList[0]?.subject||''
+              };
+              lastAssignments.push(assignmentRecord);
+              lines.push([slot.date, slot.time, slot.boothId, '', '', (ddList[0]?.studentId||''), (ddList[0]?.subject||'')].join(','));
+              lastLog.warnings.push({ tkey, boothId: slot.boothId, reason: '講師不足' });
+            }
+          }
+        }
+
+        assignmentsOut.value = lines.join('\n');
+
+        // レポート生成
+        generateReport(slots, lastAssignments, demands);
+
+        // 詳細設定カードを表示
+        $('advancedCard').style.display = 'block';
+
+        toast('割当が完了しました: ' + (lines.length-1) + '件', 'ok');
+      }catch(e){
+        console.error(e);
+        toast('エラー: ' + e.message, 'err');
+      }
+    }
+
+    function generateReport(slots, assignments, demands){
+      const reportLines = ['type,date,time,boothId,teacherId,teacherName,studentId,subject,reason'];
+
+      // 未割当の講師をチェック
+      const assignedSlots = new Set(assignments.filter(a=>a.teacherId).map(a=>`${a.date}_${a.time}_${a.boothId}`));
+      for(const slot of slots){
+        const sk = `${slot.date}_${slot.time}_${slot.boothId}`;
+        if(!assignedSlots.has(sk)){
+          const a = assignments.find(x=>x.date===slot.date && x.time===slot.time && x.boothId===slot.boothId);
+          reportLines.push(['未割当講師',slot.date,slot.time,slot.boothId,'','',a?.studentId||'',a?.subject||'','講師が配置されていません'].join(','));
+        }
+      }
+
+      // 未割当の生徒需要をチェック
+      const assignedDemands = new Set(assignments.filter(a=>a.studentId).map(a=>`${a.date}_${a.time}_${a.studentId}`));
+      for(const demand of demands){
+        const dk = `${demand.date}_${demand.time}_${demand.studentId}`;
+        if(!assignedDemands.has(dk)){
+          reportLines.push(['未割当生徒',demand.date,demand.time,'','','',demand.studentId,demand.subject||'','生徒が配置されていません'].join(','));
+        }
+      }
+
+      // 警告ログをレポートに追加
+      for(const warn of lastLog.warnings){
+        const parts = warn.tkey.split(' ');
+        reportLines.push(['警告',parts[0],parts[1],warn.boothId,'','','','',warn.reason].join(','));
+      }
+
+      reportOut.value = reportLines.join('\n');
+    }
+
+    function togglePreview(){
+      const container = $('previewContainer');
+      if(container.style.display === 'none'){
+        container.style.display = 'block';
+        renderPreview();
+      } else {
+        container.style.display = 'none';
+      }
+    }
+
+    function renderPreview(){
+      if(lastAssignments.length === 0){
+        $('previewTable').innerHTML = '<tr><td>割当結果がありません</td></tr>';
+        return;
+      }
+
+      const dates = [...new Set(lastAssignments.map(a=>a.date))].sort();
+      const booths = [...new Set(lastAssignments.map(a=>a.boothId))].sort((a,b)=>{
+        const na = parseInt(a.replace(/\D/g,'')) || 0;
+        const nb = parseInt(b.replace(/\D/g,'')) || 0;
+        return na - nb;
+      });
+      const times = [...new Set(lastAssignments.map(a=>a.time))].sort();
+
+      let html = '<thead><tr><th>時間</th>';
+      for(const date of dates){
+        for(const booth of booths){
+          html += `<th>${date}<br/>${booth}</th>`;
+        }
+      }
+      html += '</tr></thead><tbody>';
+
+      for(const time of times){
+        html += `<tr><td style="font-weight:600;">${time}</td>`;
+        for(const date of dates){
+          for(const booth of booths){
+            const a = lastAssignments.find(x=>x.date===date && x.time===time && x.boothId===booth);
+            const cls = (a && a.teacherId) ? 'assigned' : 'empty';
+            let text = '';
+            if(a){
+              text = a.teacherName || a.teacherId || '';
+              if(a.studentId) text += '<br/><small>' + a.studentId + '</small>';
+              if(a.subject) text += '<br/><small>(' + a.subject + ')</small>';
+            }
+            html += `<td class="${cls}">${text}</td>`;
+          }
+        }
+        html += '</tr>';
+      }
+      html += '</tbody>';
+
+      $('previewTable').innerHTML = html;
+    }
+
+    // ================= Excel import: ブース表 =================
+    const jpWeek = new Set(["月","火","水","木","金","土","日","祝"]);
+    const circledRegex = /[\u2460-\u2473]/; // ①..⑳
+    const ymFromSheetName = /(\d{4})\.(\d{1,2})\./; // "... 2025.11.02-08"
+    function detectYearMonthFromSheetName(name){
+      const m = name.match(ymFromSheetName);
+      return m ? { year: m[1], month: pad2(m[2]) } : null;
+    }
+    function detectYearMonthFromCells(rows){
+      // 探索: "2025/11" or "2025.11" or "2025年11月"
+      const re = /(\d{4})[/.年](\d{1,2})/;
+      for (let r=0;r<Math.min(rows.length, 10); r++){
+        const row = rows[r] || [];
+        for (let c=0;c<row.length;c++){
+          const v=row[c];
+          if (typeof v === 'string'){
+            const m = v.match(re); if (m) return { year: m[1], month: pad2(m[2]) };
+          }
+        }
+      }
+      return null;
+    }
+    function getOverrideYM(){
+      return null; // 年月の手動指定は廃止
+    }
+    function normalizeTime(v){
+      if (v == null) return null;
+      if (typeof v === 'string'){
+        const m = v.match(/^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$/);
+        if (!m) return null;
+        return `${pad2(m[1])}:${pad2(m[2])}:${pad2(m[3] ?? '00')}`;
+      }
+      if (typeof v === 'number'){
+        if (v < 0 || v > 1) return null;
+        const total = Math.round(v * 24 * 3600);
+        const hh = pad2(Math.floor(total / 3600) % 24);
+        const mm = pad2(Math.floor((total % 3600) / 60));
+        const ss = pad2(total % 60);
+        return `${hh}:${mm}:${ss}`;
+      }
+      if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)){
+        return `${pad2(v.getHours())}:${pad2(v.getMinutes())}:${pad2(v.getSeconds())}`;
+      }
+      return null;
+    }
+    function buildEffectiveTimes(rows, timeColIdx){
+      const eff = new Array(rows.length).fill(null);
+      let last = null;
+      for (let r=0;r<rows.length;r++){
+        const norm = normalizeTime(rows[r]?.[timeColIdx]);
+        if (norm) last = norm;
+        eff[r] = last;
+      }
+      return eff;
+    }
+    function collectDayColumns(rows, timeColIdx){
+      const header0 = rows[0] || [];
+      const header1 = rows[1] || [];
+      const result = [];
+      for (let c=0;c<header0.length;c++){
+        if (c === timeColIdx) continue;
+        const v0 = header0[c];
+        const v1 = header1[c];
+        const dayOk = (v0 != null) && /^\d{1,2}$/.test(String(v0).trim());
+        const weekdayOk = (v1 != null) && jpWeek.has(String(v1).trim());
+        if (dayOk && weekdayOk) result.push({ col: c, day: parseInt(String(v0).trim(), 10) });
+      }
+      return result;
+    }
+    function circledToBoothId(ch){
+      // ①(U+2460)=1 ... ⑳(U+2473)=20
+      const code = ch.codePointAt(0);
+      const base = 0x2460; // 1
+      const n = (code - base) + 1;
+      if (n >= 1 && n <= 20) return 'B' + n;
+      return 'B?';
+    }
+    async function parseBoothExcel(input){
+      const file = input.files?.[0];
+      if (!file){ $('boothExcelStatus').textContent = 'ファイル未選択'; return; }
+      try{
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { cellText:false, cellDates:true });
+        const sheetName = wb.SheetNames[0];
+        const sheet = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true });
+        let ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
+        if (!ym) throw new Error('年/月の自動検出に失敗しました。');
+        const timeColIdx = 1; // B列
+        const effTimes = buildEffectiveTimes(rows, timeColIdx);
+        const dayCols = collectDayColumns(rows, timeColIdx);
+        if (!dayCols.length) throw new Error('日付/曜日ヘッダ行が見つかりません (行0=日, 行1=曜日)');
+
+        // スロット情報とセル位置のマッピングを作成
+        const slots = [];
+        const cellPositions = {}; // key: "date_time_boothId" -> {row, col}
+
+        for (let r=0;r<rows.length;r++){
+          const t = effTimes[r];
+          if (!t) continue;
+          for (const {col, day} of dayCols){
+            const v = rows[r]?.[col];
+            if (v == null) continue;
+            const m = String(v).match(circledRegex);
+            if (!m) continue;
+            const boothId = circledToBoothId(m[0]);
+            const date = `${ym.year}/${ym.month}/${pad2(day)}`;
+            slots.push({ date, time: t, boothId });
+            cellPositions[`${date}_${t}_${boothId}`] = { row: r, col };
+          }
+        }
+
+        slots.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
+
+        // 元のワークブックとシート情報を保存
+        originalBoothWorkbook = wb;
+        boothSheetInfo = {
+          sheetName,
+          cellPositions,
+          yearMonth: ym
+        };
+
+        boothData = slots;
+        $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${slots.length}件`;
+      }catch(e){
+        console.error(e); $('boothExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
+      }
+    }
+
+    // ================= Excel import: 元シート（講師表） =================
+    function isDateCell(v){
+      if (v == null) return false;
+      if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) return true;
+      if (typeof v === 'string'){
+        const s = v.trim();
+        // 受け入れ: YYYY/MM/DD, YYYY-MM-DD, MM/DD, M/D, MM-DD
+        if (/^\d{4}[\/-]\d{1,2}[\/-]\d{1,2}(?:\s+\d{2}:\d{2}:\d{2})?$/.test(s)) return true;
+        if (/^\d{1,2}[\/-]\d{1,2}(?:\([^\)]*\))?$/.test(s)) return true; // 11/03 や 11/03(月)
+      }
+      return false;
+    }
+    function normalizeDateToYmd(v, ymFallback){
+      let d=null;
+      if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) {
+        d=v; return `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}`;
+      }
+      if (typeof v === 'string'){
+        const s=v.trim();
+        if (/^\d{4}[\/-]\d{1,2}[\/-]\d{1,2}/.test(s)){
+          d=new Date(s.replace(/-/g,'/'));
+          if (!isNaN(d)) return `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}`;
+        }
+        const m=s.match(/^(\d{1,2})[\/-](\d{1,2})/);
+        if (m && ymFallback){
+          return `${ymFallback.year}/${ymFallback.month}/${pad2(m[2])}`;
+        }
+      }
+      return null;
+    }
+    function findHeaderRowByDates(rows){
+      // 最初の10行で、日付らしきセルが3つ以上ある行をヘッダとみなす
+      let bestIdx = 0, bestCount = -1;
+      for (let r=0;r<Math.min(rows.length, 10); r++){
+        const row = rows[r] || [];
+        let cnt=0;
+        for (let c=0;c<row.length;c++) if (isDateCell(row[c])) cnt++;
+        if (cnt > bestCount){ bestCount = cnt; bestIdx = r; }
+      }
+      return bestIdx;
+    }
+    function collectDateTeacherColumns(rows, ymFallback){
+      const headerRowIdx = findHeaderRowByDates(rows);
+      const header = rows[headerRowIdx] || [];
+      const pairs = [];
+      for (let c=0;c<header.length;c++){
+        const v = header[c];
+        if (!isDateCell(v)) continue;
+        const ymd = normalizeDateToYmd(v, ymFallback);
+        if (!ymd) continue;
+        const teacherCol = c + 1; // 右隣を講師列
+        pairs.push({ dateCol:c, teacherCol, ymd });
+      }
+      return pairs;
+    }
+    function cleanTeacherName(s){
+      if (s == null) return null;
+      const t = String(s).replace(/\u3000/g, ' ').trim().replace(/\s+/g,' ');
+      return t.length ? t : null;
+    }
+    function idFromName(name){
+      // simple stable hash -> Txxxxxx
+      let h=5381; for (let i=0;i<name.length;i++){ h=((h<<5)+h)+name.charCodeAt(i); h|=0; }
+      const hex = (h>>>0).toString(16).slice(-6).padStart(6,'0');
+      return 'T' + hex.toUpperCase();
+    }
+    // ================= Excel export: ブース表形式 =================
+    function saveAsExcel(mode){
+      try{
+        if(lastAssignments.length === 0){
+          excelStatus.innerHTML = '<span class="err">エラー:</span> 割当を先に実行してください';
+          return;
+        }
+
+        if(!originalBoothWorkbook){
+          excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表が見つかりません';
+          return;
+        }
+
+        // 元のワークブックをコピー
+        const wb = XLSX.utils.book_new();
+        const sheetName = boothSheetInfo.sheetName;
+        const originalSheet = originalBoothWorkbook.Sheets[sheetName];
+
+        // 元のシートをコピー
+        const newSheet = {};
+        Object.keys(originalSheet).forEach(key => {
+          newSheet[key] = originalSheet[key];
+        });
+
+        // 割当結果で上書き
+        for(const assignment of lastAssignments){
+          if(!assignment.teacherId) continue; // 講師が割り当てられていない場合はスキップ
+
+          const key = `${assignment.date}_${assignment.time}_${assignment.boothId}`;
+          const pos = boothSheetInfo.cellPositions[key];
+
+          if(!pos) continue;
+
+          const cellAddr = XLSX.utils.encode_cell({r: pos.row, c: pos.col});
+
+          let cellValue = '';
+          if(mode === 'teacher'){
+            // 講師配置のみ
+            cellValue = assignment.teacherName || assignment.teacherId;
+          } else if(mode === 'student'){
+            // 講師 + 生徒
+            const teacher = assignment.teacherName || assignment.teacherId;
+            const student = assignment.studentId ? `\n${assignment.studentId}` : '';
+            const subject = assignment.subject ? `(${assignment.subject})` : '';
+            cellValue = teacher + student + subject;
+          }
+
+          newSheet[cellAddr] = { t: 's', v: cellValue };
+        }
+
+        wb.SheetNames.push(sheetName);
+        wb.Sheets[sheetName] = newSheet;
+
+        const filename = mode === 'teacher'
+          ? makeTsPrefix() + '_講師配置済みブース表.xlsx'
+          : makeTsPrefix() + '_生徒配置済みブース表.xlsx';
+
+        XLSX.writeFile(wb, filename);
+        excelStatus.innerHTML = `<span class="ok">✓</span> ${filename} を保存しました`;
+      }catch(e){
+        console.error(e);
+        excelStatus.innerHTML = `<span class="err">エラー:</span> ${e.message}`;
+      }
+    }
+
+    async function parseTeacherExcel(input){
+      const file = input.files?.[0];
+      if (!file){ $('teacherExcelStatus').textContent = 'ファイル未選択'; return; }
+      try{
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { cellText:false, cellDates:true });
+        const sheetName = wb.SheetNames[0];
+        const sheet = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true });
+        const ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
+        const pairs = collectDateTeacherColumns(rows, ym);
+        if (!pairs.length) throw new Error('日付列が見つかりません。上の 年/月 を指定の上、ヘッダ行に 11/03 等があることをご確認ください。');
+        const times = buildEffectiveTimes(rows, 0); // A列の時刻を下方向に継承
+
+        const shifts = [];
+        const seen = new Set();
+        for (let r=0;r<rows.length;r++){
+          const time = times[r]; if (!time) continue;
+          for (const {ymd, teacherCol} of pairs){
+            const name = cleanTeacherName(rows[r]?.[teacherCol]);
+            if (!name) continue;
+            const tid = idFromName(name);
+            const key = `${ymd}_${time}_${tid}`;
+            if (seen.has(key)) continue; seen.add(key);
+            shifts.push({ date: ymd, time, teacherId: tid, teacherName: name, constraints: {} });
+          }
+        }
+        shifts.sort((a,b)=> (a.date+a.time+a.teacherId).localeCompare(b.date+b.time+b.teacherId));
+        teacherData = shifts;
+        $('teacherExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${shifts.length}件`;
+      }catch(e){ console.error(e); $('teacherExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`; }
+    }
+  })();
+  </script>
+</body>
+</html>
