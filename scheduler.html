@@ -224,6 +224,9 @@
           throw new Error('元シート（講師表）を先に読み込んでください');
         }
 
+        console.log('=== 割り当て開始 ===');
+        console.log('優先ブース設定:', teacherPreferences);
+
         const slots = boothData;
         const teachers = teacherData;
         const demands = []; // 生徒需要は簡略版では使用しない
@@ -236,6 +239,7 @@
         // track usage
         const usedTeacherAt = new Set(); // key(time + teacherId)
         const teacherDailyCount = new Map(); // key(date + teacherId) -> count
+        const teacherDailyBooth = new Map(); // key(date + teacherId) -> boothId (1日内でブース固定)
 
         const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
 
@@ -288,14 +292,52 @@
 
             // If no demand or none matched, assign teacher-only if available
             if (!assignedTeacher){
-              // 優先ブース設定を考慮
-              // 1. このブースを優先する講師がいる場合、優先的に割り当て
-              assignedTeacher = thList.find(x =>
-                !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-                teacherPreferences[x.teacherId] === slot.boothId
-              );
+              // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う
+              const existingBoothTeacher = thList.find(x => {
+                const dailyKey = slot.date + ' ' + x.teacherId;
+                const assignedBooth = teacherDailyBooth.get(dailyKey);
+                return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                       assignedBooth === slot.boothId;
+              });
 
-              // 2. 優先ブース講師がいない場合、通常の割り当て
+              if (existingBoothTeacher) {
+                assignedTeacher = existingBoothTeacher;
+                console.log(`✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId} (${slot.date} ${slot.time})`);
+              }
+
+              // 優先度2: 優先ブース設定がある講師
+              if (!assignedTeacher) {
+                assignedTeacher = thList.find(x => {
+                  const prefBooth = teacherPreferences[x.teacherId];
+                  const isAvailable = !usedTeacherAt.has(tkey+' '+x.teacherId);
+                  const matchesPref = prefBooth === slot.boothId;
+
+                  if (matchesPref && isAvailable) {
+                    console.log(`✓ 優先ブース適用: ${x.teacherName} -> ${slot.boothId} (設定: ${prefBooth})`);
+                  }
+
+                  return isAvailable && matchesPref;
+                });
+              }
+
+              // 優先度3: まだその日にブースが決まっていない講師で、優先ブース設定がある場合はそれを優先
+              if (!assignedTeacher) {
+                assignedTeacher = thList.find(x => {
+                  const dailyKey = slot.date + ' ' + x.teacherId;
+                  const hasNoBooth = !teacherDailyBooth.has(dailyKey);
+                  const prefBooth = teacherPreferences[x.teacherId];
+                  const isAvailable = !usedTeacherAt.has(tkey+' '+x.teacherId);
+
+                  // 優先ブース設定がある場合はそれを優先
+                  if (hasNoBooth && isAvailable && prefBooth) {
+                    return prefBooth === slot.boothId;
+                  }
+
+                  return false;
+                });
+              }
+
+              // 優先度4: 空いている講師（通常割り当て）
               if (!assignedTeacher) {
                 assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
               }
@@ -303,7 +345,14 @@
 
             if (assignedTeacher){
               usedTeacherAt.add(tkey+' '+assignedTeacher.teacherId);
-              teacherDailyCount.set(assignedTeacher.date+' '+assignedTeacher.teacherId, (teacherDailyCount.get(assignedTeacher.date+' '+assignedTeacher.teacherId)||0) + 1);
+              const dailyKey = assignedTeacher.date + ' ' + assignedTeacher.teacherId;
+              teacherDailyCount.set(dailyKey, (teacherDailyCount.get(dailyKey)||0) + 1);
+
+              // 1日内のブース割り当てを記録
+              if (!teacherDailyBooth.has(dailyKey)) {
+                teacherDailyBooth.set(dailyKey, slot.boothId);
+                console.log(`📌 初回ブース決定: ${assignedTeacher.teacherName} -> ${slot.boothId} (${assignedTeacher.date})`);
+              }
 
               if (assignedDemand){
                 // remove selected demand from pool
@@ -340,6 +389,9 @@
             }
           }
         }
+
+        console.log('=== 割り当て完了 ===');
+        console.log('1日内ブース割り当て:', teacherDailyBooth);
 
         assignmentsOut.value = lines.join('\n');
 
