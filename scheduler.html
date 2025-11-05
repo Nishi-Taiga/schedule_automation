@@ -263,8 +263,62 @@
             ngTeachersMap.set(d.studentId, ng);
           }
 
+          // 割り当て済みブースを追跡
+          const assignedSlotsInTime = new Set(); // 'boothId'
+
+          // === フェーズ1: 優先ブース設定がある講師を優先的に配置 ===
+          console.log(`\n🎯 フェーズ1: 優先ブース設定がある講師を優先配置 (${tkey})`);
+          for(const teacher of thList){
+            const prefBooth = teacherPreferences[teacher.teacherId];
+            if(!prefBooth) continue; // 優先ブース設定がない講師はスキップ
+
+            const isTeacherAvailable = !usedTeacherAt.has(tkey+' '+teacher.teacherId);
+            if(!isTeacherAvailable) continue; // 既に割り当て済み
+
+            // この講師の優先ブースを探す
+            const targetSlot = sList.find(s => s.boothId === prefBooth && !assignedSlotsInTime.has(s.boothId));
+            if(!targetSlot) continue; // 優先ブースが見つからないor既に埋まっている
+
+            // 1日内ブース固定チェック
+            const dailyKey = teacher.date + ' ' + teacher.teacherId;
+            const existingBooth = teacherDailyBooth.get(dailyKey);
+            if(existingBooth && existingBooth !== prefBooth){
+              console.log(`  ⚠️ ${teacher.teacherName}: 優先ブース${prefBooth}だが、既に${existingBooth}に割り当て済み → スキップ`);
+              continue;
+            }
+
+            // 割り当て実行
+            usedTeacherAt.add(tkey+' '+teacher.teacherId);
+            teacherDailyCount.set(dailyKey, (teacherDailyCount.get(dailyKey)||0) + 1);
+            assignedSlotsInTime.add(targetSlot.boothId);
+
+            if (!teacherDailyBooth.has(dailyKey)) {
+              teacherDailyBooth.set(dailyKey, targetSlot.boothId);
+              console.log(`  ✓ 優先ブース初回割り当て: ${teacher.teacherName} -> ${targetSlot.boothId}`);
+            } else {
+              console.log(`  ✓ 優先ブース継続: ${teacher.teacherName} -> ${targetSlot.boothId}`);
+            }
+
+            const assignmentRecord = {
+              date: targetSlot.date,
+              time: targetSlot.time,
+              boothId: targetSlot.boothId,
+              teacherId: teacher.teacherId,
+              teacherName: teacher.teacherName||'',
+              studentId: '',
+              subject: ''
+            };
+            lastAssignments.push(assignmentRecord);
+            lines.push([targetSlot.date, targetSlot.time, targetSlot.boothId, teacher.teacherId, (teacher.teacherName||''), '', ''].join(','));
+            lastLog.decisions.push({ tkey, boothId: targetSlot.boothId, teacherId: teacher.teacherId, studentId: null });
+          }
+
+          console.log(`\n📋 フェーズ2: 残りのブースを通常割り当て (${tkey})`);
+          // === フェーズ2: 残りのブースを通常通り埋める ===
           // Try to satisfy demands first per booth
           for(const slot of sList){
+            // 既に割り当て済みのブースはスキップ
+            if(assignedSlotsInTime.has(slot.boothId)) continue;
             let assignedTeacher = null;
             let assignedDemand = null;
 
@@ -292,7 +346,7 @@
 
             // If no demand or none matched, assign teacher-only if available
             if (!assignedTeacher){
-              // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う
+              // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う（1日内ブース固定）
               const existingBoothTeacher = thList.find(x => {
                 const dailyKey = slot.date + ' ' + x.teacherId;
                 const assignedBooth = teacherDailyBooth.get(dailyKey);
@@ -302,56 +356,15 @@
 
               if (existingBoothTeacher) {
                 assignedTeacher = existingBoothTeacher;
-                console.log(`✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId} (${slot.date} ${slot.time})`);
+                console.log(`  ✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId}`);
               }
 
-              // 優先度2: 優先ブース設定がある講師
-              if (!assignedTeacher) {
-                // デバッグ: この時間帯の講師一覧と優先ブース設定を表示
-                console.log(`🔍 時間帯 ${tkey}, ブース ${slot.boothId} の割り当て候補:`);
-                thList.forEach(x => {
-                  const prefBooth = teacherPreferences[x.teacherId];
-                  const isAvailable = !usedTeacherAt.has(tkey+' '+x.teacherId);
-                  console.log(`  - ${x.teacherName} (ID: ${x.teacherId}): 優先ブース=${prefBooth || 'なし'}, 空き=${isAvailable}`);
-                });
-
-                assignedTeacher = thList.find(x => {
-                  const prefBooth = teacherPreferences[x.teacherId];
-                  const isAvailable = !usedTeacherAt.has(tkey+' '+x.teacherId);
-                  const matchesPref = prefBooth === slot.boothId;
-
-                  if (matchesPref && isAvailable) {
-                    console.log(`✓ 優先ブース適用: ${x.teacherName} -> ${slot.boothId} (設定: ${prefBooth})`);
-                  }
-
-                  return isAvailable && matchesPref;
-                });
-
-                if (!assignedTeacher) {
-                  console.log(`  → 優先ブース設定による割り当てなし`);
-                }
-              }
-
-              // 優先度3: まだその日にブースが決まっていない講師で、優先ブース設定がある場合はそれを優先
-              if (!assignedTeacher) {
-                assignedTeacher = thList.find(x => {
-                  const dailyKey = slot.date + ' ' + x.teacherId;
-                  const hasNoBooth = !teacherDailyBooth.has(dailyKey);
-                  const prefBooth = teacherPreferences[x.teacherId];
-                  const isAvailable = !usedTeacherAt.has(tkey+' '+x.teacherId);
-
-                  // 優先ブース設定がある場合はそれを優先
-                  if (hasNoBooth && isAvailable && prefBooth) {
-                    return prefBooth === slot.boothId;
-                  }
-
-                  return false;
-                });
-              }
-
-              // 優先度4: 空いている講師（通常割り当て）
+              // 優先度2: 空いている講師（通常割り当て）
               if (!assignedTeacher) {
                 assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
+                if(assignedTeacher){
+                  console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
+                }
               }
             }
 
@@ -359,11 +372,12 @@
               usedTeacherAt.add(tkey+' '+assignedTeacher.teacherId);
               const dailyKey = assignedTeacher.date + ' ' + assignedTeacher.teacherId;
               teacherDailyCount.set(dailyKey, (teacherDailyCount.get(dailyKey)||0) + 1);
+              assignedSlotsInTime.add(slot.boothId); // ブース追跡
 
               // 1日内のブース割り当てを記録
               if (!teacherDailyBooth.has(dailyKey)) {
                 teacherDailyBooth.set(dailyKey, slot.boothId);
-                console.log(`📌 初回ブース決定: ${assignedTeacher.teacherName} -> ${slot.boothId} (${assignedTeacher.date})`);
+                console.log(`  📌 初回ブース決定: ${assignedTeacher.teacherName} -> ${slot.boothId} (${assignedTeacher.date})`);
               }
 
               if (assignedDemand){
@@ -724,15 +738,35 @@
       return 'T' + hex.toUpperCase();
     }
 
-    function formatTeacherNameForExcel(fullName){
-      // フルネームを「苗字+T」形式に変換
-      // 例: "西　泰我" -> "西T"
-      // 全角・半角スペースで分割
+    function formatTeacherNameForExcel(fullName, allTeacherNames){
+      // フルネームを「苗字+T」または「名+T」形式に変換
+      // 苗字重複がある場合は「名+T」を使用
+      // 例: "西　泰我" -> "西T" （重複なし）
+      // 例: "西　泰我", "西　花子" -> "泰我T", "花子T" （重複あり）
+
       const parts = fullName.replace(/\u3000/g, ' ').split(/\s+/);
-      if (parts.length > 0 && parts[0]) {
-        return parts[0] + 'T';
+
+      // スペースで分割できない場合（フルネーム形式でない）
+      if (parts.length < 2) {
+        return fullName + 'T';
       }
-      return fullName + 'T'; // スペースがない場合はそのまま+T
+
+      const surname = parts[0];
+      const givenName = parts[1];
+
+      // 同じ苗字の講師が他にいるかチェック
+      const hasDuplicateSurname = allTeacherNames.some(name => {
+        if (name === fullName) return false; // 自分自身は除外
+        const otherParts = name.replace(/\u3000/g, ' ').split(/\s+/);
+        return otherParts.length >= 1 && otherParts[0] === surname;
+      });
+
+      if (hasDuplicateSurname) {
+        console.log(`  📝 苗字重複検出: ${fullName} -> ${givenName}T`);
+        return givenName + 'T'; // 名+T
+      } else {
+        return surname + 'T'; // 苗字+T
+      }
     }
     // ================= Excel export: ブース表形式 =================
     function saveAsExcel(mode){
@@ -746,6 +780,12 @@
           excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表が見つかりません';
           return;
         }
+
+        // 全講師名のリストを作成（重複排除）
+        const allTeacherNames = [...new Set(lastAssignments
+          .filter(a => a.teacherName)
+          .map(a => a.teacherName))];
+        console.log('全講師名リスト:', allTeacherNames);
 
         // 元のワークブック全体をディープコピー
         const wb = {
@@ -791,11 +831,11 @@
 
           let cellValue = '';
           if(mode === 'teacher'){
-            // 講師配置のみ（苗字+T形式）
-            cellValue = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId);
+            // 講師配置のみ（苗字+T形式、重複時は名+T）
+            cellValue = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId, allTeacherNames);
           } else if(mode === 'student'){
             // 講師 + 生徒
-            const teacher = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId);
+            const teacher = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId, allTeacherNames);
             const student = assignment.studentId ? `\n${assignment.studentId}` : '';
             const subject = assignment.subject ? `(${assignment.subject})` : '';
             cellValue = teacher + student + subject;
