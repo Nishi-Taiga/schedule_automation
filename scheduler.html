@@ -307,6 +307,14 @@
 
               // 優先度2: 優先ブース設定がある講師
               if (!assignedTeacher) {
+                // デバッグ: この時間帯の講師一覧と優先ブース設定を表示
+                console.log(`🔍 時間帯 ${tkey}, ブース ${slot.boothId} の割り当て候補:`);
+                thList.forEach(x => {
+                  const prefBooth = teacherPreferences[x.teacherId];
+                  const isAvailable = !usedTeacherAt.has(tkey+' '+x.teacherId);
+                  console.log(`  - ${x.teacherName} (ID: ${x.teacherId}): 優先ブース=${prefBooth || 'なし'}, 空き=${isAvailable}`);
+                });
+
                 assignedTeacher = thList.find(x => {
                   const prefBooth = teacherPreferences[x.teacherId];
                   const isAvailable = !usedTeacherAt.has(tkey+' '+x.teacherId);
@@ -318,6 +326,10 @@
 
                   return isAvailable && matchesPref;
                 });
+
+                if (!assignedTeacher) {
+                  console.log(`  → 優先ブース設定による割り当てなし`);
+                }
               }
 
               // 優先度3: まだその日にブースが決まっていない講師で、優先ブース設定がある場合はそれを優先
@@ -711,6 +723,17 @@
       const hex = (h>>>0).toString(16).slice(-6).padStart(6,'0');
       return 'T' + hex.toUpperCase();
     }
+
+    function formatTeacherNameForExcel(fullName){
+      // フルネームを「苗字+T」形式に変換
+      // 例: "西　泰我" -> "西T"
+      // 全角・半角スペースで分割
+      const parts = fullName.replace(/\u3000/g, ' ').split(/\s+/);
+      if (parts.length > 0 && parts[0]) {
+        return parts[0] + 'T';
+      }
+      return fullName + 'T'; // スペースがない場合はそのまま+T
+    }
     // ================= Excel export: ブース表形式 =================
     function saveAsExcel(mode){
       try{
@@ -724,16 +747,35 @@
           return;
         }
 
-        // 元のワークブックをコピー
-        const wb = XLSX.utils.book_new();
-        const sheetName = boothSheetInfo.sheetName;
-        const originalSheet = originalBoothWorkbook.Sheets[sheetName];
+        // 元のワークブック全体をディープコピー
+        const wb = {
+          SheetNames: [...originalBoothWorkbook.SheetNames],
+          Sheets: {}
+        };
 
-        // 元のシートをコピー
-        const newSheet = {};
-        Object.keys(originalSheet).forEach(key => {
-          newSheet[key] = originalSheet[key];
-        });
+        // すべてのシートをコピー
+        for(const sheetName of wb.SheetNames){
+          const originalSheet = originalBoothWorkbook.Sheets[sheetName];
+          const newSheet = {};
+
+          // シートの全プロパティをコピー（!refや!mergesなども含む）
+          for(const key in originalSheet){
+            if(originalSheet.hasOwnProperty(key)){
+              if(typeof originalSheet[key] === 'object' && originalSheet[key] !== null){
+                // オブジェクトはディープコピー
+                newSheet[key] = JSON.parse(JSON.stringify(originalSheet[key]));
+              } else {
+                newSheet[key] = originalSheet[key];
+              }
+            }
+          }
+
+          wb.Sheets[sheetName] = newSheet;
+        }
+
+        // 対象シートに割当結果を上書き
+        const targetSheetName = boothSheetInfo.sheetName;
+        const targetSheet = wb.Sheets[targetSheetName];
 
         // 割当結果で上書き
         for(const assignment of lastAssignments){
@@ -749,21 +791,24 @@
 
           let cellValue = '';
           if(mode === 'teacher'){
-            // 講師配置のみ
-            cellValue = assignment.teacherName || assignment.teacherId;
+            // 講師配置のみ（苗字+T形式）
+            cellValue = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId);
           } else if(mode === 'student'){
             // 講師 + 生徒
-            const teacher = assignment.teacherName || assignment.teacherId;
+            const teacher = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId);
             const student = assignment.studentId ? `\n${assignment.studentId}` : '';
             const subject = assignment.subject ? `(${assignment.subject})` : '';
             cellValue = teacher + student + subject;
           }
 
-          newSheet[cellAddr] = { t: 's', v: cellValue };
+          // 元のセルのスタイル情報を保持しつつ値を更新
+          const originalCell = targetSheet[cellAddr];
+          if(originalCell){
+            targetSheet[cellAddr] = { ...originalCell, v: cellValue, t: 's' };
+          } else {
+            targetSheet[cellAddr] = { t: 's', v: cellValue };
+          }
         }
-
-        wb.SheetNames.push(sheetName);
-        wb.Sheets[sheetName] = newSheet;
 
         const filename = mode === 'teacher'
           ? makeTsPrefix() + '_講師配置済みブース表.xlsx'
@@ -867,11 +912,14 @@
         optNone.textContent = '指定なし';
         select.appendChild(optNone);
 
-        // ブースオプション
+        // ブースオプション（丸付き数字で表示）
         for(const boothId of booths){
           const opt = document.createElement('option');
           opt.value = boothId;
-          opt.textContent = boothId;
+          // B1→①, B2→②のように丸付き数字に変換
+          const boothNum = parseInt(boothId.replace(/\D/g,'')) || 0;
+          const circledNum = String.fromCodePoint(0x245F + boothNum);
+          opt.textContent = circledNum;
           select.appendChild(opt);
         }
 
