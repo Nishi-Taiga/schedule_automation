@@ -51,6 +51,27 @@
       </div>
     </div>
 
+    <div class="row" style="margin-top:20px;">
+      <h2>②-2 講師の優先ブース設定（オプション）</h2>
+      <div class="small">読み込み完了後、講師ごとに優先的に配置するブースを設定できます</div>
+      <div class="row" style="margin-top:8px;">
+        <button id="showPreferenceBtn">優先ブース設定を表示</button>
+        <button id="savePreferenceBtn">設定を保存</button>
+        <button id="loadPreferenceBtn">設定を読み込み</button>
+      </div>
+      <div id="preferenceContainer" style="display:none; margin-top:12px; max-height:300px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+        <table id="preferenceTable" style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #e5e7eb;">講師名</th>
+              <th style="text-align:left; padding:4px 8px; border-bottom:1px solid #e5e7eb;">優先ブース</th>
+            </tr>
+          </thead>
+          <tbody id="preferenceTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="row" style="margin-top:24px;">
       <button id="runBtn" style="font-size:16px; padding:12px 24px; font-weight:600;">③ 講師を割り当てる</button>
       <span id="status" class="small"></span>
@@ -129,6 +150,11 @@
     $('togglePreviewBtn').onclick = togglePreview;
     $('toggleAdvancedBtn').onclick = toggleAdvanced;
 
+    // 優先ブース設定
+    $('showPreferenceBtn').onclick = showPreferenceSettings;
+    $('savePreferenceBtn').onclick = savePreferenceSettings;
+    $('loadPreferenceBtn').onclick = loadPreferenceSettings;
+
     // 詳細設定
     $('copyCsvBtn').onclick = () => copyToClipboard(assignmentsOut.value);
     $('saveCsvBtn').onclick = () => downloadText(assignmentsOut.value, makeTsPrefix() + '_assignments.csv', 'text/csv');
@@ -171,6 +197,7 @@
     let teacherData = []; // 元シートから読み込んだデータ
     let originalBoothWorkbook = null; // 元のブース表Excelワークブック
     let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
+    let teacherPreferences = {}; // 講師の優先ブース設定 { teacherId: 'B1' }
 
     function key(dt){ return dt.date + ' ' + dt.time; }
     function sameTime(a,b){ return a.date===b.date && a.time===b.time; }
@@ -261,7 +288,17 @@
 
             // If no demand or none matched, assign teacher-only if available
             if (!assignedTeacher){
-              assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
+              // 優先ブース設定を考慮
+              // 1. このブースを優先する講師がいる場合、優先的に割り当て
+              assignedTeacher = thList.find(x =>
+                !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                teacherPreferences[x.teacherId] === slot.boothId
+              );
+
+              // 2. 優先ブース講師がいない場合、通常の割り当て
+              if (!assignedTeacher) {
+                assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
+              }
             }
 
             if (assignedTeacher){
@@ -499,7 +536,7 @@
 
         // スロット情報とセル位置のマッピングを作成
         const slots = [];
-        const cellPositions = {}; // key: "date_time_boothId" -> {row, col}
+        const cellPositions = {}; // key: "date_time_boothId" -> {row, col, teacherCol}
 
         for (let r=0;r<rows.length;r++){
           const t = effTimes[r];
@@ -512,7 +549,8 @@
             const boothId = circledToBoothId(m[0]);
             const date = `${ym.year}/${ym.month}/${pad2(day)}`;
             slots.push({ date, time: t, boothId });
-            cellPositions[`${date}_${t}_${boothId}`] = { row: r, col };
+            // ブース番号セル (col) の右隣 (col+1) が講師名記入欄
+            cellPositions[`${date}_${t}_${boothId}`] = { row: r, col, teacherCol: col + 1 };
           }
         }
 
@@ -632,7 +670,8 @@
 
           if(!pos) continue;
 
-          const cellAddr = XLSX.utils.encode_cell({r: pos.row, c: pos.col});
+          // 講師名はブース番号セルの右隣（teacherCol）に書き込む
+          const cellAddr = XLSX.utils.encode_cell({r: pos.row, c: pos.teacherCol});
 
           let cellValue = '';
           if(mode === 'teacher'){
@@ -695,6 +734,121 @@
         teacherData = shifts;
         $('teacherExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${shifts.length}件`;
       }catch(e){ console.error(e); $('teacherExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`; }
+    }
+
+    // ================= 優先ブース設定 =================
+    function showPreferenceSettings(){
+      if(teacherData.length === 0 || boothData.length === 0){
+        toast('先にブース表と元シートを読み込んでください', 'warn');
+        return;
+      }
+
+      const container = $('preferenceContainer');
+      const tbody = $('preferenceTableBody');
+
+      // 講師リストを取得（重複排除）
+      const teachers = {};
+      for(const t of teacherData){
+        teachers[t.teacherId] = t.teacherName;
+      }
+
+      // ブースリストを取得（重複排除）
+      const booths = [...new Set(boothData.map(b => b.boothId))].sort((a,b) => {
+        const na = parseInt(a.replace(/\D/g,'')) || 0;
+        const nb = parseInt(b.replace(/\D/g,'')) || 0;
+        return na - nb;
+      });
+
+      // テーブルを構築
+      tbody.innerHTML = '';
+      for(const [teacherId, teacherName] of Object.entries(teachers)){
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #f3f4f6';
+
+        const tdName = document.createElement('td');
+        tdName.style.padding = '4px 8px';
+        tdName.textContent = teacherName;
+
+        const tdBooth = document.createElement('td');
+        tdBooth.style.padding = '4px 8px';
+
+        const select = document.createElement('select');
+        select.style.padding = '4px';
+        select.style.border = '1px solid #e5e7eb';
+        select.style.borderRadius = '4px';
+        select.dataset.teacherId = teacherId;
+
+        // 「指定なし」オプション
+        const optNone = document.createElement('option');
+        optNone.value = '';
+        optNone.textContent = '指定なし';
+        select.appendChild(optNone);
+
+        // ブースオプション
+        for(const boothId of booths){
+          const opt = document.createElement('option');
+          opt.value = boothId;
+          opt.textContent = boothId;
+          select.appendChild(opt);
+        }
+
+        // 既存の設定を反映
+        if(teacherPreferences[teacherId]){
+          select.value = teacherPreferences[teacherId];
+        }
+
+        // 変更時にteacherPreferencesを更新
+        select.onchange = (e) => {
+          const tid = e.target.dataset.teacherId;
+          if(e.target.value){
+            teacherPreferences[tid] = e.target.value;
+          } else {
+            delete teacherPreferences[tid];
+          }
+        };
+
+        tdBooth.appendChild(select);
+        tr.appendChild(tdName);
+        tr.appendChild(tdBooth);
+        tbody.appendChild(tr);
+      }
+
+      // コンテナを表示
+      if(container.style.display === 'none'){
+        container.style.display = 'block';
+      } else {
+        container.style.display = 'none';
+      }
+    }
+
+    function savePreferenceSettings(){
+      try{
+        localStorage.setItem('teacherPreferences', JSON.stringify(teacherPreferences));
+        toast('優先ブース設定を保存しました', 'ok');
+      }catch(e){
+        console.error(e);
+        toast('保存に失敗しました: ' + e.message, 'err');
+      }
+    }
+
+    function loadPreferenceSettings(){
+      try{
+        const saved = localStorage.getItem('teacherPreferences');
+        if(saved){
+          teacherPreferences = JSON.parse(saved);
+          toast('優先ブース設定を読み込みました', 'ok');
+          // UIが表示されている場合は更新
+          if($('preferenceContainer').style.display !== 'none'){
+            showPreferenceSettings(); // 再表示
+            showPreferenceSettings(); // トグルで開いたままにする
+          }
+        } else {
+          toast('保存された設定が見つかりません', 'warn');
+        }
+      }catch(e){
+        console.error(e);
+        toast('読み込みに失敗しました: ' + e.message, 'err');
+      }
     }
   })();
   </script>
