@@ -397,6 +397,21 @@
           return teachableSubjects.includes(normalizedSubject);
         };
 
+        // ヘルパー関数: NG生徒が同じ時間帯に割り当てられていないかチェック
+        const hasNgStudentConflict = (demand, assignedStudentsInTime) => {
+          // NG生徒リストが空の場合は常にOK
+          if (!demand.ngStudents || demand.ngStudents.length === 0) return false;
+
+          // 同じ時間帯に割り当てられている生徒リストをチェック
+          for (const ngStudent of demand.ngStudents) {
+            if (assignedStudentsInTime.has(ngStudent)) {
+              console.log(`  ⚠️ NG生徒検出: ${demand.studentName} のNG生徒 ${ngStudent} が同じ時間帯に存在`);
+              return true; // NG生徒が見つかった
+            }
+          }
+          return false; // NG生徒なし
+        };
+
         const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
 
         // Iterate over time slots in chronological order
@@ -430,6 +445,8 @@
 
           // 割り当て済みブースを追跡
           const assignedSlotsInTime = new Set(); // 'boothId'
+          // 同じ時間帯に割り当て済みの生徒を追跡（NG生徒チェック用）
+          const assignedStudentsInTime = new Set(); // 'studentId'
 
           // === フェーズ1: 優先ブース設定がある講師を優先的に配置 ===
           console.log(`\n🎯 フェーズ1: 優先ブース設定がある講師を優先配置 (${tkey})`);
@@ -494,6 +511,11 @@
             // find demand preferring preferredTeacher first
             let candidates = ddList;
             for(const demand of candidates){
+              // NG生徒チェック: 同じ時間帯にNG生徒がいる場合はスキップ
+              if (hasNgStudentConflict(demand, assignedStudentsInTime)) {
+                continue; // この需要は後回しにする
+              }
+
               // skip if NG teacher list prohibits preferred teacher and we will try others
               const preferred = demand.preferredTeacherId || null;
               const ngSet = ngTeachersMap.get(demand.studentId) || new Set();
@@ -571,6 +593,12 @@
                 // remove selected demand from pool
                 const i = ddList.indexOf(assignedDemand);
                 if (i >= 0) ddList.splice(i,1);
+
+                // 割り当てられた生徒を追跡（NG生徒チェック用）
+                if (assignedDemand.studentId) {
+                  assignedStudentsInTime.add(assignedDemand.studentId);
+                  console.log(`  👤 生徒割り当て追跡: ${assignedDemand.studentName || assignedDemand.studentId}`);
+                }
               }
 
               const assignmentRecord = {
