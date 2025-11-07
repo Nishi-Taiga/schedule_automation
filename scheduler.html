@@ -745,7 +745,10 @@
     }
     function cleanTeacherName(s){
       if (s == null) return null;
-      const t = String(s).replace(/\u3000/g, ' ').trim().replace(/\s+/g,' ');
+      // 丸付き数字（①-⑳）を除外
+      let t = String(s).replace(/[\u2460-\u2473]/g, '');
+      // 全角スペースを半角に変換、トリム、連続スペースを1つに
+      t = t.replace(/\u3000/g, ' ').trim().replace(/\s+/g,' ');
       return t.length ? t : null;
     }
     function idFromName(name){
@@ -839,8 +842,34 @@
             cellValue = teacher + student + subject;
           }
 
-          // セルの値を更新（書式は自動的に保持される）
-          cell.value = cellValue;
+          // 既存のセル値をチェック（丸付き数字がある場合は保持）
+          let existingValue = cell.value || '';
+          let finalValue = cellValue;
+
+          // 既存の値が文字列で、丸付き数字が含まれている場合は保持して改行追加
+          if (typeof existingValue === 'string' && /[\u2460-\u2473]/.test(existingValue)) {
+            // 丸付き数字 + 改行 + 講師名
+            finalValue = existingValue.trim() + '\n' + cellValue;
+            console.log(`  既存の丸付き数字を保持: ${existingValue.trim()} → ${finalValue}`);
+          }
+
+          // セルの値を更新
+          cell.value = finalValue;
+
+          // フォントとスタイルを設定（MS Pゴシック、サイズ8、縦書き）
+          cell.font = {
+            name: 'MS Pゴシック',
+            size: 8
+          };
+
+          // 縦書き設定（ExcelJSでは textRotation: 255 が縦書き）
+          cell.alignment = {
+            textRotation: 255, // 縦書き
+            vertical: 'top',
+            horizontal: 'center',
+            wrapText: true // 改行を有効化
+          };
+
           assignedCount++;
         }
 
