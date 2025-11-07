@@ -991,6 +991,34 @@
         // ExcelJSでバイナリを生成
         const buffer = await originalBoothWorkbook.xlsx.writeBuffer();
 
+        // 保存直前の検証: バッファを再読み込みしてフォーマットを確認
+        console.log('\n🔍 保存直前の検証: バッファを再読み込みして確認');
+        const verifyWorkbook = new ExcelJS.Workbook();
+        await verifyWorkbook.xlsx.load(buffer);
+        const verifyWorksheet = verifyWorkbook.getWorksheet(targetSheetName);
+
+        // 最初の3件のセルを確認
+        let verifyCount = 0;
+        for(const {row, col, cellValue} of formattedCells){
+          if(verifyCount >= 3) break;
+          verifyCount++;
+          const verifyCell = verifyWorksheet.getCell(row, col);
+          console.log(`  セル(${row}, ${col}): "${verifyCell.value}"`);
+          console.log(`    font: ${JSON.stringify(verifyCell.font)}`);
+          console.log(`    alignment: ${JSON.stringify(verifyCell.alignment)}`);
+
+          const fontOK = verifyCell.font?.name === 'MS PGothic' && verifyCell.font?.size === 8;
+          const alignmentOK = verifyCell.alignment?.textRotation === 'vertical';
+          if (fontOK && alignmentOK) {
+            console.log(`    ✅ 検証OK`);
+          } else {
+            console.log(`    ❌ 検証NG`);
+            if (!fontOK) console.log(`       フォント: ${verifyCell.font?.name}, サイズ: ${verifyCell.font?.size}`);
+            if (!alignmentOK) console.log(`       縦書き: ${verifyCell.alignment?.textRotation}`);
+          }
+        }
+        console.log('');
+
         // Blobとしてダウンロード
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = URL.createObjectURL(blob);
