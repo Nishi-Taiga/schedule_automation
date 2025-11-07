@@ -955,8 +955,9 @@
           console.log(`    設定前: font=${JSON.stringify(cell.font)}, alignment=${JSON.stringify(cell.alignment)}`);
 
           // フォント設定（直接設定で上書き）
+          // 縦書き用フォントは '@' を先頭に付ける
           cell.font = {
-            name: 'MS PGothic',  // Excelではこの表記
+            name: '@MS PGothic',  // 縦書き用フォント（@を先頭に付ける）
             size: 8,
             family: 1,  // ゴシック系
             charset: 128  // 日本語
@@ -964,7 +965,7 @@
 
           // 縦書き設定（直接設定で上書き）
           cell.alignment = {
-            textRotation: 'vertical',  // 縦書き
+            textRotation: 'vertical',  // ExcelJSでは文字列'vertical'を使用
             vertical: 'top',
             horizontal: 'center',
             wrapText: true
@@ -1007,7 +1008,7 @@
           console.log(`    font: ${JSON.stringify(verifyCell.font)}`);
           console.log(`    alignment: ${JSON.stringify(verifyCell.alignment)}`);
 
-          const fontOK = verifyCell.font?.name === 'MS PGothic' && verifyCell.font?.size === 8;
+          const fontOK = verifyCell.font?.name === '@MS PGothic' && verifyCell.font?.size === 8;
           const alignmentOK = verifyCell.alignment?.textRotation === 'vertical';
           if (fontOK && alignmentOK) {
             console.log(`    ✅ 検証OK`);

@@ -54,17 +54,17 @@ async function testFontFormatting() {
       console.log('      font:', cell.font);
       console.log('      alignment:', cell.alignment);
 
-      // フォント設定
+      // フォント設定（縦書き用フォントは '@' を先頭に付ける）
       cell.font = {
-        name: 'MS PGothic',
+        name: '@MS PGothic',
         size: 8,
         family: 1,
         charset: 128
       };
 
-      // 縦書き設定
+      // 縦書き設定（ExcelJSでは'vertical'文字列を使用）
       cell.alignment = {
-        textRotation: 'vertical',
+        textRotation: 'vertical',  // ExcelJSでは文字列'vertical'を使用
         vertical: 'top',
         horizontal: 'center',
         wrapText: true
@@ -106,16 +106,24 @@ async function testFontFormatting() {
       console.log('    horizontal:', cell.alignment?.horizontal);
       console.log('    wrapText:', cell.alignment?.wrapText);
 
-      // 検証
-      const fontOK = cell.font?.name === 'MS PGothic' && cell.font?.size === 8;
-      const alignmentOK = cell.alignment?.textRotation === 'vertical';
+      // 検証（@MS PGothicとtextRotation: 255を確認）
+      const fontOK = cell.font?.name === '@MS PGothic' && cell.font?.size === 8;
+      // textRotationは255または'vertical'の場合OK
+      const textRotation = cell.alignment?.textRotation;
+      const alignmentOK = textRotation === 255 || textRotation === 'vertical';
 
       if (fontOK && alignmentOK) {
         console.log('  ✅ フォント設定OK');
       } else {
         console.log('  ❌ フォント設定NG');
-        if (!fontOK) console.log('     - フォントが正しくありません');
-        if (!alignmentOK) console.log('     - 縦書きが正しくありません');
+        if (!fontOK) {
+          console.log('     - フォントが正しくありません');
+          console.log(`       期待: @MS PGothic 8pt, 実際: ${cell.font?.name} ${cell.font?.size}pt`);
+        }
+        if (!alignmentOK) {
+          console.log('     - 縦書きが正しくありません');
+          console.log(`       期待: 255 or 'vertical', 実際: ${textRotation}`);
+        }
       }
     }
 
