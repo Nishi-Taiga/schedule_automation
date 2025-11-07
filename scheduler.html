@@ -241,6 +241,25 @@
         const teacherDailyCount = new Map(); // key(date + teacherId) -> count
         const teacherDailyBooth = new Map(); // key(date + teacherId) -> boothId (1日内でブース固定)
 
+        // 各講師の日付ごとの最早出勤時刻を計算
+        const teacherEarliestTime = new Map(); // key(date + ' ' + teacherId) -> earliest time string
+        for(const t of teachers){
+          const dailyKey = t.date + ' ' + t.teacherId;
+          const currentEarliest = teacherEarliestTime.get(dailyKey);
+          if(!currentEarliest || t.time < currentEarliest){
+            teacherEarliestTime.set(dailyKey, t.time);
+          }
+        }
+        console.log('講師の最早出勤時刻:', teacherEarliestTime);
+
+        // ヘルパー関数: 講師が指定ブースに割り当て可能かチェック（1日内ブース固定ルール）
+        const canAssignTeacherToBooth = (teacher, boothId) => {
+          const dailyKey = teacher.date + ' ' + teacher.teacherId;
+          const assignedBooth = teacherDailyBooth.get(dailyKey);
+          // 未割り当てか、同じブースの場合のみOK
+          return !assignedBooth || assignedBooth === boothId;
+        };
+
         const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
 
         // Iterate over time slots in chronological order
@@ -250,8 +269,17 @@
           const thList = (teachersByTime.get(tkey) || []).slice();
           const ddList = (demandByTime.get(tkey) || []).slice();
 
-          // Sort teachers by simple availability score (fewer assigned today first)
-          thList.sort((a,b) => (teacherDailyCount.get(a.date+' '+a.teacherId)||0) - (teacherDailyCount.get(b.date+' '+b.teacherId)||0));
+          // Sort teachers by: 1) earliest start time, 2) fewer assigned today
+          thList.sort((a,b) => {
+            const aKey = a.date + ' ' + a.teacherId;
+            const bKey = b.date + ' ' + b.teacherId;
+            // 優先度1: 出勤開始時刻が早い講師を優先
+            const aEarliest = teacherEarliestTime.get(aKey) || '99:99:99';
+            const bEarliest = teacherEarliestTime.get(bKey) || '99:99:99';
+            if(aEarliest !== bEarliest) return aEarliest.localeCompare(bEarliest);
+            // 優先度2: その日の割り当て数が少ない講師を優先
+            return (teacherDailyCount.get(aKey)||0) - (teacherDailyCount.get(bKey)||0);
+          });
 
           // Sort demands by priority desc
           ddList.sort((a,b) => (b.priority||0) - (a.priority||0));
@@ -335,13 +363,23 @@
 
               // Attempt preferred first
               if (preferred && !ngSet.has(preferred)){
-                const th = thList.find(x => x.teacherId === preferred && !usedTeacherAt.has(tkey+' '+x.teacherId) && teacherPreferences[x.teacherId] !== 'EXCLUDE');
+                const th = thList.find(x =>
+                  x.teacherId === preferred &&
+                  !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                  teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
+                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                );
                 if (th){ assignedTeacher = th; assignedDemand = demand; }
               }
 
               if (!assignedTeacher){
                 // pick any available teacher not in NG
-                const th2 = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId) && !ngSet.has(x.teacherId) && teacherPreferences[x.teacherId] !== 'EXCLUDE');
+                const th2 = thList.find(x =>
+                  !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                  !ngSet.has(x.teacherId) &&
+                  teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
+                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                );
                 if (th2){ assignedTeacher = th2; assignedDemand = demand; }
               }
 
@@ -365,8 +403,13 @@
               }
 
               // 優先度2: 空いている講師（通常割り当て）
+              // ただし、1日内ブース固定ルールを厳守（既に別のブースに割り当て済みの講師は除外）
               if (!assignedTeacher) {
-                assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId) && teacherPreferences[x.teacherId] !== 'EXCLUDE');
+                assignedTeacher = thList.find(x =>
+                  !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                  teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
+                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                );
                 if(assignedTeacher){
                   console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
                 }
