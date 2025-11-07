@@ -224,6 +224,9 @@
           throw new Error('元シート（講師表）を先に読み込んでください');
         }
 
+        console.log('=== 割り当て開始 ===');
+        console.log('優先ブース設定:', teacherPreferences);
+
         const slots = boothData;
         const teachers = teacherData;
         const demands = []; // 生徒需要は簡略版では使用しない
@@ -236,6 +239,7 @@
         // track usage
         const usedTeacherAt = new Set(); // key(time + teacherId)
         const teacherDailyCount = new Map(); // key(date + teacherId) -> count
+        const teacherDailyBooth = new Map(); // key(date + teacherId) -> boothId (1日内でブース固定)
 
         const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
 
@@ -259,8 +263,62 @@
             ngTeachersMap.set(d.studentId, ng);
           }
 
+          // 割り当て済みブースを追跡
+          const assignedSlotsInTime = new Set(); // 'boothId'
+
+          // === フェーズ1: 優先ブース設定がある講師を優先的に配置 ===
+          console.log(`\n🎯 フェーズ1: 優先ブース設定がある講師を優先配置 (${tkey})`);
+          for(const teacher of thList){
+            const prefBooth = teacherPreferences[teacher.teacherId];
+            if(!prefBooth) continue; // 優先ブース設定がない講師はスキップ
+
+            const isTeacherAvailable = !usedTeacherAt.has(tkey+' '+teacher.teacherId);
+            if(!isTeacherAvailable) continue; // 既に割り当て済み
+
+            // この講師の優先ブースを探す
+            const targetSlot = sList.find(s => s.boothId === prefBooth && !assignedSlotsInTime.has(s.boothId));
+            if(!targetSlot) continue; // 優先ブースが見つからないor既に埋まっている
+
+            // 1日内ブース固定チェック
+            const dailyKey = teacher.date + ' ' + teacher.teacherId;
+            const existingBooth = teacherDailyBooth.get(dailyKey);
+            if(existingBooth && existingBooth !== prefBooth){
+              console.log(`  ⚠️ ${teacher.teacherName}: 優先ブース${prefBooth}だが、既に${existingBooth}に割り当て済み → スキップ`);
+              continue;
+            }
+
+            // 割り当て実行
+            usedTeacherAt.add(tkey+' '+teacher.teacherId);
+            teacherDailyCount.set(dailyKey, (teacherDailyCount.get(dailyKey)||0) + 1);
+            assignedSlotsInTime.add(targetSlot.boothId);
+
+            if (!teacherDailyBooth.has(dailyKey)) {
+              teacherDailyBooth.set(dailyKey, targetSlot.boothId);
+              console.log(`  ✓ 優先ブース初回割り当て: ${teacher.teacherName} -> ${targetSlot.boothId}`);
+            } else {
+              console.log(`  ✓ 優先ブース継続: ${teacher.teacherName} -> ${targetSlot.boothId}`);
+            }
+
+            const assignmentRecord = {
+              date: targetSlot.date,
+              time: targetSlot.time,
+              boothId: targetSlot.boothId,
+              teacherId: teacher.teacherId,
+              teacherName: teacher.teacherName||'',
+              studentId: '',
+              subject: ''
+            };
+            lastAssignments.push(assignmentRecord);
+            lines.push([targetSlot.date, targetSlot.time, targetSlot.boothId, teacher.teacherId, (teacher.teacherName||''), '', ''].join(','));
+            lastLog.decisions.push({ tkey, boothId: targetSlot.boothId, teacherId: teacher.teacherId, studentId: null });
+          }
+
+          console.log(`\n📋 フェーズ2: 残りのブースを通常割り当て (${tkey})`);
+          // === フェーズ2: 残りのブースを通常通り埋める ===
           // Try to satisfy demands first per booth
           for(const slot of sList){
+            // 既に割り当て済みのブースはスキップ
+            if(assignedSlotsInTime.has(slot.boothId)) continue;
             let assignedTeacher = null;
             let assignedDemand = null;
 
@@ -288,22 +346,39 @@
 
             // If no demand or none matched, assign teacher-only if available
             if (!assignedTeacher){
-              // 優先ブース設定を考慮
-              // 1. このブースを優先する講師がいる場合、優先的に割り当て
-              assignedTeacher = thList.find(x =>
-                !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-                teacherPreferences[x.teacherId] === slot.boothId
-              );
+              // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う（1日内ブース固定）
+              const existingBoothTeacher = thList.find(x => {
+                const dailyKey = slot.date + ' ' + x.teacherId;
+                const assignedBooth = teacherDailyBooth.get(dailyKey);
+                return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                       assignedBooth === slot.boothId;
+              });
 
-              // 2. 優先ブース講師がいない場合、通常の割り当て
+              if (existingBoothTeacher) {
+                assignedTeacher = existingBoothTeacher;
+                console.log(`  ✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId}`);
+              }
+
+              // 優先度2: 空いている講師（通常割り当て）
               if (!assignedTeacher) {
                 assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
+                if(assignedTeacher){
+                  console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
+                }
               }
             }
 
             if (assignedTeacher){
               usedTeacherAt.add(tkey+' '+assignedTeacher.teacherId);
-              teacherDailyCount.set(assignedTeacher.date+' '+assignedTeacher.teacherId, (teacherDailyCount.get(assignedTeacher.date+' '+assignedTeacher.teacherId)||0) + 1);
+              const dailyKey = assignedTeacher.date + ' ' + assignedTeacher.teacherId;
+              teacherDailyCount.set(dailyKey, (teacherDailyCount.get(dailyKey)||0) + 1);
+              assignedSlotsInTime.add(slot.boothId); // ブース追跡
+
+              // 1日内のブース割り当てを記録
+              if (!teacherDailyBooth.has(dailyKey)) {
+                teacherDailyBooth.set(dailyKey, slot.boothId);
+                console.log(`  📌 初回ブース決定: ${assignedTeacher.teacherName} -> ${slot.boothId} (${assignedTeacher.date})`);
+              }
 
               if (assignedDemand){
                 // remove selected demand from pool
@@ -340,6 +415,9 @@
             }
           }
         }
+
+        console.log('=== 割り当て完了 ===');
+        console.log('1日内ブース割り当て:', teacherDailyBooth);
 
         assignmentsOut.value = lines.join('\n');
 
@@ -659,6 +737,37 @@
       const hex = (h>>>0).toString(16).slice(-6).padStart(6,'0');
       return 'T' + hex.toUpperCase();
     }
+
+    function formatTeacherNameForExcel(fullName, allTeacherNames){
+      // フルネームを「苗字+T」または「名+T」形式に変換
+      // 苗字重複がある場合は「名+T」を使用
+      // 例: "西　泰我" -> "西T" （重複なし）
+      // 例: "西　泰我", "西　花子" -> "泰我T", "花子T" （重複あり）
+
+      const parts = fullName.replace(/\u3000/g, ' ').split(/\s+/);
+
+      // スペースで分割できない場合（フルネーム形式でない）
+      if (parts.length < 2) {
+        return fullName + 'T';
+      }
+
+      const surname = parts[0];
+      const givenName = parts[1];
+
+      // 同じ苗字の講師が他にいるかチェック
+      const hasDuplicateSurname = allTeacherNames.some(name => {
+        if (name === fullName) return false; // 自分自身は除外
+        const otherParts = name.replace(/\u3000/g, ' ').split(/\s+/);
+        return otherParts.length >= 1 && otherParts[0] === surname;
+      });
+
+      if (hasDuplicateSurname) {
+        console.log(`  📝 苗字重複検出: ${fullName} -> ${givenName}T`);
+        return givenName + 'T'; // 名+T
+      } else {
+        return surname + 'T'; // 苗字+T
+      }
+    }
     // ================= Excel export: ブース表形式 =================
     function saveAsExcel(mode){
       try{
@@ -672,16 +781,74 @@
           return;
         }
 
-        // 元のワークブックをコピー
-        const wb = XLSX.utils.book_new();
-        const sheetName = boothSheetInfo.sheetName;
-        const originalSheet = originalBoothWorkbook.Sheets[sheetName];
+        // 全講師名のリストを作成（重複排除）
+        const allTeacherNames = [...new Set(lastAssignments
+          .filter(a => a.teacherName)
+          .map(a => a.teacherName))];
+        console.log('全講師名リスト:', allTeacherNames);
 
-        // 元のシートをコピー
-        const newSheet = {};
-        Object.keys(originalSheet).forEach(key => {
-          newSheet[key] = originalSheet[key];
+        // 元のワークブック全体を完全にディープコピー
+        console.log('元のブース表ワークブックを完全コピー中...');
+        const wb = {};
+
+        // ワークブックの全プロパティをコピー（Props, Custprops, Workbook, vbaraw等も含む）
+        for(const key in originalBoothWorkbook){
+          if(originalBoothWorkbook.hasOwnProperty(key)){
+            if(key === 'SheetNames'){
+              // SheetNamesは配列なので個別コピー
+              wb.SheetNames = [...originalBoothWorkbook.SheetNames];
+            } else if(key === 'Sheets'){
+              // Sheetsは後で個別処理
+              wb.Sheets = {};
+            } else if(typeof originalBoothWorkbook[key] === 'object' && originalBoothWorkbook[key] !== null){
+              // その他のオブジェクトプロパティ（Props, Custprops, Workbook等）
+              try {
+                wb[key] = JSON.parse(JSON.stringify(originalBoothWorkbook[key]));
+              } catch(e) {
+                // JSON化できないプロパティはそのままコピー
+                wb[key] = originalBoothWorkbook[key];
+              }
+            } else {
+              // プリミティブ値はそのままコピー
+              wb[key] = originalBoothWorkbook[key];
+            }
+          }
+        }
+
+        // すべてのシートを完全コピー
+        for(const sheetName of wb.SheetNames){
+          const originalSheet = originalBoothWorkbook.Sheets[sheetName];
+          const newSheet = {};
+
+          // シートの全プロパティをコピー（!refや!mergesなども含む）
+          for(const key in originalSheet){
+            if(originalSheet.hasOwnProperty(key)){
+              if(typeof originalSheet[key] === 'object' && originalSheet[key] !== null){
+                // オブジェクトはディープコピー
+                try {
+                  newSheet[key] = JSON.parse(JSON.stringify(originalSheet[key]));
+                } catch(e) {
+                  // JSON化できない場合はそのままコピー
+                  newSheet[key] = originalSheet[key];
+                }
+              } else {
+                newSheet[key] = originalSheet[key];
+              }
+            }
+          }
+
+          wb.Sheets[sheetName] = newSheet;
+        }
+
+        console.log('ワークブック完全コピー完了:', {
+          シート数: wb.SheetNames.length,
+          シート名: wb.SheetNames.join(', '),
+          追加プロパティ: Object.keys(wb).filter(k => k !== 'Sheets' && k !== 'SheetNames')
         });
+
+        // 対象シートに割当結果を上書き
+        const targetSheetName = boothSheetInfo.sheetName;
+        const targetSheet = wb.Sheets[targetSheetName];
 
         // 割当結果で上書き
         for(const assignment of lastAssignments){
@@ -697,21 +864,24 @@
 
           let cellValue = '';
           if(mode === 'teacher'){
-            // 講師配置のみ
-            cellValue = assignment.teacherName || assignment.teacherId;
+            // 講師配置のみ（苗字+T形式、重複時は名+T）
+            cellValue = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId, allTeacherNames);
           } else if(mode === 'student'){
             // 講師 + 生徒
-            const teacher = assignment.teacherName || assignment.teacherId;
+            const teacher = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId, allTeacherNames);
             const student = assignment.studentId ? `\n${assignment.studentId}` : '';
             const subject = assignment.subject ? `(${assignment.subject})` : '';
             cellValue = teacher + student + subject;
           }
 
-          newSheet[cellAddr] = { t: 's', v: cellValue };
+          // 元のセルのスタイル情報を保持しつつ値を更新
+          const originalCell = targetSheet[cellAddr];
+          if(originalCell){
+            targetSheet[cellAddr] = { ...originalCell, v: cellValue, t: 's' };
+          } else {
+            targetSheet[cellAddr] = { t: 's', v: cellValue };
+          }
         }
-
-        wb.SheetNames.push(sheetName);
-        wb.Sheets[sheetName] = newSheet;
 
         const filename = mode === 'teacher'
           ? makeTsPrefix() + '_講師配置済みブース表.xlsx'
@@ -815,11 +985,14 @@
         optNone.textContent = '指定なし';
         select.appendChild(optNone);
 
-        // ブースオプション
+        // ブースオプション（丸付き数字で表示）
         for(const boothId of booths){
           const opt = document.createElement('option');
           opt.value = boothId;
-          opt.textContent = boothId;
+          // B1→①, B2→②のように丸付き数字に変換
+          const boothNum = parseInt(boothId.replace(/\D/g,'')) || 0;
+          const circledNum = String.fromCodePoint(0x245F + boothNum);
+          opt.textContent = circledNum;
           select.appendChild(opt);
         }
 
