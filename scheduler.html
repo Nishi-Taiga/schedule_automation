@@ -930,21 +930,17 @@
           // セルの値を更新
           cell.value = finalValue;
 
-          // フォント設定（既存のフォント設定を保持しつつ、必要な設定を上書き）
-          const existingFont = cell.font || {};
+          // フォント設定（直接設定で上書き）
           cell.font = {
-            ...existingFont,
             name: 'MS PGothic',  // Excelではこの表記
             size: 8,
             family: 1,  // ゴシック系
             charset: 128  // 日本語
           };
 
-          // 縦書き設定（既存のalignment設定を保持しつつ、縦書きを追加）
-          const existingAlignment = cell.alignment || {};
+          // 縦書き設定（直接設定で上書き）
           cell.alignment = {
-            ...existingAlignment,
-            textRotation: 'vertical',  // 縦書き（最も確実な方法）
+            textRotation: 'vertical',  // 縦書き
             vertical: 'top',
             horizontal: 'center',
             wrapText: true
