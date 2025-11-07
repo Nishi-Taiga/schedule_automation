@@ -609,32 +609,67 @@
       // 丸付き数字をそのまま返す（変換しない）
       return ch;
     }
+
+    // ExcelJSのセル値を安全に取得するヘルパー関数
+    function getCellValue(cell){
+      if (cell.value === undefined || cell.value === null) {
+        return null;
+      }
+      // リッチテキストの場合
+      if (typeof cell.value === 'object' && cell.value.richText) {
+        return cell.value.richText.map(part => part.text).join('');
+      }
+      // その他（文字列、数値、日付など）
+      return cell.value;
+    }
+
     async function parseBoothExcel(input){
       const file = input.files?.[0];
       if (!file){ $('boothExcelStatus').textContent = 'ファイル未選択'; return; }
       try{
+        console.log('🔵 parseBoothExcel: 開始');
         const buf = await file.arrayBuffer();
-        console.log('元のブース表ファイルを読み込み中...', buf.byteLength, 'bytes');
+        console.log('🔵 ファイル読み込み完了:', buf.byteLength, 'bytes');
+
+        // ExcelJSの存在確認
+        if (typeof ExcelJS === 'undefined') {
+          throw new Error('ExcelJSライブラリが読み込まれていません');
+        }
 
         // ExcelJSでワークブックを読み込み（書式完全保持）
         const workbook = new ExcelJS.Workbook();
+        console.log('🔵 ExcelJS.Workbook作成完了');
+
         await workbook.xlsx.load(buf);
+        console.log('🔵 workbook.xlsx.load完了');
 
         const worksheet = workbook.worksheets[0];
         const sheetName = worksheet.name;
-        console.log('ExcelJSでワークブック読み込み完了:', sheetName);
+        console.log('🔵 ワークシート取得完了:', sheetName);
 
         // 行データを配列形式に変換（SheetJSの rows 互換）
         const rows = [];
         worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
           const rowData = [];
           row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            // cell.textを使ってセルの表示テキストを取得（リッチテキスト対応）
-            const cellValue = cell.text !== undefined ? cell.text : cell.value;
+            // セルの値を安全に取得（マージセル、リッチテキスト対応）
+            let cellValue;
+            try {
+              // cell.textは内部でエラーになる可能性があるのでtry-catchでラップ
+              if (cell.text !== undefined && cell.text !== null) {
+                cellValue = cell.text;
+              } else {
+                cellValue = getCellValue(cell);
+              }
+            } catch (e) {
+              // cell.textでエラーが発生した場合（マージセルなど）
+              cellValue = getCellValue(cell);
+            }
             rowData[colNumber - 1] = cellValue;
           });
           rows[rowNumber - 1] = rowData;
         });
+        console.log('🔵 行データ変換完了:', rows.length, '行');
 
         let ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
         if (!ym) throw new Error('年/月の自動検出に失敗しました。');
@@ -675,9 +710,12 @@
         };
 
         boothData = slots;
+        console.log('🔵 parseBoothExcel: 完了 -', slots.length, '件');
         $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${slots.length}件（書式保持モード）`;
       }catch(e){
-        console.error(e); $('boothExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
+        console.error('❌ parseBoothExcel エラー:', e);
+        console.error('エラースタック:', e.stack);
+        $('boothExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
       }
     }
 
@@ -907,23 +945,37 @@
       const file = input.files?.[0];
       if (!file){ $('teacherExcelStatus').textContent = 'ファイル未選択'; return; }
       try{
+        console.log('🟢 parseTeacherExcel: 開始');
         const buf = await file.arrayBuffer();
+        console.log('🟢 ファイル読み込み完了:', buf.byteLength, 'bytes');
 
         // ExcelJSでワークブックを読み込み
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(buf);
+        console.log('🟢 workbook.xlsx.load完了');
 
         const worksheet = workbook.worksheets[0];
         const sheetName = worksheet.name;
+        console.log('🟢 ワークシート取得完了:', sheetName);
 
         // 行データを配列形式に変換
         const rows = [];
         worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
           const rowData = [];
           row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            // cell.textを使ってセルの表示テキストを取得（リッチテキスト対応）
-            // cell.valueだとリッチテキストの場合オブジェクトになる可能性がある
-            const cellValue = cell.text !== undefined ? cell.text : cell.value;
+            // セルの値を安全に取得（マージセル、リッチテキスト対応）
+            let cellValue;
+            try {
+              // cell.textは内部でエラーになる可能性があるのでtry-catchでラップ
+              if (cell.text !== undefined && cell.text !== null) {
+                cellValue = cell.text;
+              } else {
+                cellValue = getCellValue(cell);
+              }
+            } catch (e) {
+              // cell.textでエラーが発生した場合（マージセルなど）
+              cellValue = getCellValue(cell);
+            }
             rowData[colNumber - 1] = cellValue;
 
             // デバッグ: 講師名らしきセルの値を詳細ログ
@@ -941,6 +993,7 @@
           });
           rows[rowNumber - 1] = rowData;
         });
+        console.log('🟢 行データ変換完了:', rows.length, '行');
 
         const ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
         const pairs = collectDateTeacherColumns(rows, ym);
@@ -962,8 +1015,13 @@
         }
         shifts.sort((a,b)=> (a.date+a.time+a.teacherId).localeCompare(b.date+b.time+b.teacherId));
         teacherData = shifts;
+        console.log('🟢 parseTeacherExcel: 完了 -', shifts.length, '件');
         $('teacherExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${shifts.length}件`;
-      }catch(e){ console.error(e); $('teacherExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`; }
+      }catch(e){
+        console.error('❌ parseTeacherExcel エラー:', e);
+        console.error('エラースタック:', e.stack);
+        $('teacherExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
+      }
     }
 
     // ================= 優先ブース設定 =================
