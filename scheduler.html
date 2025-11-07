@@ -891,8 +891,11 @@
           throw new Error(`シート "${targetSheetName}" が見つかりません`);
         }
 
-        // 割当結果で上書き（ExcelJSはセルの書式を自動保持）
+        // ステップ1: 割当結果をセルに書き込む（値のみ）
+        console.log('ステップ1: セル値を書き込み中...');
         let assignedCount = 0;
+        const formattedCells = []; // フォーマット設定が必要なセルを記録
+
         for(const assignment of lastAssignments){
           if(!assignment.teacherId) continue; // 講師が割り当てられていない場合はスキップ
 
@@ -930,6 +933,16 @@
           // セルの値を更新
           cell.value = finalValue;
 
+          // 後でフォーマット設定するためにセル情報を記録
+          formattedCells.push({ cell, pos, cellValue });
+          assignedCount++;
+        }
+
+        console.log(`${assignedCount}件の講師を記入完了`);
+
+        // ステップ2: フォント設定と縦書き設定を適用
+        console.log('ステップ2: フォント・縦書き設定を適用中...');
+        for(const {cell, pos, cellValue} of formattedCells){
           // フォント設定（直接設定で上書き）
           cell.font = {
             name: 'MS PGothic',  // Excelではこの表記
@@ -953,10 +966,9 @@
           }
 
           console.log(`  📝 フォント設定: ${cellValue} (MS PGothic, 8pt, 縦書き)`);
-          assignedCount++;
         }
 
-        console.log(`${assignedCount}件の講師を記入完了`);
+        console.log(`${formattedCells.length}件のフォーマット設定完了`);
 
         const filename = mode === 'teacher'
           ? makeTsPrefix() + '_講師配置済みブース表.xlsx'
