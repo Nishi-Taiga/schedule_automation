@@ -383,6 +383,20 @@
           return !assignedBooth || assignedBooth === boothId;
         };
 
+        // ヘルパー関数: 講師が指定科目を指導可能かチェック
+        const canTeachSubject = (teacherId, subject) => {
+          // 科目が指定されていない場合は常にOK
+          if (!subject) return true;
+          // teacherSubjectMapが空の場合は常にOK（後方互換性）
+          if (!teacherSubjectMap || Object.keys(teacherSubjectMap).length === 0) return true;
+          // 講師の指導可能科目リストを取得
+          const teachableSubjects = teacherSubjectMap[teacherId];
+          if (!teachableSubjects) return false; // 講師情報がない場合はNG
+          // 科目名を正規化して比較
+          const normalizedSubject = normalizeSubjectName(subject);
+          return teachableSubjects.includes(normalizedSubject);
+        };
+
         const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
 
         // Iterate over time slots in chronological order
@@ -490,7 +504,8 @@
                   x.teacherId === preferred &&
                   !usedTeacherAt.has(tkey+' '+x.teacherId) &&
                   teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
-                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                  canAssignTeacherToBooth(x, slot.boothId) &&  // 1日内ブース固定チェック
+                  canTeachSubject(x.teacherId, demand.subject)  // 科目指導可能チェック
                 );
                 if (th){ assignedTeacher = th; assignedDemand = demand; }
               }
@@ -501,7 +516,8 @@
                   !usedTeacherAt.has(tkey+' '+x.teacherId) &&
                   !ngSet.has(x.teacherId) &&
                   teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
-                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                  canAssignTeacherToBooth(x, slot.boothId) &&  // 1日内ブース固定チェック
+                  canTeachSubject(x.teacherId, demand.subject)  // 科目指導可能チェック
                 );
                 if (th2){ assignedTeacher = th2; assignedDemand = demand; }
               }
