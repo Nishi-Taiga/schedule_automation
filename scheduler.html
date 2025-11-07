@@ -206,6 +206,7 @@
     let boothData = []; // ブース表から読み込んだデータ
     let teacherData = []; // 元シートから読み込んだデータ
     let studentDemandData = []; // 生徒コマ数表から読み込んだ需要データ
+    let teacherSubjectMap = {}; // 講師の指導可能科目マップ { teacherId: ['算数', '国語', ...] }
     let originalBoothWorkbook = null; // 元のブース表ExcelJSワークブック（書式完全保持）
     let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
     let teacherPreferences = {}; // 講師の優先ブース設定 { teacherId: 'B1' }
@@ -1287,7 +1288,7 @@
       }
     }
 
-    // ================= 生徒コマ数表の読み込み =================
+    // ================= 生徒・講師情報の読み込み =================
     async function parseStudentDemandExcel(input){
       const file = input.files?.[0];
       if (!file){ $('studentExcelStatus').textContent = 'ファイル未選択'; return; }
@@ -1299,95 +1300,134 @@
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(buf);
         console.log('🟢 workbook.xlsx.load完了');
+        console.log('🟢 ワークシート数:', workbook.worksheets.length);
 
-        const worksheet = workbook.worksheets[0];
-        const sheetName = worksheet.name;
-        console.log('🟢 ワークシート取得完了:', sheetName);
+        // シート名を確認
+        let studentSheet = null;
+        let teacherSubjectSheet = null;
 
-        // 行データを配列形式に変換
-        const rows = [];
-        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-          const rowData = [];
-          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            rowData[colNumber - 1] = cell.value;
-          });
-          rows[rowNumber - 1] = rowData;
-        });
-        console.log('🟢 行データ変換完了:', rows.length, '行');
-
-        // 科目マッピング（列番号 -> 科目名）
-        const subjectMap = {
-          3: '英語',      // 列D (0-indexed: 3)
-          4: '英検',      // 列E
-          5: '数学',      // 列F
-          6: '算数',      // 列G
-          7: '国語',      // 列H
-          8: '理科',      // 列I
-          9: '社会',      // 列J
-          10: '古文',     // 列K
-          11: '物理',     // 列L
-          12: '化学',     // 列M
-          13: '生物',     // 列N
-          15: '地理',     // 列P
-          16: '政治経済', // 列Q
-          17: '世界史',   // 列R
-          18: '日本史'    // 列S
-        };
-
-        const demands = [];
-
-        // ヘッダー行をスキップ（行0）、データ行は行1から
-        for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
-          const row = rows[rowIdx];
-
-          // 空行または説明行をスキップ
-          if (!row || !row[0] || !row[1] || !row[2]) continue;
-
-          // 説明行（マージセルで長いテキスト）をスキップ
-          const studentName = String(row[2] || '').trim();
-          if (studentName.includes('【記入例】') || studentName.length > 50) continue;
-
-          const grade = String(row[0] || '').trim();
-          const schoolName = String(row[1] || '').trim();
-          const preferredTeachers = parseCommaSeparated(row[20]); // 列U (0-indexed: 20)
-          const ngTeachers = parseCommaSeparated(row[21]);         // 列V
-          const ngStudents = parseCommaSeparated(row[22]);         // 列W
-          const preferredTimes = parseCommaSeparated(row[23]);     // 列X (例: 月17,水19)
-          const ngDays = parseCommaSeparated(row[24]);             // 列Y (例: 火,土)
-          const note = String(row[25] || '').trim();               // 列Z
-
-          console.log(`\n📚 生徒: ${studentName}`);
-
-          // 各科目のコマ数を取得して需要データを生成
-          for (const [colIdx, subjectName] of Object.entries(subjectMap)) {
-            const count = parseInt(row[colIdx]) || 0;
-            if (count === 0) continue;
-
-            console.log(`  ${subjectName}: ${count}コマ`);
-
-            // コマ数分の需要を生成
-            for (let i = 0; i < count; i++) {
-              demands.push({
-                studentId: studentName,       // 生徒名をIDとして使用
-                studentName: studentName,
-                subject: subjectName,
-                grade: grade,
-                schoolName: schoolName,
-                preferredTeachers: preferredTeachers,
-                ngTeachers: ngTeachers,
-                ngStudents: ngStudents,
-                preferredTimes: preferredTimes,  // 例: ['月17', '水19']
-                ngDays: ngDays,                  // 例: ['火', '土']
-                note: note,
-                priority: calculatePriority(grade, note)  // 優先度計算
-              });
-            }
+        for (const sheet of workbook.worksheets) {
+          console.log(`  シート: ${sheet.name}`);
+          if (sheet.name.includes('生徒コマ数') || sheet.name.includes('生徒') && sheet.name.includes('コマ')) {
+            studentSheet = sheet;
+          } else if (sheet.name.includes('指導可能') || sheet.name.includes('教科一覧')) {
+            teacherSubjectSheet = sheet;
           }
         }
 
+        // シートが見つからない場合はデフォルトで最初のシートを使用
+        if (!studentSheet && workbook.worksheets.length > 0) {
+          studentSheet = workbook.worksheets[workbook.worksheets.length - 1]; // 最後のシート
+        }
+        if (!teacherSubjectSheet && workbook.worksheets.length > 1) {
+          teacherSubjectSheet = workbook.worksheets[0]; // 最初のシート
+        }
+
+        console.log('🟢 生徒コマ数表シート:', studentSheet?.name || 'なし');
+        console.log('🟢 指導可能教科一覧シート:', teacherSubjectSheet?.name || 'なし');
+
+        // ========== シート1: 指導可能教科一覧の処理 ==========
+        if (teacherSubjectSheet) {
+          console.log('\n📚 指導可能教科一覧の解析開始');
+          teacherSubjectMap = parseTeacherSubjects(teacherSubjectSheet);
+          console.log(`✓ 講師-科目マッピング完了: ${Object.keys(teacherSubjectMap).length}名の講師`);
+        }
+
+        // ========== シート2: 生徒コマ数表の処理 ==========
+        const demands = [];
+        if (studentSheet) {
+          console.log('\n📝 生徒コマ数表の解析開始');
+
+          // 行データを配列形式に変換
+          const rows = [];
+          studentSheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+            const rowData = [];
+            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+              // リッチテキストやオブジェクトを適切に文字列化
+              rowData[colNumber - 1] = getCellValue(cell);
+            });
+            rows[rowNumber - 1] = rowData;
+          });
+          console.log('🟢 行データ変換完了:', rows.length, '行');
+
+          // 科目マッピング（列番号 -> 科目名）
+          const subjectMap = {
+            3: '英語',      // 列D (0-indexed: 3)
+            4: '英検',      // 列E
+            5: '数学',      // 列F
+            6: '算数',      // 列G
+            7: '国語',      // 列H
+            8: '理科',      // 列I
+            9: '社会',      // 列J
+            10: '古文',     // 列K
+            11: '物理',     // 列L
+            12: '化学',     // 列M
+            13: '生物',     // 列N
+            15: '地理',     // 列P
+            16: '政治経済', // 列Q
+            17: '世界史',   // 列R
+            18: '日本史'    // 列S
+          };
+
+          // ヘッダー行をスキップ（行0）、データ行は行1から
+          for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
+            const row = rows[rowIdx];
+
+            // 空行または説明行をスキップ
+            if (!row || !row[0] || !row[1] || !row[2]) continue;
+
+            // 説明行（マージセルで長いテキスト）をスキップ
+            const studentName = String(row[2] || '').trim();
+            if (studentName.includes('【記入例】') || studentName.length > 50) continue;
+
+            const grade = String(row[0] || '').trim();
+            const schoolName = String(row[1] || '').trim();
+            const preferredTeachers = parseCommaSeparated(row[20]); // 列U (0-indexed: 20)
+            const ngTeachers = parseCommaSeparated(row[21]);         // 列V
+            const ngStudents = parseCommaSeparated(row[22]);         // 列W
+            const preferredTimes = parseCommaSeparated(row[23]);     // 列X (例: 月17,水19)
+            const ngDays = parseCommaSeparated(row[24]);             // 列Y (例: 火,土)
+            const note = String(row[25] || '').trim();               // 列Z
+
+            console.log(`\n📚 生徒: ${studentName}`);
+
+            // 各科目のコマ数を取得して需要データを生成
+            for (const [colIdx, subjectName] of Object.entries(subjectMap)) {
+              const count = parseInt(row[colIdx]) || 0;
+              if (count === 0) continue;
+
+              console.log(`  ${subjectName}: ${count}コマ`);
+
+              // コマ数分の需要を生成
+              for (let i = 0; i < count; i++) {
+                demands.push({
+                  studentId: studentName,       // 生徒名をIDとして使用
+                  studentName: studentName,
+                  subject: subjectName,
+                  grade: grade,
+                  schoolName: schoolName,
+                  preferredTeachers: preferredTeachers,
+                  ngTeachers: ngTeachers,
+                  ngStudents: ngStudents,
+                  preferredTimes: preferredTimes,  // 例: ['月17', '水19']
+                  ngDays: ngDays,                  // 例: ['火', '土']
+                  note: note,
+                  priority: calculatePriority(grade, note)  // 優先度計算
+                });
+              }
+            }
+          }
+        } // end of if (studentSheet)
+
         studentDemandData = demands;
-        console.log('🟢 parseStudentDemandExcel: 完了 -', demands.length, '件');
-        $('studentExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${demands.length}件の需要データ`;
+        const teacherCount = Object.keys(teacherSubjectMap).length;
+        const summaryParts = [];
+        if (demands.length > 0) summaryParts.push(`${demands.length}件の需要データ`);
+        if (teacherCount > 0) summaryParts.push(`${teacherCount}名の講師科目マップ`);
+
+        console.log('🟢 parseStudentDemandExcel: 完了 -', summaryParts.join(', '));
+        const statusText = summaryParts.length > 0 ? summaryParts.join(', ') : '読み込み完了';
+        $('studentExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${statusText}`;
       }catch(e){
         console.error('❌ parseStudentDemandExcel エラー:', e);
         console.error('エラースタック:', e.stack);
@@ -1416,6 +1456,91 @@
       }
 
       return priority;
+    }
+
+    // 指導可能教科一覧をパース
+    function parseTeacherSubjects(worksheet){
+      console.log('📖 parseTeacherSubjects: 開始');
+
+      // 行データを配列形式に変換
+      const rows = [];
+      worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+        const rowData = [];
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          rowData[colNumber - 1] = getCellValue(cell);
+        });
+        rows[rowNumber - 1] = rowData;
+      });
+
+      // 講師名は列B（インデックス1）、行4以降
+      // 科目ヘッダーは行3（インデックス2）
+      const subjectHeaders = rows[2] || []; // 行3の科目ヘッダー
+
+      const teacherMap = {};
+
+      // 講師データは行4（インデックス3）から
+      for (let rowIdx = 3; rowIdx < rows.length; rowIdx++) {
+        const row = rows[rowIdx];
+        if (!row || !row[1]) continue; // 講師名が空の場合スキップ
+
+        const teacherName = String(row[1]).trim();
+        if (!teacherName || teacherName === '講師名') continue;
+
+        // teacherIdを生成
+        const teacherId = idFromName(teacherName);
+
+        // 指導可能科目を収集
+        const subjects = [];
+        for (let colIdx = 2; colIdx < row.length; colIdx++) {
+          const cellValue = row[colIdx];
+          if (cellValue === '◯' || cellValue === '○') {
+            const subjectName = subjectHeaders[colIdx];
+            if (subjectName) {
+              // 科目名を正規化
+              const normalizedSubject = normalizeSubjectName(String(subjectName).trim());
+              if (normalizedSubject && !subjects.includes(normalizedSubject)) {
+                subjects.push(normalizedSubject);
+              }
+            }
+          }
+        }
+
+        if (subjects.length > 0) {
+          teacherMap[teacherId] = subjects;
+          console.log(`  ${teacherName} (${teacherId}): ${subjects.join(', ')}`);
+        }
+      }
+
+      console.log('✓ parseTeacherSubjects: 完了');
+      return teacherMap;
+    }
+
+    // 科目名を正規化（略称を統一）
+    function normalizeSubjectName(subject){
+      const mapping = {
+        '国': '国語',
+        '算': '算数',
+        '数': '数学',
+        '英': '英語',
+        '理': '理科',
+        '社': '社会',
+        '古': '古文',
+        '物': '物理',
+        '化': '化学',
+        '生': '生物',
+        '地': '地理',
+        '政': '政治経済',
+        '世': '世界史',
+        '日': '日本史',
+        '現': '現代文',
+        'ⅠA': '数学ⅠA',
+        'ⅡB': '数学ⅡB',
+        'Ⅲ': '数学Ⅲ',
+        'C': '数学C',
+        '倫': '倫理'
+      };
+
+      return mapping[subject] || subject;
     }
 
     // ================= 優先ブース設定 =================
