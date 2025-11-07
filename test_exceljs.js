@@ -25,15 +25,21 @@ async function testBoothExcel() {
     console.log('✓ ワークシート名:', worksheet.name);
     console.log('✓ 行数:', worksheet.rowCount);
 
-    // 最初の10行を表示
+    // 丸付き数字の検出テスト
+    const circledRegex = /[\u2460-\u2473]/; // ①..⑳
+    let circledCount = 0;
     let rowCount = 0;
+
     worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-      if (rowNumber <= 5) {
+      if (rowNumber <= 5 || (rowNumber >= 6 && rowNumber <= 10)) {
         const rowData = [];
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           let cellValue;
           try {
-            if (cell.text !== undefined && cell.text !== null) {
+            // 日付・時刻セルの場合は cell.value (Date object) を優先
+            if (cell.value instanceof Date) {
+              cellValue = cell.value;
+            } else if (cell.text !== undefined && cell.text !== null) {
               cellValue = cell.text;
             } else {
               cellValue = getCellValue(cell);
@@ -45,9 +51,34 @@ async function testBoothExcel() {
         });
         console.log(`  行${rowNumber}:`, rowData.slice(0, 8));
       }
+
+      // 全行で丸付き数字を検索
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        let cellValue;
+        try {
+          if (cell.value instanceof Date) {
+            cellValue = cell.value;
+          } else if (cell.text !== undefined && cell.text !== null) {
+            cellValue = cell.text;
+          } else {
+            cellValue = getCellValue(cell);
+          }
+        } catch (e) {
+          cellValue = getCellValue(cell);
+        }
+
+        if (cellValue && String(cellValue).match(circledRegex)) {
+          circledCount++;
+          if (circledCount <= 10) {
+            console.log(`  🔵 丸付き数字検出: 行${rowNumber}, 列${colNumber}, 値="${cellValue}"`);
+          }
+        }
+      });
+
       rowCount++;
     });
     console.log('✓ 総行数:', rowCount);
+    console.log('✓ 丸付き数字の数:', circledCount);
     console.log('🔵 ブース表テスト完了\n');
     return true;
   } catch (e) {
@@ -76,7 +107,10 @@ async function testTeacherExcel() {
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           let cellValue;
           try {
-            if (cell.text !== undefined && cell.text !== null) {
+            // 日付・時刻セルの場合は cell.value (Date object) を優先
+            if (cell.value instanceof Date) {
+              cellValue = cell.value;
+            } else if (cell.text !== undefined && cell.text !== null) {
               cellValue = cell.text;
             } else {
               cellValue = getCellValue(cell);

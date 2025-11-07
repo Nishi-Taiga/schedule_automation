@@ -671,8 +671,10 @@
             // セルの値を安全に取得（マージセル、リッチテキスト対応）
             let cellValue;
             try {
-              // cell.textは内部でエラーになる可能性があるのでtry-catchでラップ
-              if (cell.text !== undefined && cell.text !== null) {
+              // 日付・時刻セルの場合は cell.value (Date object) を優先
+              if (cell.value instanceof Date) {
+                cellValue = cell.value;
+              } else if (cell.text !== undefined && cell.text !== null) {
                 cellValue = cell.text;
               } else {
                 cellValue = getCellValue(cell);
@@ -686,34 +688,53 @@
           rows[rowNumber - 1] = rowData;
         });
         console.log('🔵 行データ変換完了:', rows.length, '行');
+        console.log('🔵 最初の5行のデータ:');
+        for (let i = 0; i < Math.min(5, rows.length); i++) {
+          console.log(`  行${i}:`, rows[i]?.slice(0, 8)); // 最初の8列だけ
+        }
 
         let ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
         if (!ym) throw new Error('年/月の自動検出に失敗しました。');
         const timeColIdx = 1; // B列
         const effTimes = buildEffectiveTimes(rows, timeColIdx);
+        console.log('🔵 effTimes取得完了:', effTimes.filter(t => t).length, '件');
         const dayCols = collectDayColumns(rows, timeColIdx);
+        console.log('🔵 dayCols取得完了:', dayCols.length, '件', dayCols);
         if (!dayCols.length) throw new Error('日付/曜日ヘッダ行が見つかりません (行0=日, 行1=曜日)');
 
         // スロット情報とセル位置のマッピングを作成
         const slots = [];
         const cellPositions = {}; // key: "date_time_boothId" -> {row, col, teacherCol}
 
+        let matchCount = 0;
+        let totalChecked = 0;
         for (let r=0;r<rows.length;r++){
           const t = effTimes[r];
           if (!t) continue;
           for (const {col, day} of dayCols){
             const v = rows[r]?.[col];
+            totalChecked++;
             if (v == null) continue;
             const m = String(v).match(circledRegex);
-            if (!m) continue;
+            if (!m) {
+              if (totalChecked <= 10) { // 最初の10個だけログ
+                console.log(`🔵 マッチなし: 行${r}, 列${col}, 値="${v}"`);
+              }
+              continue;
+            }
+            matchCount++;
             const boothId = circledToBoothId(m[0]);
             const date = `${ym.year}/${ym.month}/${pad2(day)}`;
+            if (matchCount <= 5) { // 最初の5個だけログ
+              console.log(`🔵 マッチ: 行${r}, 列${col}, 値="${v}", 丸付き数字="${m[0]}", boothId="${boothId}"`);
+            }
             slots.push({ date, time: t, boothId });
             // ブース番号セル (col) の右隣 (col+1) が講師名記入欄
             // ExcelJSは1始まりなので +1 する
             cellPositions[`${date}_${t}_${boothId}`] = { row: r + 1, col: col + 1, teacherCol: col + 2 };
           }
         }
+        console.log(`🔵 ブース番号検出: ${matchCount}件のマッチ / ${totalChecked}セルを確認`);
 
         slots.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
 
