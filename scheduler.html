@@ -52,7 +52,16 @@
     </div>
 
     <div class="row" style="margin-top:20px;">
-      <h2>②-2 講師の優先ブース設定（オプション）</h2>
+      <h2>③ 生徒コマ数表（.xlsx）を読み込む（オプション）</h2>
+      <div class="row">
+        <input type="file" id="studentExcelFile" accept=".xlsx,.xls" />
+        <span id="studentExcelStatus" class="small"></span>
+      </div>
+      <div class="small" style="margin-top:4px;">生徒の科目別コマ数と希望条件を読み込みます。未読み込みの場合は講師のみ割り当てます。</div>
+    </div>
+
+    <div class="row" style="margin-top:20px;">
+      <h2>④ 講師の優先ブース設定（オプション）</h2>
       <div class="small">読み込み完了後、講師ごとに優先的に配置するブースを設定できます</div>
       <div class="row" style="margin-top:8px;">
         <button id="showPreferenceBtn">優先ブース設定を表示</button>
@@ -73,7 +82,7 @@
     </div>
 
     <div class="row" style="margin-top:24px;">
-      <button id="runBtn" style="font-size:16px; padding:12px 24px; font-weight:600;">③ 講師を割り当てる</button>
+      <button id="runBtn" style="font-size:16px; padding:12px 24px; font-weight:600;">⑤ 講師と生徒を割り当てる</button>
       <span id="status" class="small"></span>
     </div>
   </div>
@@ -144,6 +153,7 @@
     // ファイル選択時に自動で読み込み
     $('boothExcelFile').onchange = () => parseBoothExcel($('boothExcelFile'));
     $('teacherExcelFile').onchange = () => parseTeacherExcel($('teacherExcelFile'));
+    $('studentExcelFile').onchange = () => parseStudentDemandExcel($('studentExcelFile'));
 
     $('runBtn').onclick = run;
     $('saveTeacherExcelBtn').onclick = () => saveAsExcel('teacher');
@@ -195,6 +205,7 @@
     let lastAssignments = []; // 割当結果を保存
     let boothData = []; // ブース表から読み込んだデータ
     let teacherData = []; // 元シートから読み込んだデータ
+    let studentDemandData = []; // 生徒コマ数表から読み込んだ需要データ
     let originalBoothWorkbook = null; // 元のブース表ExcelJSワークブック（書式完全保持）
     let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
     let teacherPreferences = {}; // 講師の優先ブース設定 { teacherId: 'B1' }
@@ -209,6 +220,113 @@
         const g = m.get(k); if(g) g.push(x); else m.set(k, [x]);
       }
       return m;
+    }
+
+    // 生徒需要データを日付・時刻ベースに展開
+    function expandStudentDemands(studentDemands, slots){
+      if (!studentDemands || studentDemands.length === 0) return [];
+
+      const expanded = [];
+      const dayMap = { '月': 1, '火': 2, '水': 3, '木': 4, '金': 5, '土': 6, '日': 0 };
+
+      // スロットから利用可能な日付と時刻の組み合わせを取得
+      const availableSlots = new Set();
+      for (const slot of slots) {
+        availableSlots.add(`${slot.date}|${slot.time}`);
+      }
+
+      for (const demand of studentDemands) {
+        // 希望時間が指定されている場合
+        if (demand.preferredTimes && demand.preferredTimes.length > 0) {
+          // 希望時間をパース（例: "月17" -> 曜日: 月, 時刻: 17:00:00）
+          for (const timeSpec of demand.preferredTimes) {
+            const dayChar = timeSpec.charAt(0);
+            const hourStr = timeSpec.substring(1);
+            const hour = parseInt(hourStr);
+
+            if (!dayMap.hasOwnProperty(dayChar) || isNaN(hour)) {
+              console.warn(`無効な希望時間フォーマット: ${timeSpec}`);
+              continue;
+            }
+
+            const targetDayOfWeek = dayMap[dayChar];
+            const timeStr = `${pad2(hour)}:00:00`;
+
+            // スロットから該当する日付を探す
+            for (const slot of slots) {
+              const dateObj = new Date(slot.date);
+              const dayOfWeek = dateObj.getDay();
+
+              if (dayOfWeek === targetDayOfWeek && slot.time === timeStr) {
+                // NG日程のチェック
+                if (demand.ngDays && demand.ngDays.includes(dayChar)) {
+                  continue; // NG日程なのでスキップ
+                }
+
+                // NGTeachersをフォーマット（講師名からID形式に変換）
+                const ngTeachersSet = new Set();
+                if (demand.ngTeachers) {
+                  for (const teacherName of demand.ngTeachers) {
+                    // "西T" -> "nishiT" のような形式に変換
+                    ngTeachersSet.add(idFromName(teacherName));
+                  }
+                }
+
+                expanded.push({
+                  date: slot.date,
+                  time: slot.time,
+                  studentId: demand.studentId,
+                  studentName: demand.studentName,
+                  subject: demand.subject,
+                  grade: demand.grade,
+                  preferredTeacherId: demand.preferredTeachers && demand.preferredTeachers.length > 0
+                    ? idFromName(demand.preferredTeachers[0])
+                    : null,
+                  ngTeachers: Array.from(ngTeachersSet),
+                  ngStudents: demand.ngStudents || [],
+                  priority: demand.priority || 5
+                });
+              }
+            }
+          }
+        } else {
+          // 希望時間が指定されていない場合は全スロットに展開
+          for (const slot of slots) {
+            const dateObj = new Date(slot.date);
+            const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+            const dayChar = dayNames[dateObj.getDay()];
+
+            // NG日程のチェック
+            if (demand.ngDays && demand.ngDays.includes(dayChar)) {
+              continue;
+            }
+
+            const ngTeachersSet = new Set();
+            if (demand.ngTeachers) {
+              for (const teacherName of demand.ngTeachers) {
+                ngTeachersSet.add(idFromName(teacherName));
+              }
+            }
+
+            expanded.push({
+              date: slot.date,
+              time: slot.time,
+              studentId: demand.studentId,
+              studentName: demand.studentName,
+              subject: demand.subject,
+              grade: demand.grade,
+              preferredTeacherId: demand.preferredTeachers && demand.preferredTeachers.length > 0
+                ? idFromName(demand.preferredTeachers[0])
+                : null,
+              ngTeachers: Array.from(ngTeachersSet),
+              ngStudents: demand.ngStudents || [],
+              priority: demand.priority || 5
+            });
+          }
+        }
+      }
+
+      return expanded;
     }
 
     function run(){
@@ -226,10 +344,14 @@
 
         console.log('=== 割り当て開始 ===');
         console.log('優先ブース設定:', teacherPreferences);
+        console.log('生徒需要データ:', studentDemandData.length, '件');
 
         const slots = boothData;
         const teachers = teacherData;
-        const demands = []; // 生徒需要は簡略版では使用しない
+
+        // 生徒需要データを日付・時刻ベースに展開
+        const demands = expandStudentDemands(studentDemandData, slots);
+        console.log('展開後の需要データ:', demands.length, '件');
 
         // index by time
         const slotsByTime = groupBy(slots, s => key(s));
@@ -1163,6 +1285,137 @@
         console.error('エラースタック:', e.stack);
         $('teacherExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
       }
+    }
+
+    // ================= 生徒コマ数表の読み込み =================
+    async function parseStudentDemandExcel(input){
+      const file = input.files?.[0];
+      if (!file){ $('studentExcelStatus').textContent = 'ファイル未選択'; return; }
+      try{
+        console.log('🟢 parseStudentDemandExcel: 開始');
+        const buf = await file.arrayBuffer();
+        console.log('🟢 ファイル読み込み完了:', buf.byteLength, 'bytes');
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buf);
+        console.log('🟢 workbook.xlsx.load完了');
+
+        const worksheet = workbook.worksheets[0];
+        const sheetName = worksheet.name;
+        console.log('🟢 ワークシート取得完了:', sheetName);
+
+        // 行データを配列形式に変換
+        const rows = [];
+        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+          const rowData = [];
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            rowData[colNumber - 1] = cell.value;
+          });
+          rows[rowNumber - 1] = rowData;
+        });
+        console.log('🟢 行データ変換完了:', rows.length, '行');
+
+        // 科目マッピング（列番号 -> 科目名）
+        const subjectMap = {
+          3: '英語',      // 列D (0-indexed: 3)
+          4: '英検',      // 列E
+          5: '数学',      // 列F
+          6: '算数',      // 列G
+          7: '国語',      // 列H
+          8: '理科',      // 列I
+          9: '社会',      // 列J
+          10: '古文',     // 列K
+          11: '物理',     // 列L
+          12: '化学',     // 列M
+          13: '生物',     // 列N
+          15: '地理',     // 列P
+          16: '政治経済', // 列Q
+          17: '世界史',   // 列R
+          18: '日本史'    // 列S
+        };
+
+        const demands = [];
+
+        // ヘッダー行をスキップ（行0）、データ行は行1から
+        for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
+          const row = rows[rowIdx];
+
+          // 空行または説明行をスキップ
+          if (!row || !row[0] || !row[1] || !row[2]) continue;
+
+          // 説明行（マージセルで長いテキスト）をスキップ
+          const studentName = String(row[2] || '').trim();
+          if (studentName.includes('【記入例】') || studentName.length > 50) continue;
+
+          const grade = String(row[0] || '').trim();
+          const schoolName = String(row[1] || '').trim();
+          const preferredTeachers = parseCommaSeparated(row[20]); // 列U (0-indexed: 20)
+          const ngTeachers = parseCommaSeparated(row[21]);         // 列V
+          const ngStudents = parseCommaSeparated(row[22]);         // 列W
+          const preferredTimes = parseCommaSeparated(row[23]);     // 列X (例: 月17,水19)
+          const ngDays = parseCommaSeparated(row[24]);             // 列Y (例: 火,土)
+          const note = String(row[25] || '').trim();               // 列Z
+
+          console.log(`\n📚 生徒: ${studentName}`);
+
+          // 各科目のコマ数を取得して需要データを生成
+          for (const [colIdx, subjectName] of Object.entries(subjectMap)) {
+            const count = parseInt(row[colIdx]) || 0;
+            if (count === 0) continue;
+
+            console.log(`  ${subjectName}: ${count}コマ`);
+
+            // コマ数分の需要を生成
+            for (let i = 0; i < count; i++) {
+              demands.push({
+                studentId: studentName,       // 生徒名をIDとして使用
+                studentName: studentName,
+                subject: subjectName,
+                grade: grade,
+                schoolName: schoolName,
+                preferredTeachers: preferredTeachers,
+                ngTeachers: ngTeachers,
+                ngStudents: ngStudents,
+                preferredTimes: preferredTimes,  // 例: ['月17', '水19']
+                ngDays: ngDays,                  // 例: ['火', '土']
+                note: note,
+                priority: calculatePriority(grade, note)  // 優先度計算
+              });
+            }
+          }
+        }
+
+        studentDemandData = demands;
+        console.log('🟢 parseStudentDemandExcel: 完了 -', demands.length, '件');
+        $('studentExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${demands.length}件の需要データ`;
+      }catch(e){
+        console.error('❌ parseStudentDemandExcel エラー:', e);
+        console.error('エラースタック:', e.stack);
+        $('studentExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
+      }
+    }
+
+    // カンマ区切りの文字列をパース
+    function parseCommaSeparated(value){
+      if (!value) return [];
+      return String(value).split(',').map(s => s.trim()).filter(s => s);
+    }
+
+    // 優先度を計算（高い方が優先）
+    function calculatePriority(grade, note){
+      let priority = 5; // デフォルト
+
+      // 受験生は優先度を上げる
+      if (note && (note.includes('受験') || note.includes('入試'))) {
+        priority += 3;
+      }
+
+      // 高校生は中優先度
+      if (grade && grade.startsWith('H')) {
+        priority += 1;
+      }
+
+      return priority;
     }
 
     // ================= 優先ブース設定 =================
