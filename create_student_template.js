@@ -6,61 +6,80 @@ async function createStudentDemandTemplate() {
   const workbook = new ExcelJS.Workbook();
 
   // ========================================
-  // シート1: 生徒コマ数表
+  // シート1: 生徒コマ数表（1生徒1行形式）
   // ========================================
   const mainSheet = workbook.addWorksheet('生徒コマ数表');
 
   // ヘッダー行
   const headers = [
-    '生徒名',
-    '科目',
-    'コマ数',
-    '希望講師',
-    'NG講師',
-    '希望曜日',
-    '希望時間帯',
-    'NG曜日',
-    'NG時間帯',
-    '備考'
+    '学年',      // 1
+    '学校名',    // 2
+    '生徒名',    // 3
+    '英',        // 4: 英語
+    '英検',      // 5
+    '数',        // 6: 数学
+    '算',        // 7: 算数
+    '国',        // 8: 国語
+    '理',        // 9: 理科
+    '社',        // 10: 社会
+    '古',        // 11: 古文
+    '物',        // 12: 物理
+    '化',        // 13: 化学
+    '生',        // 14: 生物
+    '',          // 15: 空欄
+    '地',        // 16: 地理
+    '政',        // 17: 政治経済
+    '世',        // 18: 世界史
+    '日',        // 19: 日本史
+    '',          // 20: 空欄
+    '希望講師',  // 21
+    'NG講師',    // 22
+    'NG生徒',    // 23
+    '希望時間',  // 24
+    'NG日程',    // 25
+    '備考'       // 26
   ];
 
   mainSheet.addRow(headers);
 
   // ヘッダー行のスタイル設定
   const headerRow = mainSheet.getRow(1);
-  headerRow.font = { bold: true, size: 11, name: 'Meiryo UI' };
+  headerRow.font = { bold: true, size: 10, name: 'Meiryo UI' };
   headerRow.fill = {
     type: 'pattern',
     pattern: 'solid',
     fgColor: { argb: 'FFD9E1F2' }  // 薄い青
   };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
-  headerRow.height = 20;
+  headerRow.height = 18;
 
   // 列幅設定
-  mainSheet.getColumn(1).width = 15;  // 生徒名
-  mainSheet.getColumn(2).width = 10;  // 科目
-  mainSheet.getColumn(3).width = 8;   // コマ数
-  mainSheet.getColumn(4).width = 15;  // 希望講師
-  mainSheet.getColumn(5).width = 15;  // NG講師
-  mainSheet.getColumn(6).width = 15;  // 希望曜日
-  mainSheet.getColumn(7).width = 15;  // 希望時間帯
-  mainSheet.getColumn(8).width = 15;  // NG曜日
-  mainSheet.getColumn(9).width = 15;  // NG時間帯
-  mainSheet.getColumn(10).width = 20; // 備考
+  mainSheet.getColumn(1).width = 6;   // 学年
+  mainSheet.getColumn(2).width = 12;  // 学校名
+  mainSheet.getColumn(3).width = 12;  // 生徒名
+  // 科目列（4-20）
+  for (let col = 4; col <= 20; col++) {
+    mainSheet.getColumn(col).width = 4;
+  }
+  mainSheet.getColumn(21).width = 12; // 希望講師
+  mainSheet.getColumn(22).width = 12; // NG講師
+  mainSheet.getColumn(23).width = 15; // NG生徒
+  mainSheet.getColumn(24).width = 25; // 希望時間
+  mainSheet.getColumn(25).width = 12; // NG日程
+  mainSheet.getColumn(26).width = 15; // 備考
 
-  // サンプルデータ
+  // サンプルデータ（実際のフォーマットに準拠）
   const sampleData = [
-    ['田中太郎', '数学', 3, '西T', '佐藤T,山田T', '月,水,金', '15:00-18:00', '', '', '受験生'],
-    ['田中太郎', '英語', 2, '鈴木T', '', '月,水,金', '15:00-18:00', '', '', ''],
-    ['佐藤花子', '数学', 2, '', '西T', '火,木', '16:00-19:00', '', '19:00-21:00', '部活あり'],
-    ['鈴木一郎', '理科', 1, '山田T', '', '土', '10:00-15:00', '', '', '土曜のみ通塾'],
+    ['S4', '南蒲小', '松橋', '', '', '', 4, 4, '', '', '', '', '', '', '', '', '', '', '', '', '西T', '', '', '水17,金17,月17,木17', '火,土', ''],
+    ['S4', '糀谷小', '深澤', '', '', '', 8, 4, '', '', '', '', '', '', '', '', '', '', '', '', '', '田中T', '松橋', '月17,火17,木17,月16,火16,木16', '', ''],
+    ['M1', '東中', '佐藤', 2, '', 3, '', 2, '', '', '', '', '', '', '', '', '', '', '', '', '鈴木T', '山田T', '深澤', '月18,水18,金18', '日', '受験生'],
+    ['H2', '西高', '田中', 3, '', 2, '', '', 2, '', '', 2, 2, '', '', '', '', '', '', '', '山田T,西T', '', '', '火19,木19,土17', '月,水', '理系'],
   ];
 
   sampleData.forEach(data => {
     const row = mainSheet.addRow(data);
     row.alignment = { vertical: 'middle' };
-    row.font = { name: 'Meiryo UI', size: 10 };
+    row.font = { name: 'Meiryo UI', size: 9 };
   });
 
   // 罫線を追加
@@ -79,72 +98,12 @@ async function createStudentDemandTemplate() {
 
   // 説明欄を追加（下部）
   const instructionRow = dataRowCount + 2;
-  mainSheet.mergeCells(`A${instructionRow}:J${instructionRow}`);
+  mainSheet.mergeCells(`A${instructionRow}:Z${instructionRow}`);
   const instructionCell = mainSheet.getCell(`A${instructionRow}`);
-  instructionCell.value = '【記入例】希望講師・NG講師: 苗字+"T"で指定（例: 西T, 田中T）。複数指定時はカンマ区切り。希望曜日: 月,火,水,木,金,土,日。希望時間帯: HH:MM-HH:MM形式（例: 15:00-18:00）';
+  instructionCell.value = '【記入例】学年: S4=小4, M1=中1, H2=高2。科目コマ数: 週に必要なコマ数を数字で入力（0または空欄でスキップ）。希望講師/NG講師/NG生徒: 苗字+"T"または生徒名。複数はカンマ区切り。希望時間: 曜日+時刻形式（例: 月17,水19 = 月曜17時,水曜19時）。NG日程: 曜日のカンマ区切り（例: 火,土）';
   instructionCell.font = { size: 9, color: { argb: 'FF666666' }, name: 'Meiryo UI' };
   instructionCell.alignment = { vertical: 'middle', wrapText: true };
-  mainSheet.getRow(instructionRow).height = 30;
-
-  // ========================================
-  // シート2: 隣接NG設定
-  // ========================================
-  const ngSheet = workbook.addWorksheet('隣接NG設定');
-
-  // ヘッダー行
-  const ngHeaders = ['生徒名', '隣接NG生徒名', '理由'];
-  ngSheet.addRow(ngHeaders);
-
-  // ヘッダー行のスタイル設定
-  const ngHeaderRow = ngSheet.getRow(1);
-  ngHeaderRow.font = { bold: true, size: 11, name: 'Meiryo UI' };
-  ngHeaderRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFFCE4D6' }  // 薄いオレンジ
-  };
-  ngHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
-  ngHeaderRow.height = 20;
-
-  // 列幅設定
-  ngSheet.getColumn(1).width = 15;  // 生徒名
-  ngSheet.getColumn(2).width = 20;  // 隣接NG生徒名
-  ngSheet.getColumn(3).width = 30;  // 理由
-
-  // サンプルデータ
-  const ngSampleData = [
-    ['田中太郎', '鈴木一郎,高橋次郎', '私語防止'],
-    ['佐藤花子', '山田三郎', '集中力維持'],
-  ];
-
-  ngSampleData.forEach(data => {
-    const row = ngSheet.addRow(data);
-    row.alignment = { vertical: 'middle' };
-    row.font = { name: 'Meiryo UI', size: 10 };
-  });
-
-  // 罫線を追加
-  const ngDataRowCount = ngSampleData.length + 1;
-  for (let row = 1; row <= ngDataRowCount; row++) {
-    for (let col = 1; col <= ngHeaders.length; col++) {
-      const cell = ngSheet.getCell(row, col);
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      };
-    }
-  }
-
-  // 説明欄を追加
-  const ngInstructionRow = ngDataRowCount + 2;
-  ngSheet.mergeCells(`A${ngInstructionRow}:C${ngInstructionRow}`);
-  const ngInstructionCell = ngSheet.getCell(`A${ngInstructionRow}`);
-  ngInstructionCell.value = '【記入例】隣接NG生徒名: 複数指定時はカンマ区切り（例: 田中太郎,佐藤花子）。同じブースまたは隣のブースに座らせたくない生徒を指定します。';
-  ngInstructionCell.font = { size: 9, color: { argb: 'FF666666' }, name: 'Meiryo UI' };
-  ngInstructionCell.alignment = { vertical: 'middle', wrapText: true };
-  ngSheet.getRow(ngInstructionRow).height = 30;
+  mainSheet.getRow(instructionRow).height = 40;
 
   // ========================================
   // ファイル保存
@@ -153,15 +112,20 @@ async function createStudentDemandTemplate() {
   await workbook.xlsx.writeFile(outputPath);
 
   console.log(`✅ テンプレートファイルを作成しました: ${outputPath}\n`);
-  console.log('【含まれるシート】');
-  console.log('  1. 生徒コマ数表 - 生徒ごとの科目別コマ数と条件');
-  console.log('  2. 隣接NG設定 - 隣接させたくない生徒の組み合わせ\n');
+  console.log('【フォーマット】');
+  console.log('  - 1生徒1行形式');
+  console.log('  - 実際のコマ数表フォーマットに準拠\n');
+  console.log('【列項目】');
+  console.log('  学年, 学校名, 生徒名');
+  console.log('  科目: 英, 英検, 数, 算, 国, 理, 社, 古, 物, 化, 生, 地, 政, 世, 日');
+  console.log('  条件: 希望講師, NG講師, NG生徒, 希望時間, NG日程, 備考\n');
   console.log('【記入方法】');
-  console.log('  - 希望講師/NG講師: 苗字+"T"で指定（例: 西T）');
-  console.log('  - 複数指定: カンマ区切り（例: 西T,田中T）');
-  console.log('  - 希望曜日: 月,火,水,木,金,土,日 から選択');
-  console.log('  - 希望時間帯: HH:MM-HH:MM形式（例: 15:00-18:00）');
-  console.log('  - コマ数: その科目で週に必要なコマ数\n');
+  console.log('  - 学年: S4=小4, M1=中1, H2=高2');
+  console.log('  - 科目コマ数: 週に必要なコマ数を数字で入力');
+  console.log('  - 希望講師/NG講師: 苗字+"T"（例: 西T）、カンマ区切り可');
+  console.log('  - NG生徒: 生徒名をカンマ区切り（例: 松橋,深澤）');
+  console.log('  - 希望時間: 曜日+時刻形式（例: 月17,水19 = 月曜17時,水曜19時）');
+  console.log('  - NG日程: 曜日のカンマ区切り（例: 火,土）\n');
   console.log('=== 作成完了 ===');
 }
 
