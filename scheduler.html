@@ -482,11 +482,8 @@
       }
 
       const dates = [...new Set(lastAssignments.map(a=>a.date))].sort();
-      const booths = [...new Set(lastAssignments.map(a=>a.boothId))].sort((a,b)=>{
-        const na = parseInt(a.replace(/\D/g,'')) || 0;
-        const nb = parseInt(b.replace(/\D/g,'')) || 0;
-        return na - nb;
-      });
+      // 丸付き数字はUnicodeコードポイント順にソート（①②③...の順）
+      const booths = [...new Set(lastAssignments.map(a=>a.boothId))].sort();
       const times = [...new Set(lastAssignments.map(a=>a.time))].sort();
 
       // ブース表フォーマットに揃える: 日付行、曜日行、時間列、ブース番号＋講師名の2列構造
@@ -519,10 +516,8 @@
             const a = lastAssignments.find(x=>x.date===date && x.time===time && x.boothId===booth);
             const cls = (a && a.teacherId) ? 'assigned' : 'empty';
 
-            // ブース番号セル（丸数字に変換）
-            const boothNum = booth.replace('B','');
-            const circledNum = String.fromCodePoint(0x245F + parseInt(boothNum)); // ①②③...
-            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${circledNum}</td>`;
+            // ブース番号セル（丸付き数字をそのまま表示）
+            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${booth}</td>`;
 
             // 講師名セル
             let text = '';
@@ -611,12 +606,8 @@
       return result;
     }
     function circledToBoothId(ch){
-      // ①(U+2460)=1 ... ⑳(U+2473)=20
-      const code = ch.codePointAt(0);
-      const base = 0x2460; // 1
-      const n = (code - base) + 1;
-      if (n >= 1 && n <= 20) return 'B' + n;
-      return 'B?';
+      // 丸付き数字をそのまま返す（変換しない）
+      return ch;
     }
     async function parseBoothExcel(input){
       const file = input.files?.[0];
@@ -858,20 +849,29 @@
           // セルの値を更新
           cell.value = finalValue;
 
-          // フォントとスタイルを設定（MS Pゴシック、サイズ8、縦書き）
+          // フォント設定（MS Pゴシック、サイズ8）
           cell.font = {
-            name: 'MS Pゴシック',
-            size: 8
+            name: 'MS PGothic',  // Excelではこの表記
+            size: 8,
+            family: 1,  // ゴシック系
+            charset: 128  // 日本語
           };
 
-          // 縦書き設定（ExcelJSでは textRotation: 255 が縦書き）
+          // 縦書き設定（ExcelJSでは textRotation に 'vertical' を指定）
           cell.alignment = {
-            textRotation: 255, // 縦書き
+            textRotation: 'vertical',  // 縦書き（最も確実な方法）
             vertical: 'top',
             horizontal: 'center',
-            wrapText: true // 改行を有効化
+            wrapText: true
           };
 
+          // セルの幅を調整（縦書き用）
+          const col = worksheet.getColumn(pos.teacherCol);
+          if (!col.width || col.width < 4) {
+            col.width = 4;  // 縦書きに適した幅
+          }
+
+          console.log(`  📝 フォント設定: ${cellValue} (MS PGothic, 8pt, 縦書き)`);
           assignedCount++;
         }
 
@@ -988,12 +988,8 @@
 
       console.log('講師数:', Object.keys(teachers).length);
 
-      // ブースリストを取得（重複排除）
-      const booths = [...new Set(boothData.map(b => b.boothId))].sort((a,b) => {
-        const na = parseInt(a.replace(/\D/g,'')) || 0;
-        const nb = parseInt(b.replace(/\D/g,'')) || 0;
-        return na - nb;
-      });
+      // ブースリストを取得（重複排除、丸付き数字順にソート）
+      const booths = [...new Set(boothData.map(b => b.boothId))].sort();
 
       console.log('ブース数:', booths.length);
       console.log('ブースリスト:', booths);
@@ -1023,14 +1019,11 @@
         optNone.textContent = '指定なし';
         select.appendChild(optNone);
 
-        // ブースオプション（丸付き数字で表示）
+        // ブースオプション（丸付き数字をそのまま表示）
         for(const boothId of booths){
           const opt = document.createElement('option');
           opt.value = boothId;
-          // B1→①, B2→②のように丸付き数字に変換
-          const boothNum = parseInt(boothId.replace(/\D/g,'')) || 0;
-          const circledNum = String.fromCodePoint(0x245F + boothNum);
-          opt.textContent = circledNum;
+          opt.textContent = boothId; // 丸付き数字をそのまま表示
           select.appendChild(opt);
         }
 
