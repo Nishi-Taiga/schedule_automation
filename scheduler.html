@@ -787,13 +787,35 @@
           .map(a => a.teacherName))];
         console.log('全講師名リスト:', allTeacherNames);
 
-        // 元のワークブック全体をディープコピー
-        const wb = {
-          SheetNames: [...originalBoothWorkbook.SheetNames],
-          Sheets: {}
-        };
+        // 元のワークブック全体を完全にディープコピー
+        console.log('元のブース表ワークブックを完全コピー中...');
+        const wb = {};
 
-        // すべてのシートをコピー
+        // ワークブックの全プロパティをコピー（Props, Custprops, Workbook, vbaraw等も含む）
+        for(const key in originalBoothWorkbook){
+          if(originalBoothWorkbook.hasOwnProperty(key)){
+            if(key === 'SheetNames'){
+              // SheetNamesは配列なので個別コピー
+              wb.SheetNames = [...originalBoothWorkbook.SheetNames];
+            } else if(key === 'Sheets'){
+              // Sheetsは後で個別処理
+              wb.Sheets = {};
+            } else if(typeof originalBoothWorkbook[key] === 'object' && originalBoothWorkbook[key] !== null){
+              // その他のオブジェクトプロパティ（Props, Custprops, Workbook等）
+              try {
+                wb[key] = JSON.parse(JSON.stringify(originalBoothWorkbook[key]));
+              } catch(e) {
+                // JSON化できないプロパティはそのままコピー
+                wb[key] = originalBoothWorkbook[key];
+              }
+            } else {
+              // プリミティブ値はそのままコピー
+              wb[key] = originalBoothWorkbook[key];
+            }
+          }
+        }
+
+        // すべてのシートを完全コピー
         for(const sheetName of wb.SheetNames){
           const originalSheet = originalBoothWorkbook.Sheets[sheetName];
           const newSheet = {};
@@ -803,7 +825,12 @@
             if(originalSheet.hasOwnProperty(key)){
               if(typeof originalSheet[key] === 'object' && originalSheet[key] !== null){
                 // オブジェクトはディープコピー
-                newSheet[key] = JSON.parse(JSON.stringify(originalSheet[key]));
+                try {
+                  newSheet[key] = JSON.parse(JSON.stringify(originalSheet[key]));
+                } catch(e) {
+                  // JSON化できない場合はそのままコピー
+                  newSheet[key] = originalSheet[key];
+                }
               } else {
                 newSheet[key] = originalSheet[key];
               }
@@ -812,6 +839,12 @@
 
           wb.Sheets[sheetName] = newSheet;
         }
+
+        console.log('ワークブック完全コピー完了:', {
+          シート数: wb.SheetNames.length,
+          シート名: wb.SheetNames.join(', '),
+          追加プロパティ: Object.keys(wb).filter(k => k !== 'Sheets' && k !== 'SheetNames')
+        });
 
         // 対象シートに割当結果を上書き
         const targetSheetName = boothSheetInfo.sheetName;
