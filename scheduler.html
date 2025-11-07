@@ -933,16 +933,27 @@
           // セルの値を更新
           cell.value = finalValue;
 
-          // 後でフォーマット設定するためにセル情報を記録
-          formattedCells.push({ cell, pos, cellValue });
+          // 後でフォーマット設定するためにセル位置情報を記録（cellオブジェクトではなく行列番号を記録）
+          formattedCells.push({ row: pos.row, col: pos.teacherCol, cellValue });
           assignedCount++;
         }
 
         console.log(`${assignedCount}件の講師を記入完了`);
+        console.log(`formattedCells配列の長さ: ${formattedCells.length}`);
 
         // ステップ2: フォント設定と縦書き設定を適用
         console.log('ステップ2: フォント・縦書き設定を適用中...');
-        for(const {cell, pos, cellValue} of formattedCells){
+        let formatCount = 0;
+        for(const {row, col, cellValue} of formattedCells){
+          formatCount++;
+          console.log(`  [${formatCount}] セル(${row}, ${col}): "${cellValue}"`);
+
+          // セルを再取得（重要: ここで新しく取得する）
+          const cell = worksheet.getCell(row, col);
+
+          // 設定前の状態を確認
+          console.log(`    設定前: font=${JSON.stringify(cell.font)}, alignment=${JSON.stringify(cell.alignment)}`);
+
           // フォント設定（直接設定で上書き）
           cell.font = {
             name: 'MS PGothic',  // Excelではこの表記
@@ -959,13 +970,14 @@
             wrapText: true
           };
 
-          // セルの幅を調整（縦書き用）
-          const col = worksheet.getColumn(pos.teacherCol);
-          if (!col.width || col.width < 4) {
-            col.width = 4;  // 縦書きに適した幅
-          }
+          // 設定後の状態を確認
+          console.log(`    設定後: font=${JSON.stringify(cell.font)}, alignment=${JSON.stringify(cell.alignment)}`);
 
-          console.log(`  📝 フォント設定: ${cellValue} (MS PGothic, 8pt, 縦書き)`);
+          // セルの幅を調整（縦書き用）
+          const column = worksheet.getColumn(col);
+          if (!column.width || column.width < 4) {
+            column.width = 4;  // 縦書きに適した幅
+          }
         }
 
         console.log(`${formattedCells.length}件のフォーマット設定完了`);
