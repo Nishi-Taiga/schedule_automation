@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>時間割 自動割当（スケジューラ）</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Meiryo, sans-serif; padding: 24px; line-height: 1.6; }
     h1 { font-size: 1.25rem; margin: 0 0 12px; }
@@ -195,7 +195,7 @@
     let lastAssignments = []; // 割当結果を保存
     let boothData = []; // ブース表から読み込んだデータ
     let teacherData = []; // 元シートから読み込んだデータ
-    let originalBoothWorkbook = null; // 元のブース表Excelワークブック
+    let originalBoothWorkbook = null; // 元のブース表ExcelJSワークブック（書式完全保持）
     let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
     let teacherPreferences = {}; // 講師の優先ブース設定 { teacherId: 'B1' }
 
@@ -241,6 +241,25 @@
         const teacherDailyCount = new Map(); // key(date + teacherId) -> count
         const teacherDailyBooth = new Map(); // key(date + teacherId) -> boothId (1日内でブース固定)
 
+        // 各講師の日付ごとの最早出勤時刻を計算
+        const teacherEarliestTime = new Map(); // key(date + ' ' + teacherId) -> earliest time string
+        for(const t of teachers){
+          const dailyKey = t.date + ' ' + t.teacherId;
+          const currentEarliest = teacherEarliestTime.get(dailyKey);
+          if(!currentEarliest || t.time < currentEarliest){
+            teacherEarliestTime.set(dailyKey, t.time);
+          }
+        }
+        console.log('講師の最早出勤時刻:', teacherEarliestTime);
+
+        // ヘルパー関数: 講師が指定ブースに割り当て可能かチェック（1日内ブース固定ルール）
+        const canAssignTeacherToBooth = (teacher, boothId) => {
+          const dailyKey = teacher.date + ' ' + teacher.teacherId;
+          const assignedBooth = teacherDailyBooth.get(dailyKey);
+          // 未割り当てか、同じブースの場合のみOK
+          return !assignedBooth || assignedBooth === boothId;
+        };
+
         const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
 
         // Iterate over time slots in chronological order
@@ -250,8 +269,17 @@
           const thList = (teachersByTime.get(tkey) || []).slice();
           const ddList = (demandByTime.get(tkey) || []).slice();
 
-          // Sort teachers by simple availability score (fewer assigned today first)
-          thList.sort((a,b) => (teacherDailyCount.get(a.date+' '+a.teacherId)||0) - (teacherDailyCount.get(b.date+' '+b.teacherId)||0));
+          // Sort teachers by: 1) earliest start time, 2) fewer assigned today
+          thList.sort((a,b) => {
+            const aKey = a.date + ' ' + a.teacherId;
+            const bKey = b.date + ' ' + b.teacherId;
+            // 優先度1: 出勤開始時刻が早い講師を優先
+            const aEarliest = teacherEarliestTime.get(aKey) || '99:99:99';
+            const bEarliest = teacherEarliestTime.get(bKey) || '99:99:99';
+            if(aEarliest !== bEarliest) return aEarliest.localeCompare(bEarliest);
+            // 優先度2: その日の割り当て数が少ない講師を優先
+            return (teacherDailyCount.get(aKey)||0) - (teacherDailyCount.get(bKey)||0);
+          });
 
           // Sort demands by priority desc
           ddList.sort((a,b) => (b.priority||0) - (a.priority||0));
@@ -271,6 +299,10 @@
           for(const teacher of thList){
             const prefBooth = teacherPreferences[teacher.teacherId];
             if(!prefBooth) continue; // 優先ブース設定がない講師はスキップ
+            if(prefBooth === 'EXCLUDE') {
+              console.log(`  ⛔ ${teacher.teacherName}: 除外設定のためスキップ`);
+              continue; // 除外設定の講師はスキップ
+            }
 
             const isTeacherAvailable = !usedTeacherAt.has(tkey+' '+teacher.teacherId);
             if(!isTeacherAvailable) continue; // 既に割り当て済み
@@ -331,13 +363,23 @@
 
               // Attempt preferred first
               if (preferred && !ngSet.has(preferred)){
-                const th = thList.find(x => x.teacherId === preferred && !usedTeacherAt.has(tkey+' '+x.teacherId));
+                const th = thList.find(x =>
+                  x.teacherId === preferred &&
+                  !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                  teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
+                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                );
                 if (th){ assignedTeacher = th; assignedDemand = demand; }
               }
 
               if (!assignedTeacher){
                 // pick any available teacher not in NG
-                const th2 = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId) && !ngSet.has(x.teacherId));
+                const th2 = thList.find(x =>
+                  !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                  !ngSet.has(x.teacherId) &&
+                  teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
+                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                );
                 if (th2){ assignedTeacher = th2; assignedDemand = demand; }
               }
 
@@ -351,7 +393,8 @@
                 const dailyKey = slot.date + ' ' + x.teacherId;
                 const assignedBooth = teacherDailyBooth.get(dailyKey);
                 return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-                       assignedBooth === slot.boothId;
+                       assignedBooth === slot.boothId &&
+                       teacherPreferences[x.teacherId] !== 'EXCLUDE';
               });
 
               if (existingBoothTeacher) {
@@ -360,8 +403,13 @@
               }
 
               // 優先度2: 空いている講師（通常割り当て）
+              // ただし、1日内ブース固定ルールを厳守（既に別のブースに割り当て済みの講師は除外）
               if (!assignedTeacher) {
-                assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
+                assignedTeacher = thList.find(x =>
+                  !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                  teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
+                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+                );
                 if(assignedTeacher){
                   console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
                 }
@@ -482,11 +530,8 @@
       }
 
       const dates = [...new Set(lastAssignments.map(a=>a.date))].sort();
-      const booths = [...new Set(lastAssignments.map(a=>a.boothId))].sort((a,b)=>{
-        const na = parseInt(a.replace(/\D/g,'')) || 0;
-        const nb = parseInt(b.replace(/\D/g,'')) || 0;
-        return na - nb;
-      });
+      // 丸付き数字はUnicodeコードポイント順にソート（①②③...の順）
+      const booths = [...new Set(lastAssignments.map(a=>a.boothId))].sort();
       const times = [...new Set(lastAssignments.map(a=>a.time))].sort();
 
       // ブース表フォーマットに揃える: 日付行、曜日行、時間列、ブース番号＋講師名の2列構造
@@ -519,10 +564,8 @@
             const a = lastAssignments.find(x=>x.date===date && x.time===time && x.boothId===booth);
             const cls = (a && a.teacherId) ? 'assigned' : 'empty';
 
-            // ブース番号セル（丸数字に変換）
-            const boothNum = booth.replace('B','');
-            const circledNum = String.fromCodePoint(0x245F + parseInt(boothNum)); // ①②③...
-            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${circledNum}</td>`;
+            // ブース番号セル（B1形式を丸付き数字に変換して表示）
+            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${boothIdToCircled(booth)}</td>`;
 
             // 講師名セル
             let text = '';
@@ -582,7 +625,8 @@
         return `${hh}:${mm}:${ss}`;
       }
       if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)){
-        return `${pad2(v.getHours())}:${pad2(v.getMinutes())}:${pad2(v.getSeconds())}`;
+        // ExcelJSはUTC時刻で返すため、getUTCHours()を使用
+        return `${pad2(v.getUTCHours())}:${pad2(v.getUTCMinutes())}:${pad2(v.getUTCSeconds())}`;
       }
       return null;
     }
@@ -611,53 +655,140 @@
       return result;
     }
     function circledToBoothId(ch){
-      // ①(U+2460)=1 ... ⑳(U+2473)=20
-      const code = ch.codePointAt(0);
-      const base = 0x2460; // 1
-      const n = (code - base) + 1;
-      if (n >= 1 && n <= 20) return 'B' + n;
-      return 'B?';
+      // 丸付き数字（①-⑳）を B1, B2... に変換
+      const code = ch.charCodeAt(0);
+      if (code >= 0x2460 && code <= 0x2473) {
+        const num = code - 0x2460 + 1;
+        return `B${num}`;
+      }
+      return ch; // 丸付き数字でない場合はそのまま返す
     }
+    function boothIdToCircled(boothId){
+      // B1, B2... を丸付き数字（①②...）に変換
+      const match = boothId.match(/^B(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num >= 1 && num <= 20) {
+          return String.fromCharCode(0x2460 + num - 1);
+        }
+      }
+      return boothId; // B1形式でない場合はそのまま返す
+    }
+
+    // ExcelJSのセル値を安全に取得するヘルパー関数
+    function getCellValue(cell){
+      if (cell.value === undefined || cell.value === null) {
+        return null;
+      }
+      // リッチテキストの場合
+      if (typeof cell.value === 'object' && cell.value.richText) {
+        return cell.value.richText.map(part => part.text).join('');
+      }
+      // その他（文字列、数値、日付など）
+      return cell.value;
+    }
+
     async function parseBoothExcel(input){
       const file = input.files?.[0];
       if (!file){ $('boothExcelStatus').textContent = 'ファイル未選択'; return; }
       try{
+        console.log('🔵 parseBoothExcel: 開始');
         const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { cellText:false, cellDates:true });
-        const sheetName = wb.SheetNames[0];
-        const sheet = wb.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true });
+        console.log('🔵 ファイル読み込み完了:', buf.byteLength, 'bytes');
+
+        // ExcelJSの存在確認
+        if (typeof ExcelJS === 'undefined') {
+          throw new Error('ExcelJSライブラリが読み込まれていません');
+        }
+
+        // ExcelJSでワークブックを読み込み（書式完全保持）
+        const workbook = new ExcelJS.Workbook();
+        console.log('🔵 ExcelJS.Workbook作成完了');
+
+        await workbook.xlsx.load(buf);
+        console.log('🔵 workbook.xlsx.load完了');
+
+        const worksheet = workbook.worksheets[0];
+        const sheetName = worksheet.name;
+        console.log('🔵 ワークシート取得完了:', sheetName);
+
+        // 行データを配列形式に変換（SheetJSの rows 互換）
+        const rows = [];
+        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+          const rowData = [];
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            // セルの値を安全に取得（マージセル、リッチテキスト対応）
+            let cellValue;
+            try {
+              // 日付・時刻セルの場合は cell.value (Date object) を優先
+              if (cell.value instanceof Date) {
+                cellValue = cell.value;
+              } else if (cell.text !== undefined && cell.text !== null) {
+                cellValue = cell.text;
+              } else {
+                cellValue = getCellValue(cell);
+              }
+            } catch (e) {
+              // cell.textでエラーが発生した場合（マージセルなど）
+              cellValue = getCellValue(cell);
+            }
+            rowData[colNumber - 1] = cellValue;
+          });
+          rows[rowNumber - 1] = rowData;
+        });
+        console.log('🔵 行データ変換完了:', rows.length, '行');
+        console.log('🔵 最初の5行のデータ:');
+        for (let i = 0; i < Math.min(5, rows.length); i++) {
+          console.log(`  行${i}:`, rows[i]?.slice(0, 8)); // 最初の8列だけ
+        }
+
         let ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
         if (!ym) throw new Error('年/月の自動検出に失敗しました。');
         const timeColIdx = 1; // B列
         const effTimes = buildEffectiveTimes(rows, timeColIdx);
+        console.log('🔵 effTimes取得完了:', effTimes.filter(t => t).length, '件');
         const dayCols = collectDayColumns(rows, timeColIdx);
+        console.log('🔵 dayCols取得完了:', dayCols.length, '件', dayCols);
         if (!dayCols.length) throw new Error('日付/曜日ヘッダ行が見つかりません (行0=日, 行1=曜日)');
 
         // スロット情報とセル位置のマッピングを作成
         const slots = [];
         const cellPositions = {}; // key: "date_time_boothId" -> {row, col, teacherCol}
 
+        let matchCount = 0;
+        let totalChecked = 0;
         for (let r=0;r<rows.length;r++){
           const t = effTimes[r];
           if (!t) continue;
           for (const {col, day} of dayCols){
             const v = rows[r]?.[col];
+            totalChecked++;
             if (v == null) continue;
             const m = String(v).match(circledRegex);
-            if (!m) continue;
+            if (!m) {
+              if (totalChecked <= 10) { // 最初の10個だけログ
+                console.log(`🔵 マッチなし: 行${r}, 列${col}, 値="${v}"`);
+              }
+              continue;
+            }
+            matchCount++;
             const boothId = circledToBoothId(m[0]);
             const date = `${ym.year}/${ym.month}/${pad2(day)}`;
+            if (matchCount <= 5) { // 最初の5個だけログ
+              console.log(`🔵 マッチ: 行${r}, 列${col}, 値="${v}", 丸付き数字="${m[0]}", boothId="${boothId}"`);
+            }
             slots.push({ date, time: t, boothId });
             // ブース番号セル (col) の右隣 (col+1) が講師名記入欄
-            cellPositions[`${date}_${t}_${boothId}`] = { row: r, col, teacherCol: col + 1 };
+            // ExcelJSは1始まりなので +1 する
+            cellPositions[`${date}_${t}_${boothId}`] = { row: r + 1, col: col + 1, teacherCol: col + 2 };
           }
         }
+        console.log(`🔵 ブース番号検出: ${matchCount}件のマッチ / ${totalChecked}セルを確認`);
 
         slots.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
 
-        // 元のワークブックとシート情報を保存
-        originalBoothWorkbook = wb;
+        // ExcelJSワークブックとシート情報を保存
+        originalBoothWorkbook = workbook;
         boothSheetInfo = {
           sheetName,
           cellPositions,
@@ -665,9 +796,12 @@
         };
 
         boothData = slots;
-        $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${slots.length}件`;
+        console.log('🔵 parseBoothExcel: 完了 -', slots.length, '件');
+        $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${slots.length}件（書式保持モード）`;
       }catch(e){
-        console.error(e); $('boothExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
+        console.error('❌ parseBoothExcel エラー:', e);
+        console.error('エラースタック:', e.stack);
+        $('boothExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
       }
     }
 
@@ -728,7 +862,10 @@
     }
     function cleanTeacherName(s){
       if (s == null) return null;
-      const t = String(s).replace(/\u3000/g, ' ').trim().replace(/\s+/g,' ');
+      // 丸付き数字（①-⑳）を除外
+      let t = String(s).replace(/[\u2460-\u2473]/g, '');
+      // 全角スペースを半角に変換、トリム、連続スペースを1つに
+      t = t.replace(/\u3000/g, ' ').trim().replace(/\s+/g,' ');
       return t.length ? t : null;
     }
     function idFromName(name){
@@ -768,8 +905,8 @@
         return surname + 'T'; // 苗字+T
       }
     }
-    // ================= Excel export: ブース表形式 =================
-    function saveAsExcel(mode){
+    // ================= Excel export: ブース表形式（ExcelJS - 書式完全保持）=================
+    async function saveAsExcel(mode){
       try{
         if(lastAssignments.length === 0){
           excelStatus.innerHTML = '<span class="err">エラー:</span> 割当を先に実行してください';
@@ -777,7 +914,7 @@
         }
 
         if(!originalBoothWorkbook){
-          excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表が見つかりません';
+          excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表ワークブックが見つかりません';
           return;
         }
 
@@ -787,70 +924,21 @@
           .map(a => a.teacherName))];
         console.log('全講師名リスト:', allTeacherNames);
 
-        // 元のワークブック全体を完全にディープコピー
-        console.log('元のブース表ワークブックを完全コピー中...');
-        const wb = {};
+        console.log('ExcelJSで元のワークブックに講師を記入中...');
 
-        // ワークブックの全プロパティをコピー（Props, Custprops, Workbook, vbaraw等も含む）
-        for(const key in originalBoothWorkbook){
-          if(originalBoothWorkbook.hasOwnProperty(key)){
-            if(key === 'SheetNames'){
-              // SheetNamesは配列なので個別コピー
-              wb.SheetNames = [...originalBoothWorkbook.SheetNames];
-            } else if(key === 'Sheets'){
-              // Sheetsは後で個別処理
-              wb.Sheets = {};
-            } else if(typeof originalBoothWorkbook[key] === 'object' && originalBoothWorkbook[key] !== null){
-              // その他のオブジェクトプロパティ（Props, Custprops, Workbook等）
-              try {
-                wb[key] = JSON.parse(JSON.stringify(originalBoothWorkbook[key]));
-              } catch(e) {
-                // JSON化できないプロパティはそのままコピー
-                wb[key] = originalBoothWorkbook[key];
-              }
-            } else {
-              // プリミティブ値はそのままコピー
-              wb[key] = originalBoothWorkbook[key];
-            }
-          }
-        }
-
-        // すべてのシートを完全コピー
-        for(const sheetName of wb.SheetNames){
-          const originalSheet = originalBoothWorkbook.Sheets[sheetName];
-          const newSheet = {};
-
-          // シートの全プロパティをコピー（!refや!mergesなども含む）
-          for(const key in originalSheet){
-            if(originalSheet.hasOwnProperty(key)){
-              if(typeof originalSheet[key] === 'object' && originalSheet[key] !== null){
-                // オブジェクトはディープコピー
-                try {
-                  newSheet[key] = JSON.parse(JSON.stringify(originalSheet[key]));
-                } catch(e) {
-                  // JSON化できない場合はそのままコピー
-                  newSheet[key] = originalSheet[key];
-                }
-              } else {
-                newSheet[key] = originalSheet[key];
-              }
-            }
-          }
-
-          wb.Sheets[sheetName] = newSheet;
-        }
-
-        console.log('ワークブック完全コピー完了:', {
-          シート数: wb.SheetNames.length,
-          シート名: wb.SheetNames.join(', '),
-          追加プロパティ: Object.keys(wb).filter(k => k !== 'Sheets' && k !== 'SheetNames')
-        });
-
-        // 対象シートに割当結果を上書き
+        // 対象シートを取得
         const targetSheetName = boothSheetInfo.sheetName;
-        const targetSheet = wb.Sheets[targetSheetName];
+        const worksheet = originalBoothWorkbook.getWorksheet(targetSheetName);
 
-        // 割当結果で上書き
+        if(!worksheet){
+          throw new Error(`シート "${targetSheetName}" が見つかりません`);
+        }
+
+        // ステップ1: 割当結果をセルに書き込む（値のみ）
+        console.log('ステップ1: セル値を書き込み中...');
+        let assignedCount = 0;
+        const formattedCells = []; // フォーマット設定が必要なセルを記録
+
         for(const assignment of lastAssignments){
           if(!assignment.teacherId) continue; // 講師が割り当てられていない場合はスキップ
 
@@ -859,8 +947,8 @@
 
           if(!pos) continue;
 
-          // 講師名はブース番号セルの右隣（teacherCol）に書き込む
-          const cellAddr = XLSX.utils.encode_cell({r: pos.row, c: pos.teacherCol});
+          // ExcelJSでセルを取得（1始まり、pos.rowとpos.teacherColは既に1始まり）
+          const cell = worksheet.getCell(pos.row, pos.teacherCol);
 
           let cellValue = '';
           if(mode === 'teacher'){
@@ -874,21 +962,118 @@
             cellValue = teacher + student + subject;
           }
 
-          // 元のセルのスタイル情報を保持しつつ値を更新
-          const originalCell = targetSheet[cellAddr];
-          if(originalCell){
-            targetSheet[cellAddr] = { ...originalCell, v: cellValue, t: 's' };
-          } else {
-            targetSheet[cellAddr] = { t: 's', v: cellValue };
+          // 既存のセル値をチェック（丸付き数字がある場合は保持）
+          let existingValue = cell.value || '';
+          let finalValue = cellValue;
+
+          // 既存の値が文字列で、丸付き数字が含まれている場合は保持して改行追加
+          if (typeof existingValue === 'string' && /[\u2460-\u2473]/.test(existingValue)) {
+            // 丸付き数字 + 改行 + 講師名
+            finalValue = existingValue.trim() + '\n' + cellValue;
+            console.log(`  既存の丸付き数字を保持: ${existingValue.trim()} → ${finalValue}`);
+          }
+
+          // セルの値を更新
+          cell.value = finalValue;
+
+          // 後でフォーマット設定するためにセル位置情報を記録（cellオブジェクトではなく行列番号を記録）
+          formattedCells.push({ row: pos.row, col: pos.teacherCol, cellValue });
+          assignedCount++;
+        }
+
+        console.log(`${assignedCount}件の講師を記入完了`);
+        console.log(`formattedCells配列の長さ: ${formattedCells.length}`);
+
+        // ステップ2: フォント設定と縦書き設定を適用
+        console.log('ステップ2: フォント・縦書き設定を適用中...');
+        let formatCount = 0;
+        for(const {row, col, cellValue} of formattedCells){
+          formatCount++;
+          console.log(`  [${formatCount}] セル(${row}, ${col}): "${cellValue}"`);
+
+          // セルを再取得（重要: ここで新しく取得する）
+          const cell = worksheet.getCell(row, col);
+
+          // 設定前の状態を確認
+          console.log(`    設定前: font=${JSON.stringify(cell.font)}, alignment=${JSON.stringify(cell.alignment)}`);
+
+          // フォント設定（直接設定で上書き）
+          // 縦書き用フォントは '@' を先頭に付ける
+          cell.font = {
+            name: '@MS PGothic',  // 縦書き用フォント（@を先頭に付ける）
+            size: 8,
+            family: 1,  // ゴシック系
+            charset: 128  // 日本語
+          };
+
+          // 縦書き設定（直接設定で上書き）
+          cell.alignment = {
+            textRotation: 'vertical',  // ExcelJSでは文字列'vertical'を使用
+            vertical: 'top',
+            horizontal: 'center',
+            wrapText: true
+          };
+
+          // 設定後の状態を確認
+          console.log(`    設定後: font=${JSON.stringify(cell.font)}, alignment=${JSON.stringify(cell.alignment)}`);
+
+          // セルの幅を調整（縦書き用）
+          const column = worksheet.getColumn(col);
+          if (!column.width || column.width < 4) {
+            column.width = 4;  // 縦書きに適した幅
           }
         }
+
+        console.log(`${formattedCells.length}件のフォーマット設定完了`);
 
         const filename = mode === 'teacher'
           ? makeTsPrefix() + '_講師配置済みブース表.xlsx'
           : makeTsPrefix() + '_生徒配置済みブース表.xlsx';
 
-        XLSX.writeFile(wb, filename);
-        excelStatus.innerHTML = `<span class="ok">✓</span> ${filename} を保存しました`;
+        console.log('ExcelJSでファイルを生成中:', filename);
+
+        // ExcelJSでバイナリを生成
+        const buffer = await originalBoothWorkbook.xlsx.writeBuffer();
+
+        // 保存直前の検証: バッファを再読み込みしてフォーマットを確認
+        console.log('\n🔍 保存直前の検証: バッファを再読み込みして確認');
+        const verifyWorkbook = new ExcelJS.Workbook();
+        await verifyWorkbook.xlsx.load(buffer);
+        const verifyWorksheet = verifyWorkbook.getWorksheet(targetSheetName);
+
+        // 最初の3件のセルを確認
+        let verifyCount = 0;
+        for(const {row, col, cellValue} of formattedCells){
+          if(verifyCount >= 3) break;
+          verifyCount++;
+          const verifyCell = verifyWorksheet.getCell(row, col);
+          console.log(`  セル(${row}, ${col}): "${verifyCell.value}"`);
+          console.log(`    font: ${JSON.stringify(verifyCell.font)}`);
+          console.log(`    alignment: ${JSON.stringify(verifyCell.alignment)}`);
+
+          const fontOK = verifyCell.font?.name === '@MS PGothic' && verifyCell.font?.size === 8;
+          const alignmentOK = verifyCell.alignment?.textRotation === 'vertical';
+          if (fontOK && alignmentOK) {
+            console.log(`    ✅ 検証OK`);
+          } else {
+            console.log(`    ❌ 検証NG`);
+            if (!fontOK) console.log(`       フォント: ${verifyCell.font?.name}, サイズ: ${verifyCell.font?.size}`);
+            if (!alignmentOK) console.log(`       縦書き: ${verifyCell.alignment?.textRotation}`);
+          }
+        }
+        console.log('');
+
+        // Blobとしてダウンロード
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        console.log('✓ ファイル保存完了:', filename);
+        excelStatus.innerHTML = `<span class="ok">✓</span> ${filename} を保存しました（書式完全保持・ExcelJS）`;
       }catch(e){
         console.error(e);
         excelStatus.innerHTML = `<span class="err">エラー:</span> ${e.message}`;
@@ -899,11 +1084,58 @@
       const file = input.files?.[0];
       if (!file){ $('teacherExcelStatus').textContent = 'ファイル未選択'; return; }
       try{
+        console.log('🟢 parseTeacherExcel: 開始');
         const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { cellText:false, cellDates:true });
-        const sheetName = wb.SheetNames[0];
-        const sheet = wb.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true });
+        console.log('🟢 ファイル読み込み完了:', buf.byteLength, 'bytes');
+
+        // ExcelJSでワークブックを読み込み
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buf);
+        console.log('🟢 workbook.xlsx.load完了');
+
+        const worksheet = workbook.worksheets[0];
+        const sheetName = worksheet.name;
+        console.log('🟢 ワークシート取得完了:', sheetName);
+
+        // 行データを配列形式に変換
+        const rows = [];
+        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+          const rowData = [];
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            // セルの値を安全に取得（マージセル、リッチテキスト対応）
+            let cellValue;
+            try {
+              // 日付セルの場合は cell.value (Date object) を優先
+              if (cell.value instanceof Date) {
+                cellValue = cell.value;
+              } else if (cell.text !== undefined && cell.text !== null) {
+                cellValue = cell.text;
+              } else {
+                cellValue = getCellValue(cell);
+              }
+            } catch (e) {
+              // cell.textでエラーが発生した場合（マージセルなど）
+              cellValue = getCellValue(cell);
+            }
+            rowData[colNumber - 1] = cellValue;
+
+            // デバッグ: 講師名らしきセルの値を詳細ログ
+            if (rowNumber > 2 && colNumber > 2 && cellValue) {
+              const valueType = typeof cell.value;
+              if (valueType === 'object' && cell.value !== null && !Array.isArray(cell.value) && !(cell.value instanceof Date)) {
+                console.log(`📊 セル(${rowNumber}, ${colNumber}):`, {
+                  'cell.value': cell.value,
+                  'cell.text': cell.text,
+                  '使用する値': cellValue,
+                  '型': valueType
+                });
+              }
+            }
+          });
+          rows[rowNumber - 1] = rowData;
+        });
+        console.log('🟢 行データ変換完了:', rows.length, '行');
+
         const ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
         const pairs = collectDateTeacherColumns(rows, ym);
         if (!pairs.length) throw new Error('日付列が見つかりません。上の 年/月 を指定の上、ヘッダ行に 11/03 等があることをご確認ください。');
@@ -924,8 +1156,13 @@
         }
         shifts.sort((a,b)=> (a.date+a.time+a.teacherId).localeCompare(b.date+b.time+b.teacherId));
         teacherData = shifts;
+        console.log('🟢 parseTeacherExcel: 完了 -', shifts.length, '件');
         $('teacherExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${shifts.length}件`;
-      }catch(e){ console.error(e); $('teacherExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`; }
+      }catch(e){
+        console.error('❌ parseTeacherExcel エラー:', e);
+        console.error('エラースタック:', e.stack);
+        $('teacherExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
+      }
     }
 
     // ================= 優先ブース設定 =================
@@ -950,12 +1187,8 @@
 
       console.log('講師数:', Object.keys(teachers).length);
 
-      // ブースリストを取得（重複排除）
-      const booths = [...new Set(boothData.map(b => b.boothId))].sort((a,b) => {
-        const na = parseInt(a.replace(/\D/g,'')) || 0;
-        const nb = parseInt(b.replace(/\D/g,'')) || 0;
-        return na - nb;
-      });
+      // ブースリストを取得（重複排除、丸付き数字順にソート）
+      const booths = [...new Set(boothData.map(b => b.boothId))].sort();
 
       console.log('ブース数:', booths.length);
       console.log('ブースリスト:', booths);
@@ -985,14 +1218,19 @@
         optNone.textContent = '指定なし';
         select.appendChild(optNone);
 
-        // ブースオプション（丸付き数字で表示）
+        // 「除外」オプション
+        const optExclude = document.createElement('option');
+        optExclude.value = 'EXCLUDE';
+        optExclude.textContent = '除外（割り当てしない）';
+        optExclude.style.color = '#dc2626';
+        optExclude.style.fontWeight = '600';
+        select.appendChild(optExclude);
+
+        // ブースオプション（B1形式を丸付き数字に変換して表示）
         for(const boothId of booths){
           const opt = document.createElement('option');
           opt.value = boothId;
-          // B1→①, B2→②のように丸付き数字に変換
-          const boothNum = parseInt(boothId.replace(/\D/g,'')) || 0;
-          const circledNum = String.fromCodePoint(0x245F + boothNum);
-          opt.textContent = circledNum;
+          opt.textContent = boothIdToCircled(boothId); // B1 → ①
           select.appendChild(opt);
         }
 
