@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>時間割 自動割当（スケジューラ）</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Meiryo, sans-serif; padding: 24px; line-height: 1.6; }
     h1 { font-size: 1.25rem; margin: 0 0 12px; }
@@ -195,8 +195,7 @@
     let lastAssignments = []; // 割当結果を保存
     let boothData = []; // ブース表から読み込んだデータ
     let teacherData = []; // 元シートから読み込んだデータ
-    let originalBoothWorkbook = null; // 元のブース表Excelワークブック
-    let originalBoothFileBuffer = null; // 元のブース表ファイルのバイナリデータ（完全コピー用）
+    let originalBoothWorkbook = null; // 元のブース表ExcelJSワークブック（書式完全保持）
     let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
     let teacherPreferences = {}; // 講師の優先ブース設定 { teacherId: 'B1' }
 
@@ -624,15 +623,26 @@
       if (!file){ $('boothExcelStatus').textContent = 'ファイル未選択'; return; }
       try{
         const buf = await file.arrayBuffer();
+        console.log('元のブース表ファイルを読み込み中...', buf.byteLength, 'bytes');
 
-        // 元のファイルのバイナリデータを保存（完全コピー用）
-        originalBoothFileBuffer = buf.slice(0); // コピーを作成
-        console.log('元のブース表ファイルのバイナリデータを保存しました:', buf.byteLength, 'bytes');
+        // ExcelJSでワークブックを読み込み（書式完全保持）
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buf);
 
-        const wb = XLSX.read(buf, { cellText:false, cellDates:true });
-        const sheetName = wb.SheetNames[0];
-        const sheet = wb.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true });
+        const worksheet = workbook.worksheets[0];
+        const sheetName = worksheet.name;
+        console.log('ExcelJSでワークブック読み込み完了:', sheetName);
+
+        // 行データを配列形式に変換（SheetJSの rows 互換）
+        const rows = [];
+        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+          const rowData = [];
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            rowData[colNumber - 1] = cell.value; // ExcelJSは1始まり、配列は0始まり
+          });
+          rows[rowNumber - 1] = rowData;
+        });
+
         let ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
         if (!ym) throw new Error('年/月の自動検出に失敗しました。');
         const timeColIdx = 1; // B列
@@ -656,14 +666,15 @@
             const date = `${ym.year}/${ym.month}/${pad2(day)}`;
             slots.push({ date, time: t, boothId });
             // ブース番号セル (col) の右隣 (col+1) が講師名記入欄
-            cellPositions[`${date}_${t}_${boothId}`] = { row: r, col, teacherCol: col + 1 };
+            // ExcelJSは1始まりなので +1 する
+            cellPositions[`${date}_${t}_${boothId}`] = { row: r + 1, col: col + 1, teacherCol: col + 2 };
           }
         }
 
         slots.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
 
-        // 元のワークブックとシート情報を保存
-        originalBoothWorkbook = wb;
+        // ExcelJSワークブックとシート情報を保存
+        originalBoothWorkbook = workbook;
         boothSheetInfo = {
           sheetName,
           cellPositions,
@@ -671,7 +682,7 @@
         };
 
         boothData = slots;
-        $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${slots.length}件`;
+        $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${slots.length}件（書式保持モード）`;
       }catch(e){
         console.error(e); $('boothExcelStatus').innerHTML = `<span class="err">エラー:</span> ${e.message}`;
       }
@@ -774,16 +785,16 @@
         return surname + 'T'; // 苗字+T
       }
     }
-    // ================= Excel export: ブース表形式 =================
-    function saveAsExcel(mode){
+    // ================= Excel export: ブース表形式（ExcelJS - 書式完全保持）=================
+    async function saveAsExcel(mode){
       try{
         if(lastAssignments.length === 0){
           excelStatus.innerHTML = '<span class="err">エラー:</span> 割当を先に実行してください';
           return;
         }
 
-        if(!originalBoothFileBuffer){
-          excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表ファイルが見つかりません';
+        if(!originalBoothWorkbook){
+          excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表ワークブックが見つかりません';
           return;
         }
 
@@ -793,22 +804,18 @@
           .map(a => a.teacherName))];
         console.log('全講師名リスト:', allTeacherNames);
 
-        // === 元のファイルのバイナリデータからワークブックを作成（完全コピー） ===
-        console.log('元のファイルバイナリからワークブックを作成中...');
-        const copiedBuffer = originalBoothFileBuffer.slice(0); // バイナリデータのコピーを作成
-        const wb = XLSX.read(copiedBuffer, { cellText: false, cellDates: true });
+        console.log('ExcelJSで元のワークブックに講師を記入中...');
 
-        console.log('ファイルコピー完了:', {
-          ファイルサイズ: copiedBuffer.byteLength + ' bytes',
-          シート数: wb.SheetNames.length,
-          シート名: wb.SheetNames.join(', ')
-        });
-
-        // 対象シートに割当結果を上書き
+        // 対象シートを取得
         const targetSheetName = boothSheetInfo.sheetName;
-        const targetSheet = wb.Sheets[targetSheetName];
+        const worksheet = originalBoothWorkbook.getWorksheet(targetSheetName);
 
-        // 割当結果で上書き
+        if(!worksheet){
+          throw new Error(`シート "${targetSheetName}" が見つかりません`);
+        }
+
+        // 割当結果で上書き（ExcelJSはセルの書式を自動保持）
+        let assignedCount = 0;
         for(const assignment of lastAssignments){
           if(!assignment.teacherId) continue; // 講師が割り当てられていない場合はスキップ
 
@@ -817,8 +824,8 @@
 
           if(!pos) continue;
 
-          // 講師名はブース番号セルの右隣（teacherCol）に書き込む
-          const cellAddr = XLSX.utils.encode_cell({r: pos.row, c: pos.teacherCol});
+          // ExcelJSでセルを取得（1始まり、pos.rowとpos.teacherColは既に1始まり）
+          const cell = worksheet.getCell(pos.row, pos.teacherCol);
 
           let cellValue = '';
           if(mode === 'teacher'){
@@ -832,23 +839,33 @@
             cellValue = teacher + student + subject;
           }
 
-          // 元のセルのスタイル情報を保持しつつ値を更新
-          const originalCell = targetSheet[cellAddr];
-          if(originalCell){
-            targetSheet[cellAddr] = { ...originalCell, v: cellValue, t: 's' };
-          } else {
-            targetSheet[cellAddr] = { t: 's', v: cellValue };
-          }
+          // セルの値を更新（書式は自動的に保持される）
+          cell.value = cellValue;
+          assignedCount++;
         }
+
+        console.log(`${assignedCount}件の講師を記入完了`);
 
         const filename = mode === 'teacher'
           ? makeTsPrefix() + '_講師配置済みブース表.xlsx'
           : makeTsPrefix() + '_生徒配置済みブース表.xlsx';
 
-        console.log('講師配置済みファイルを保存中:', filename);
-        XLSX.writeFile(wb, filename);
+        console.log('ExcelJSでファイルを生成中:', filename);
+
+        // ExcelJSでバイナリを生成
+        const buffer = await originalBoothWorkbook.xlsx.writeBuffer();
+
+        // Blobとしてダウンロード
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
         console.log('✓ ファイル保存完了:', filename);
-        excelStatus.innerHTML = `<span class="ok">✓</span> ${filename} を保存しました（元のファイルを完全コピーして講師を記入）`;
+        excelStatus.innerHTML = `<span class="ok">✓</span> ${filename} を保存しました（書式完全保持・ExcelJS）`;
       }catch(e){
         console.error(e);
         excelStatus.innerHTML = `<span class="err">エラー:</span> ${e.message}`;
@@ -860,10 +877,24 @@
       if (!file){ $('teacherExcelStatus').textContent = 'ファイル未選択'; return; }
       try{
         const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { cellText:false, cellDates:true });
-        const sheetName = wb.SheetNames[0];
-        const sheet = wb.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true });
+
+        // ExcelJSでワークブックを読み込み
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buf);
+
+        const worksheet = workbook.worksheets[0];
+        const sheetName = worksheet.name;
+
+        // 行データを配列形式に変換
+        const rows = [];
+        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+          const rowData = [];
+          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            rowData[colNumber - 1] = cell.value;
+          });
+          rows[rowNumber - 1] = rowData;
+        });
+
         const ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
         const pairs = collectDateTeacherColumns(rows, ym);
         if (!pairs.length) throw new Error('日付列が見つかりません。上の 年/月 を指定の上、ヘッダ行に 11/03 等があることをご確認ください。');
