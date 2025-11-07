@@ -271,6 +271,10 @@
           for(const teacher of thList){
             const prefBooth = teacherPreferences[teacher.teacherId];
             if(!prefBooth) continue; // 優先ブース設定がない講師はスキップ
+            if(prefBooth === 'EXCLUDE') {
+              console.log(`  ⛔ ${teacher.teacherName}: 除外設定のためスキップ`);
+              continue; // 除外設定の講師はスキップ
+            }
 
             const isTeacherAvailable = !usedTeacherAt.has(tkey+' '+teacher.teacherId);
             if(!isTeacherAvailable) continue; // 既に割り当て済み
@@ -331,13 +335,13 @@
 
               // Attempt preferred first
               if (preferred && !ngSet.has(preferred)){
-                const th = thList.find(x => x.teacherId === preferred && !usedTeacherAt.has(tkey+' '+x.teacherId));
+                const th = thList.find(x => x.teacherId === preferred && !usedTeacherAt.has(tkey+' '+x.teacherId) && teacherPreferences[x.teacherId] !== 'EXCLUDE');
                 if (th){ assignedTeacher = th; assignedDemand = demand; }
               }
 
               if (!assignedTeacher){
                 // pick any available teacher not in NG
-                const th2 = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId) && !ngSet.has(x.teacherId));
+                const th2 = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId) && !ngSet.has(x.teacherId) && teacherPreferences[x.teacherId] !== 'EXCLUDE');
                 if (th2){ assignedTeacher = th2; assignedDemand = demand; }
               }
 
@@ -351,7 +355,8 @@
                 const dailyKey = slot.date + ' ' + x.teacherId;
                 const assignedBooth = teacherDailyBooth.get(dailyKey);
                 return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-                       assignedBooth === slot.boothId;
+                       assignedBooth === slot.boothId &&
+                       teacherPreferences[x.teacherId] !== 'EXCLUDE';
               });
 
               if (existingBoothTeacher) {
@@ -361,7 +366,7 @@
 
               // 優先度2: 空いている講師（通常割り当て）
               if (!assignedTeacher) {
-                assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId));
+                assignedTeacher = thList.find(x => !usedTeacherAt.has(tkey+' '+x.teacherId) && teacherPreferences[x.teacherId] !== 'EXCLUDE');
                 if(assignedTeacher){
                   console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
                 }
@@ -516,8 +521,8 @@
             const a = lastAssignments.find(x=>x.date===date && x.time===time && x.boothId===booth);
             const cls = (a && a.teacherId) ? 'assigned' : 'empty';
 
-            // ブース番号セル（丸付き数字をそのまま表示）
-            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${booth}</td>`;
+            // ブース番号セル（B1形式を丸付き数字に変換して表示）
+            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${boothIdToCircled(booth)}</td>`;
 
             // 講師名セル
             let text = '';
@@ -577,7 +582,8 @@
         return `${hh}:${mm}:${ss}`;
       }
       if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)){
-        return `${pad2(v.getHours())}:${pad2(v.getMinutes())}:${pad2(v.getSeconds())}`;
+        // ExcelJSはUTC時刻で返すため、getUTCHours()を使用
+        return `${pad2(v.getUTCHours())}:${pad2(v.getUTCMinutes())}:${pad2(v.getUTCSeconds())}`;
       }
       return null;
     }
@@ -924,16 +930,20 @@
           // セルの値を更新
           cell.value = finalValue;
 
-          // フォント設定（MS Pゴシック、サイズ8）
+          // フォント設定（既存のフォント設定を保持しつつ、必要な設定を上書き）
+          const existingFont = cell.font || {};
           cell.font = {
+            ...existingFont,
             name: 'MS PGothic',  // Excelではこの表記
             size: 8,
             family: 1,  // ゴシック系
             charset: 128  // 日本語
           };
 
-          // 縦書き設定（ExcelJSでは textRotation に 'vertical' を指定）
+          // 縦書き設定（既存のalignment設定を保持しつつ、縦書きを追加）
+          const existingAlignment = cell.alignment || {};
           cell.alignment = {
+            ...existingAlignment,
             textRotation: 'vertical',  // 縦書き（最も確実な方法）
             vertical: 'top',
             horizontal: 'center',
@@ -1115,6 +1125,14 @@
         optNone.value = '';
         optNone.textContent = '指定なし';
         select.appendChild(optNone);
+
+        // 「除外」オプション
+        const optExclude = document.createElement('option');
+        optExclude.value = 'EXCLUDE';
+        optExclude.textContent = '除外（割り当てしない）';
+        optExclude.style.color = '#dc2626';
+        optExclude.style.fontWeight = '600';
+        select.appendChild(optExclude);
 
         // ブースオプション（B1形式を丸付き数字に変換して表示）
         for(const boothId of booths){
