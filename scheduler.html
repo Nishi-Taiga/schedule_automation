@@ -638,7 +638,9 @@
         worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
           const rowData = [];
           row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            rowData[colNumber - 1] = cell.value; // ExcelJSは1始まり、配列は0始まり
+            // cell.textを使ってセルの表示テキストを取得（リッチテキスト対応）
+            const cellValue = cell.text !== undefined ? cell.text : cell.value;
+            rowData[colNumber - 1] = cellValue;
           });
           rows[rowNumber - 1] = rowData;
         });
@@ -919,7 +921,23 @@
         worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
           const rowData = [];
           row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            rowData[colNumber - 1] = cell.value;
+            // cell.textを使ってセルの表示テキストを取得（リッチテキスト対応）
+            // cell.valueだとリッチテキストの場合オブジェクトになる可能性がある
+            const cellValue = cell.text !== undefined ? cell.text : cell.value;
+            rowData[colNumber - 1] = cellValue;
+
+            // デバッグ: 講師名らしきセルの値を詳細ログ
+            if (rowNumber > 2 && colNumber > 2 && cellValue) {
+              const valueType = typeof cell.value;
+              if (valueType === 'object' && cell.value !== null && !Array.isArray(cell.value) && !(cell.value instanceof Date)) {
+                console.log(`📊 セル(${rowNumber}, ${colNumber}):`, {
+                  'cell.value': cell.value,
+                  'cell.text': cell.text,
+                  '使用する値': cellValue,
+                  '型': valueType
+                });
+              }
+            }
           });
           rows[rowNumber - 1] = rowData;
         });
