@@ -3,32 +3,227 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>時間割 自動割当（スケジューラ）</title>
+  <title>SmartScheduler v1.3 - 時間割自動作成システム</title>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Meiryo, sans-serif; padding: 24px; line-height: 1.6; }
-    h1 { font-size: 1.25rem; margin: 0 0 12px; }
-    h2 { font-size: 1.1rem; margin: 18px 0 8px; }
-    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin: 12px 0; }
-    .row { margin: 8px 0; }
-    textarea { width: 100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
-    button { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; background: #f9fafb; }
-    button + button { margin-left: 8px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .small { font-size: 12px; color: #6b7280; }
-    .ok { color: #16a34a; font-weight: 600; }
-    .warn { color: #b45309; font-weight: 600; }
-    .err { color: #dc2626; font-weight: 600; }
+    /* ========== 基本設定 ========== */
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue',
+        'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+      padding: 24px;
+      line-height: 1.6;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    /* ========== ヘッダー ========== */
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0 0 8px;
+      color: #111827;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    h1::before {
+      content: '📅';
+      font-size: 32px;
+    }
+
+    .version {
+      font-size: 14px;
+      color: #6b7280;
+      font-weight: 400;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 18px 0 12px;
+      color: #374151;
+    }
+
+    /* ========== カード ========== */
+    .card {
+      border: none;
+      border-radius: 16px;
+      padding: 24px;
+      margin: 16px 0;
+      background: white;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      transition: box-shadow 0.3s, transform 0.3s;
+    }
+    .card:hover {
+      box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+      transform: translateY(-2px);
+    }
+
+    .row { margin: 12px 0; }
+
+    /* ========== フォーム要素 ========== */
+    input[type="file"] {
+      padding: 10px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: border-color 0.3s;
+      background: #f9fafb;
+    }
+    input[type="file"]:hover {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      padding: 12px;
+      border: 2px solid #e5e7eb;
+      border-radius: 10px;
+      resize: vertical;
+      transition: border-color 0.3s;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    /* ========== ボタン ========== */
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.3s;
+      color: #374151;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button + button { margin-left: 12px; }
+
+    /* 主要ボタン */
+    #runBtn {
+      font-size: 18px;
+      padding: 16px 32px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    #runBtn:hover:not(:disabled) {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    }
+
+    /* 成功ボタン */
+    #saveTeacherExcelBtn {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      border: none;
+      font-size: 16px;
+      padding: 14px 28px;
+      font-weight: 600;
+    }
+    #saveTeacherExcelBtn:hover {
+      background: linear-gradient(135deg, #059669, #047857);
+    }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    /* ========== テキストスタイル ========== */
+    .small {
+      font-size: 14px;
+      color: #6b7280;
+      line-height: 1.5;
+    }
+    .ok { color: #10b981; font-weight: 600; }
+    .warn { color: #f59e0b; font-weight: 600; }
+    .err { color: #ef4444; font-weight: 600; }
     .nowrap { white-space: nowrap; }
-    #previewTable { width: 100%; }
-    #previewTable th, #previewTable td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
-    #previewTable th { background: #f3f4f6; font-weight: 600; }
+
+    /* ========== テーブル ========== */
+    #previewTable {
+      width: 100%;
+      border-collapse: collapse;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    #previewTable th, #previewTable td {
+      border: 1px solid #e5e7eb;
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 13px;
+    }
+    #previewTable th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #374151;
+      border-bottom: 2px solid #d1d5db;
+    }
+    #previewTable tr:hover {
+      background: #f9fafb;
+    }
     #previewTable .empty { background: #fef3c7; }
     #previewTable .assigned { background: #d1fae5; }
+
+    /* ========== ローディング ========== */
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-left: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ========== レスポンシブ ========== */
+    @media (max-width: 768px) {
+      body { padding: 16px; }
+      h1 { font-size: 24px; }
+      .card { padding: 16px; }
+      .grid { grid-template-columns: 1fr; }
+      button { padding: 8px 16px; font-size: 13px; }
+      #runBtn { font-size: 16px; padding: 12px 24px; }
+    }
+
+    /* ========== アニメーション ========== */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card {
+      animation: fadeIn 0.5s ease-out;
+    }
   </style>
 </head>
 <body>
-  <h1>時間割 自動作成システム</h1>
+  <h1>SmartScheduler - 時間割自動作成システム</h1>
+  <div class="version">v1.3 - 個別指導塾向けブラウザ完結型スケジューラ</div>
 
   <div class="card">
     <div class="row">
