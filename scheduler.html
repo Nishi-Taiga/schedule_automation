@@ -196,6 +196,7 @@
     let boothData = []; // ブース表から読み込んだデータ
     let teacherData = []; // 元シートから読み込んだデータ
     let originalBoothWorkbook = null; // 元のブース表Excelワークブック
+    let originalBoothFileBuffer = null; // 元のブース表ファイルのバイナリデータ（完全コピー用）
     let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
     let teacherPreferences = {}; // 講師の優先ブース設定 { teacherId: 'B1' }
 
@@ -623,6 +624,11 @@
       if (!file){ $('boothExcelStatus').textContent = 'ファイル未選択'; return; }
       try{
         const buf = await file.arrayBuffer();
+
+        // 元のファイルのバイナリデータを保存（完全コピー用）
+        originalBoothFileBuffer = buf.slice(0); // コピーを作成
+        console.log('元のブース表ファイルのバイナリデータを保存しました:', buf.byteLength, 'bytes');
+
         const wb = XLSX.read(buf, { cellText:false, cellDates:true });
         const sheetName = wb.SheetNames[0];
         const sheet = wb.Sheets[sheetName];
@@ -776,8 +782,8 @@
           return;
         }
 
-        if(!originalBoothWorkbook){
-          excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表が見つかりません';
+        if(!originalBoothFileBuffer){
+          excelStatus.innerHTML = '<span class="err">エラー:</span> 元のブース表ファイルが見つかりません';
           return;
         }
 
@@ -787,63 +793,15 @@
           .map(a => a.teacherName))];
         console.log('全講師名リスト:', allTeacherNames);
 
-        // 元のワークブック全体を完全にディープコピー
-        console.log('元のブース表ワークブックを完全コピー中...');
-        const wb = {};
+        // === 元のファイルのバイナリデータからワークブックを作成（完全コピー） ===
+        console.log('元のファイルバイナリからワークブックを作成中...');
+        const copiedBuffer = originalBoothFileBuffer.slice(0); // バイナリデータのコピーを作成
+        const wb = XLSX.read(copiedBuffer, { cellText: false, cellDates: true });
 
-        // ワークブックの全プロパティをコピー（Props, Custprops, Workbook, vbaraw等も含む）
-        for(const key in originalBoothWorkbook){
-          if(originalBoothWorkbook.hasOwnProperty(key)){
-            if(key === 'SheetNames'){
-              // SheetNamesは配列なので個別コピー
-              wb.SheetNames = [...originalBoothWorkbook.SheetNames];
-            } else if(key === 'Sheets'){
-              // Sheetsは後で個別処理
-              wb.Sheets = {};
-            } else if(typeof originalBoothWorkbook[key] === 'object' && originalBoothWorkbook[key] !== null){
-              // その他のオブジェクトプロパティ（Props, Custprops, Workbook等）
-              try {
-                wb[key] = JSON.parse(JSON.stringify(originalBoothWorkbook[key]));
-              } catch(e) {
-                // JSON化できないプロパティはそのままコピー
-                wb[key] = originalBoothWorkbook[key];
-              }
-            } else {
-              // プリミティブ値はそのままコピー
-              wb[key] = originalBoothWorkbook[key];
-            }
-          }
-        }
-
-        // すべてのシートを完全コピー
-        for(const sheetName of wb.SheetNames){
-          const originalSheet = originalBoothWorkbook.Sheets[sheetName];
-          const newSheet = {};
-
-          // シートの全プロパティをコピー（!refや!mergesなども含む）
-          for(const key in originalSheet){
-            if(originalSheet.hasOwnProperty(key)){
-              if(typeof originalSheet[key] === 'object' && originalSheet[key] !== null){
-                // オブジェクトはディープコピー
-                try {
-                  newSheet[key] = JSON.parse(JSON.stringify(originalSheet[key]));
-                } catch(e) {
-                  // JSON化できない場合はそのままコピー
-                  newSheet[key] = originalSheet[key];
-                }
-              } else {
-                newSheet[key] = originalSheet[key];
-              }
-            }
-          }
-
-          wb.Sheets[sheetName] = newSheet;
-        }
-
-        console.log('ワークブック完全コピー完了:', {
+        console.log('ファイルコピー完了:', {
+          ファイルサイズ: copiedBuffer.byteLength + ' bytes',
           シート数: wb.SheetNames.length,
-          シート名: wb.SheetNames.join(', '),
-          追加プロパティ: Object.keys(wb).filter(k => k !== 'Sheets' && k !== 'SheetNames')
+          シート名: wb.SheetNames.join(', ')
         });
 
         // 対象シートに割当結果を上書き
@@ -887,8 +845,10 @@
           ? makeTsPrefix() + '_講師配置済みブース表.xlsx'
           : makeTsPrefix() + '_生徒配置済みブース表.xlsx';
 
+        console.log('講師配置済みファイルを保存中:', filename);
         XLSX.writeFile(wb, filename);
-        excelStatus.innerHTML = `<span class="ok">✓</span> ${filename} を保存しました`;
+        console.log('✓ ファイル保存完了:', filename);
+        excelStatus.innerHTML = `<span class="ok">✓</span> ${filename} を保存しました（元のファイルを完全コピーして講師を記入）`;
       }catch(e){
         console.error(e);
         excelStatus.innerHTML = `<span class="err">エラー:</span> ${e.message}`;
