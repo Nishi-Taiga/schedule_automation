@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>SmartScheduler v1.3 - 時間割自動作成システム</title>
+  <title>SmartScheduler v1.4 - 時間割自動作成システム</title>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <style>
     /* ========== 基本設定 ========== */
@@ -1069,97 +1069,127 @@
 
         await workbook.xlsx.load(buf);
         console.log('🔵 workbook.xlsx.load完了');
+        console.log(`🔵 全シート数: ${workbook.worksheets.length}`);
 
-        const worksheet = workbook.worksheets[0];
-        const sheetName = worksheet.name;
-        console.log('🔵 ワークシート取得完了:', sheetName);
+        // 全シートを処理して統合
+        let allSlots = [];
+        const allCellPositions = {};
+        let firstSheetInfo = null;
 
-        // 行データを配列形式に変換（SheetJSの rows 互換）
-        const rows = [];
-        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-          const rowData = [];
-          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            // セルの値を安全に取得（マージセル、リッチテキスト対応）
-            let cellValue;
-            try {
-              // 日付・時刻セルの場合は cell.value (Date object) を優先
-              if (cell.value instanceof Date) {
-                cellValue = cell.value;
-              } else if (cell.text !== undefined && cell.text !== null) {
-                cellValue = cell.text;
-              } else {
+        for (let sheetIndex = 0; sheetIndex < workbook.worksheets.length; sheetIndex++) {
+          const worksheet = workbook.worksheets[sheetIndex];
+          const sheetName = worksheet.name;
+          console.log(`\n🔵 シート${sheetIndex + 1}/${workbook.worksheets.length}: ${sheetName}`);
+
+          // 行データを配列形式に変換（SheetJSの rows 互換）
+          const rows = [];
+          worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+            const rowData = [];
+            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+              // セルの値を安全に取得（マージセル、リッチテキスト対応）
+              let cellValue;
+              try {
+                // 日付・時刻セルの場合は cell.value (Date object) を優先
+                if (cell.value instanceof Date) {
+                  cellValue = cell.value;
+                } else if (cell.text !== undefined && cell.text !== null) {
+                  cellValue = cell.text;
+                } else {
+                  cellValue = getCellValue(cell);
+                }
+              } catch (e) {
+                // cell.textでエラーが発生した場合（マージセルなど）
                 cellValue = getCellValue(cell);
               }
-            } catch (e) {
-              // cell.textでエラーが発生した場合（マージセルなど）
-              cellValue = getCellValue(cell);
-            }
-            rowData[colNumber - 1] = cellValue;
+              rowData[colNumber - 1] = cellValue;
+            });
+            rows[rowNumber - 1] = rowData;
           });
-          rows[rowNumber - 1] = rowData;
-        });
-        console.log('🔵 行データ変換完了:', rows.length, '行');
-        console.log('🔵 最初の5行のデータ:');
-        for (let i = 0; i < Math.min(5, rows.length); i++) {
-          console.log(`  行${i}:`, rows[i]?.slice(0, 8)); // 最初の8列だけ
-        }
+          console.log(`  行データ変換完了: ${rows.length}行`);
 
-        let ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
-        if (!ym) throw new Error('年/月の自動検出に失敗しました。');
-        const timeColIdx = 1; // B列
-        const effTimes = buildEffectiveTimes(rows, timeColIdx);
-        console.log('🔵 effTimes取得完了:', effTimes.filter(t => t).length, '件');
-        const dayCols = collectDayColumns(rows, timeColIdx);
-        console.log('🔵 dayCols取得完了:', dayCols.length, '件', dayCols);
-        if (!dayCols.length) throw new Error('日付/曜日ヘッダ行が見つかりません (行0=日, 行1=曜日)');
-
-        // スロット情報とセル位置のマッピングを作成
-        const slots = [];
-        const cellPositions = {}; // key: "date_time_boothId" -> {row, col, teacherCol}
-
-        let matchCount = 0;
-        let totalChecked = 0;
-        for (let r=0;r<rows.length;r++){
-          const t = effTimes[r];
-          if (!t) continue;
-          for (const {col, day} of dayCols){
-            const v = rows[r]?.[col];
-            totalChecked++;
-            if (v == null) continue;
-            const m = String(v).match(circledRegex);
-            if (!m) {
-              if (totalChecked <= 10) { // 最初の10個だけログ
-                console.log(`🔵 マッチなし: 行${r}, 列${col}, 値="${v}"`);
-              }
-              continue;
-            }
-            matchCount++;
-            const boothId = circledToBoothId(m[0]);
-            const date = `${ym.year}/${ym.month}/${pad2(day)}`;
-            if (matchCount <= 5) { // 最初の5個だけログ
-              console.log(`🔵 マッチ: 行${r}, 列${col}, 値="${v}", 丸付き数字="${m[0]}", boothId="${boothId}"`);
-            }
-            slots.push({ date, time: t, boothId });
-            // ブース番号セル (col) の右隣 (col+1) が講師名記入欄
-            // ExcelJSは1始まりなので +1 する
-            cellPositions[`${date}_${t}_${boothId}`] = { row: r + 1, col: col + 1, teacherCol: col + 2 };
+          let ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
+          if (!ym) {
+            console.warn(`  ⚠️ 年/月の自動検出に失敗: ${sheetName} - スキップ`);
+            continue; // このシートはスキップ
           }
-        }
-        console.log(`🔵 ブース番号検出: ${matchCount}件のマッチ / ${totalChecked}セルを確認`);
+          console.log(`  年月: ${ym.year}/${ym.month}`);
 
-        slots.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
+          const timeColIdx = 1; // B列
+          const effTimes = buildEffectiveTimes(rows, timeColIdx);
+          console.log(`  effTimes取得完了: ${effTimes.filter(t => t).length}件`);
+
+          const dayCols = collectDayColumns(rows, timeColIdx);
+          console.log(`  dayCols取得完了: ${dayCols.length}件`);
+
+          if (!dayCols.length) {
+            console.warn(`  ⚠️ 日付/曜日ヘッダ行が見つかりません - スキップ`);
+            continue;
+          }
+
+          // スロット情報とセル位置のマッピングを作成
+          const slots = [];
+          const cellPositions = {}; // key: "date_time_boothId" -> {row, col, teacherCol}
+
+          let matchCount = 0;
+          let totalChecked = 0;
+          for (let r=0;r<rows.length;r++){
+            const t = effTimes[r];
+            if (!t) continue;
+            for (const {col, day} of dayCols){
+              const v = rows[r]?.[col];
+              totalChecked++;
+              if (v == null) continue;
+              const m = String(v).match(circledRegex);
+              if (!m) continue;
+
+              matchCount++;
+              const boothId = circledToBoothId(m[0]);
+              const date = `${ym.year}/${ym.month}/${pad2(day)}`;
+              slots.push({ date, time: t, boothId });
+              // ブース番号セル (col) の右隣 (col+1) が講師名記入欄
+              // ExcelJSは1始まりなので +1 する
+              cellPositions[`${date}_${t}_${boothId}`] = {
+                row: r + 1,
+                col: col + 1,
+                teacherCol: col + 2,
+                sheetIndex: sheetIndex,
+                sheetName: sheetName
+              };
+            }
+          }
+          console.log(`  ブース番号検出: ${matchCount}件のマッチ / ${totalChecked}セルを確認`);
+
+          // 最初のシート情報を保存（Excel保存時に使用）
+          if (sheetIndex === 0) {
+            firstSheetInfo = {
+              sheetName,
+              yearMonth: ym
+            };
+          }
+
+          // このシートのスロットを統合
+          allSlots = allSlots.concat(slots);
+          Object.assign(allCellPositions, cellPositions);
+        }
+
+        if (allSlots.length === 0) {
+          throw new Error('有効なスロットデータが見つかりませんでした');
+        }
+
+        // 日付・時刻順にソート
+        allSlots.sort((a,b)=> (a.date+a.time+a.boothId).localeCompare(b.date+b.time+b.boothId));
 
         // ExcelJSワークブックとシート情報を保存
         originalBoothWorkbook = workbook;
         boothSheetInfo = {
-          sheetName,
-          cellPositions,
-          yearMonth: ym
+          ...firstSheetInfo,
+          cellPositions: allCellPositions,
+          totalSheets: workbook.worksheets.length
         };
 
-        boothData = slots;
-        console.log('🔵 parseBoothExcel: 完了 -', slots.length, '件');
-        $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${slots.length}件（書式保持モード）`;
+        boothData = allSlots;
+        console.log('\n🔵 parseBoothExcel: 完了 -', allSlots.length, '件のスロット（', workbook.worksheets.length, 'シート統合）');
+        $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${allSlots.length}件（${workbook.worksheets.length}シート統合、書式保持モード）`;
       }catch(e){
         console.error('❌ parseBoothExcel エラー:', e);
         console.error('エラースタック:', e.stack);
@@ -1454,72 +1484,86 @@
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(buf);
         console.log('🟢 workbook.xlsx.load完了');
+        console.log(`🟢 全シート数: ${workbook.worksheets.length}`);
 
-        const worksheet = workbook.worksheets[0];
-        const sheetName = worksheet.name;
-        console.log('🟢 ワークシート取得完了:', sheetName);
+        // 全シートを処理して統合
+        let allShifts = [];
+        const seen = new Set();
 
-        // 行データを配列形式に変換
-        const rows = [];
-        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-          const rowData = [];
-          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            // セルの値を安全に取得（マージセル、リッチテキスト対応）
-            let cellValue;
-            try {
-              // 日付セルの場合は cell.value (Date object) を優先
-              if (cell.value instanceof Date) {
-                cellValue = cell.value;
-              } else if (cell.text !== undefined && cell.text !== null) {
-                cellValue = cell.text;
-              } else {
+        for (let sheetIndex = 0; sheetIndex < workbook.worksheets.length; sheetIndex++) {
+          const worksheet = workbook.worksheets[sheetIndex];
+          const sheetName = worksheet.name;
+          console.log(`\n🟢 シート${sheetIndex + 1}/${workbook.worksheets.length}: ${sheetName}`);
+
+          // 行データを配列形式に変換
+          const rows = [];
+          worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+            const rowData = [];
+            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+              // セルの値を安全に取得（マージセル、リッチテキスト対応）
+              let cellValue;
+              try {
+                // 日付セルの場合は cell.value (Date object) を優先
+                if (cell.value instanceof Date) {
+                  cellValue = cell.value;
+                } else if (cell.text !== undefined && cell.text !== null) {
+                  cellValue = cell.text;
+                } else {
+                  cellValue = getCellValue(cell);
+                }
+              } catch (e) {
+                // cell.textでエラーが発生した場合（マージセルなど）
                 cellValue = getCellValue(cell);
               }
-            } catch (e) {
-              // cell.textでエラーが発生した場合（マージセルなど）
-              cellValue = getCellValue(cell);
-            }
-            rowData[colNumber - 1] = cellValue;
-
-            // デバッグ: 講師名らしきセルの値を詳細ログ
-            if (rowNumber > 2 && colNumber > 2 && cellValue) {
-              const valueType = typeof cell.value;
-              if (valueType === 'object' && cell.value !== null && !Array.isArray(cell.value) && !(cell.value instanceof Date)) {
-                console.log(`📊 セル(${rowNumber}, ${colNumber}):`, {
-                  'cell.value': cell.value,
-                  'cell.text': cell.text,
-                  '使用する値': cellValue,
-                  '型': valueType
-                });
-              }
-            }
+              rowData[colNumber - 1] = cellValue;
+            });
+            rows[rowNumber - 1] = rowData;
           });
-          rows[rowNumber - 1] = rowData;
-        });
-        console.log('🟢 行データ変換完了:', rows.length, '行');
+          console.log(`  行データ変換完了: ${rows.length}行`);
 
-        const ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
-        const pairs = collectDateTeacherColumns(rows, ym);
-        if (!pairs.length) throw new Error('日付列が見つかりません。上の 年/月 を指定の上、ヘッダ行に 11/03 等があることをご確認ください。');
-        const times = buildEffectiveTimes(rows, 0); // A列の時刻を下方向に継承
-
-        const shifts = [];
-        const seen = new Set();
-        for (let r=0;r<rows.length;r++){
-          const time = times[r]; if (!time) continue;
-          for (const {ymd, teacherCol} of pairs){
-            const name = cleanTeacherName(rows[r]?.[teacherCol]);
-            if (!name) continue;
-            const tid = idFromName(name);
-            const key = `${ymd}_${time}_${tid}`;
-            if (seen.has(key)) continue; seen.add(key);
-            shifts.push({ date: ymd, time, teacherId: tid, teacherName: name, constraints: {} });
+          const ym = getOverrideYM() || detectYearMonthFromSheetName(sheetName) || detectYearMonthFromCells(rows);
+          if (!ym) {
+            console.warn(`  ⚠️ 年/月の自動検出に失敗: ${sheetName} - スキップ`);
+            continue;
           }
+          console.log(`  年月: ${ym.year}/${ym.month}`);
+
+          const pairs = collectDateTeacherColumns(rows, ym);
+          if (!pairs.length) {
+            console.warn(`  ⚠️ 日付列が見つかりません - スキップ`);
+            continue;
+          }
+          console.log(`  日付列: ${pairs.length}件`);
+
+          const times = buildEffectiveTimes(rows, 0); // A列の時刻を下方向に継承
+          console.log(`  時刻: ${times.filter(t => t).length}件`);
+
+          const shifts = [];
+          for (let r=0;r<rows.length;r++){
+            const time = times[r]; if (!time) continue;
+            for (const {ymd, teacherCol} of pairs){
+              const name = cleanTeacherName(rows[r]?.[teacherCol]);
+              if (!name) continue;
+              const tid = idFromName(name);
+              const key = `${ymd}_${time}_${tid}`;
+              if (seen.has(key)) continue; seen.add(key);
+              shifts.push({ date: ymd, time, teacherId: tid, teacherName: name, constraints: {} });
+            }
+          }
+          console.log(`  講師可用枠: ${shifts.length}件`);
+
+          // このシートのデータを統合
+          allShifts = allShifts.concat(shifts);
         }
-        shifts.sort((a,b)=> (a.date+a.time+a.teacherId).localeCompare(b.date+b.time+b.teacherId));
-        teacherData = shifts;
-        console.log('🟢 parseTeacherExcel: 完了 -', shifts.length, '件');
-        $('teacherExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${shifts.length}件`;
+
+        if (allShifts.length === 0) {
+          throw new Error('有効な講師データが見つかりませんでした');
+        }
+
+        allShifts.sort((a,b)=> (a.date+a.time+a.teacherId).localeCompare(b.date+b.time+b.teacherId));
+        teacherData = allShifts;
+        console.log('\n🟢 parseTeacherExcel: 完了 -', allShifts.length, '件（', workbook.worksheets.length, 'シート統合）');
+        $('teacherExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${allShifts.length}件（${workbook.worksheets.length}シート統合）`;
       }catch(e){
         console.error('❌ parseTeacherExcel エラー:', e);
         console.error('エラースタック:', e.stack);
