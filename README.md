@@ -1,8 +1,8 @@
-# SmartScheduler v1.4
+# SmartScheduler v1.5
 
 **個別指導塾向け時間割自動作成システム**
 
-[![Version](https://img.shields.io/badge/version-1.4-blue.svg)](https://github.com/Nishi-Taiga/schedule_automation)
+[![Version](https://img.shields.io/badge/version-1.5-blue.svg)](https://github.com/Nishi-Taiga/schedule_automation)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🎯 概要
@@ -194,6 +194,22 @@ node test_excel_integration.js
 ---
 
 ## 📝 変更履歴
+
+### v1.5 (2025-11-08)
+- ✨ **プレビュー編集機能** - ドラッグ&ドロップで割り当てを編集可能
+  - プレビュー内で講師・生徒の移動が可能
+  - 編集内容がExcel保存に自動反映
+- ✨ **必要コマ数確認表** - 生徒ごとの達成状況を一覧表示
+  - 必要コマ数と割り当て済みコマ数の比較
+  - 達成率の自動計算
+  - 未達成の科目を強調表示
+- ✨ **生徒名表示対応** - プレビューと保存に生徒名を追加
+  - プレビュー画面に生徒名を表示
+  - 生徒配置済みブース表に生徒名を出力
+- 🎨 **UI改善** - 優先ブース設定をデフォルト表示
+  - 優先ブース設定をデフォルトで表示
+  - 非表示ボタンを追加
+  - 設定保存/読み込みボタンの位置を改善
 
 ### v1.4 (2025-11-08)
 - ✨ **複数シート対応** - 週ごとに分かれたExcelファイルの自動統合
