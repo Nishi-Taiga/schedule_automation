@@ -1,8 +1,8 @@
-# SmartScheduler v1.5
+# SmartScheduler v1.6
 
 **個別指導塾向け時間割自動作成システム**
 
-[![Version](https://img.shields.io/badge/version-1.5-blue.svg)](https://github.com/Nishi-Taiga/schedule_automation)
+[![Version](https://img.shields.io/badge/version-1.6-blue.svg)](https://github.com/Nishi-Taiga/schedule_automation)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## 🎯 概要
@@ -194,6 +194,27 @@ node test_excel_integration.js
 ---
 
 ## 📝 変更履歴
+
+### v1.6 (2025-11-08)
+- ✨ **必要コマ数制限** - 必要コマ数を超えた授業を絶対に配置しない
+  - 各生徒の科目別必要コマ数を厳密に管理
+  - 割り当て済みコマ数を追跡して超過を防止
+- ✨ **曜日・時間固定機能** - できる限り同じ曜日・時間に授業を配置
+  - 割り当て履歴を記録して同じスロットを優先
+  - スコアリングシステムで最適な時間帯を選択
+- ✨ **講師-生徒ペア固定** - できる限り同じ組み合わせで授業を実施
+  - 講師-生徒ペアの履歴を記録
+  - 同じペアを優先的に再割り当て
+- ✨ **1ブース2人対応** - 1ブースに最大2人まで生徒を配置可能
+  - assignmentRecord構造を配列化（students: []）
+  - Excel出力時に生徒を講師列の右に配置
+- 🎨 **プレビュー表示改善** - 講師名を苗字+Tで表示
+  - より簡潔で分かりやすい表示
+  - 生徒名と科目を改行で表示
+- 📊 **必要コマ数確認表改善** - 生徒一人につき1行で表示
+  - 全科目の詳細を1行に集約
+  - 総合的な達成率を表示
+- ⚠️ **制約強化** - 講師がいないブースには生徒を配置しない
 
 ### v1.5 (2025-11-08)
 - ✨ **プレビュー編集機能** - ドラッグ&ドロップで割り当てを編集可能
