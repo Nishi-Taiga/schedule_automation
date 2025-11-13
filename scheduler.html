@@ -394,6 +394,7 @@
 
       <div class="row" style="margin-top:16px;">
         <button id="saveLogBtn">実行ログ(JSON)保存</button>
+        <button id="saveTextLogBtn">実行ログ(テキスト)保存</button>
       </div>
     </div>
   </div>
@@ -481,6 +482,7 @@
     $('copyCsvBtn').onclick = () => copyToClipboard(assignmentsOut.value);
     $('saveCsvBtn').onclick = () => downloadText(assignmentsOut.value, makeTsPrefix() + '_assignments.csv', 'text/csv');
     $('saveLogBtn').onclick = () => downloadText(JSON.stringify(lastLog, null, 2), makeTsPrefix() + '_run_log.json', 'application/json');
+    $('saveTextLogBtn').onclick = () => downloadText(executionLog.join('\n'), makeTsPrefix() + '_execution_log.txt', 'text/plain');
     $('copyReportBtn').onclick = () => copyToClipboard(reportOut.value);
     $('saveReportBtn').onclick = () => downloadText(reportOut.value, makeTsPrefix() + '_report.csv', 'text/csv');
 
@@ -541,6 +543,15 @@
     let studentAssignmentHistory = {}; // 生徒の割り当て履歴 { studentId_subject: [{dayOfWeek, time, teacherId}] }
     let studentAssignedCount = {}; // 生徒の科目別割り当て済みコマ数 { studentId_subject: count }
     let studentDailyBooth = {}; // 生徒の日別ブース割り当て { studentId_subject_date: boothId }
+    let executionLog = []; // 実行ログを保存する配列
+
+    // ログメッセージを記録する関数
+    function logMessage(message) {
+      const timestamp = new Date().toISOString().substring(11, 19); // HH:MM:SS
+      const logEntry = `[${timestamp}] ${message}`;
+      executionLog.push(logEntry);
+      console.log(message); // コンソールにも出力
+    }
 
     function key(dt){ return dt.date + ' ' + dt.time; }
     function sameTime(a,b){ return a.date===b.date && a.time===b.time; }
@@ -669,6 +680,7 @@
       studentDailyBooth = {}; // リセット
       assignmentsOut.value = '';
       reportOut.value = '';
+      executionLog = []; // ログをリセット
 
       // 進行状況バーを初期化
       updateProgress(0, '初期化中...');
@@ -688,18 +700,18 @@
         updateProgress(5, 'データを読み込み中...');
         await new Promise(resolve => setTimeout(resolve, 10)); // UI更新のための待機
 
-        console.log('=== 割り当て開始 ===');
-        console.log('優先ブース設定:', teacherPreferences);
-        console.log('生徒需要データ:', studentDemandData.length, '件');
-        console.log('講師-科目マップ:', teacherSubjectMap);
-        console.log('ブースデータ件数:', boothData.length);
+        logMessage('=== 割り当て開始 ===');
+        logMessage('優先ブース設定: ' + JSON.stringify(teacherPreferences));
+        logMessage('生徒需要データ: ' + studentDemandData.length + '件');
+        logMessage('講師-科目マップ: ' + JSON.stringify(teacherSubjectMap));
+        logMessage('ブースデータ件数: ' + boothData.length);
 
         const slots = boothData;
 
         // 講師データを自動生成: 各タイムスロットに全講師を割り当て可能として設定
         const teachers = [];
         const allTeacherIds = Object.keys(teacherSubjectMap);
-        console.log('利用可能な講師:', allTeacherIds);
+        logMessage('利用可能な講師: ' + allTeacherIds.join(', '));
 
         // boothDataの各スロットに対して、全講師を候補として追加
         for(const slot of boothData){
@@ -822,12 +834,12 @@
           const assignedStudentsInTime = new Set(); // 'studentId'
 
           // === フェーズ1: 優先ブース設定がある講師を優先的に配置 ===
-          console.log(`\n🎯 フェーズ1: 優先ブース設定がある講師を優先配置 (${tkey})`);
+          logMessage(`\n🎯 フェーズ1: 優先ブース設定がある講師を優先配置 (${tkey})`);
           for(const teacher of thList){
             const prefBooth = teacherPreferences[teacher.teacherId];
             if(!prefBooth) continue; // 優先ブース設定がない講師はスキップ
             if(prefBooth === 'EXCLUDE') {
-              console.log(`  ⛔ ${teacher.teacherName}: 除外設定のためスキップ`);
+              logMessage(`  ⛔ ${teacher.teacherName}: 除外設定のためスキップ`);
               continue; // 除外設定の講師はスキップ
             }
 
@@ -842,7 +854,7 @@
             const dailyKey = teacher.date + ' ' + teacher.teacherId;
             const existingBooth = teacherDailyBooth.get(dailyKey);
             if(existingBooth && existingBooth !== prefBooth){
-              console.log(`  ⚠️ ${teacher.teacherName}: 優先ブース${prefBooth}だが、既に${existingBooth}に割り当て済み → スキップ`);
+              logMessage(`  ⚠️ ${teacher.teacherName}: 優先ブース${prefBooth}だが、既に${existingBooth}に割り当て済み → スキップ`);
               continue;
             }
 
@@ -853,9 +865,9 @@
 
             if (!teacherDailyBooth.has(dailyKey)) {
               teacherDailyBooth.set(dailyKey, targetSlot.boothId);
-              console.log(`  ✓ 優先ブース初回割り当て: ${teacher.teacherName} -> ${targetSlot.boothId}`);
+              logMessage(`  ✓ 優先ブース初回割り当て: ${teacher.teacherName} -> ${targetSlot.boothId}`);
             } else {
-              console.log(`  ✓ 優先ブース継続: ${teacher.teacherName} -> ${targetSlot.boothId}`);
+              logMessage(`  ✓ 優先ブース継続: ${teacher.teacherName} -> ${targetSlot.boothId}`);
             }
 
             const assignmentRecord = {
@@ -871,7 +883,7 @@
             lastLog.decisions.push({ tkey, boothId: targetSlot.boothId, teacherId: teacher.teacherId, studentId: null });
           }
 
-          console.log(`\n📋 フェーズ2: 残りのブースを通常割り当て (${tkey})`);
+          logMessage(`\n📋 フェーズ2: 残りのブースを通常割り当て (${tkey})`);
           // === フェーズ2: 残りのブースを通常通り埋める ===
           // Try to satisfy demands first per booth
           for(const slot of sList){
@@ -919,35 +931,37 @@
               if (assignedTeacher) break;
             }
 
+            // 【修正】生徒需要がない場合は講師を配置しない
             // If no demand or none matched, assign teacher-only if available
-            if (!assignedTeacher){
-              // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う（1日内ブース固定）
-              const existingBoothTeacher = thList.find(x => {
-                const dailyKey = slot.date + ' ' + x.teacherId;
-                const assignedBooth = teacherDailyBooth.get(dailyKey);
-                return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-                       assignedBooth === slot.boothId &&
-                       teacherPreferences[x.teacherId] !== 'EXCLUDE';
-              });
-
-              if (existingBoothTeacher) {
-                assignedTeacher = existingBoothTeacher;
-                console.log(`  ✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId}`);
-              }
-
-              // 優先度2: 空いている講師（通常割り当て）
-              // ただし、1日内ブース固定ルールを厳守（既に別のブースに割り当て済みの講師は除外）
-              if (!assignedTeacher) {
-                assignedTeacher = thList.find(x =>
-                  !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-                  teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
-                  canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
-                );
-                if(assignedTeacher){
-                  console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
-                }
-              }
-            }
+            // ※ コメントアウト：元シートに提出されているコマのみ講師を配置
+            // if (!assignedTeacher){
+            //   // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う（1日内ブース固定）
+            //   const existingBoothTeacher = thList.find(x => {
+            //     const dailyKey = slot.date + ' ' + x.teacherId;
+            //     const assignedBooth = teacherDailyBooth.get(dailyKey);
+            //     return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+            //            assignedBooth === slot.boothId &&
+            //            teacherPreferences[x.teacherId] !== 'EXCLUDE';
+            //   });
+            //
+            //   if (existingBoothTeacher) {
+            //     assignedTeacher = existingBoothTeacher;
+            //     console.log(`  ✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId}`);
+            //   }
+            //
+            //   // 優先度2: 空いている講師（通常割り当て）
+            //   // ただし、1日内ブース固定ルールを厳守（既に別のブースに割り当て済みの講師は除外）
+            //   if (!assignedTeacher) {
+            //     assignedTeacher = thList.find(x =>
+            //       !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+            //       teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
+            //       canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
+            //     );
+            //     if(assignedTeacher){
+            //       console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
+            //     }
+            //   }
+            // }
 
             if (assignedTeacher){
               usedTeacherAt.add(tkey+' '+assignedTeacher.teacherId);
@@ -1002,19 +1016,19 @@
         }
 
         // === 講師割り当て完了 ===
-        console.log('\n=== 講師割り当て完了 ===');
-        console.log('講師割り当て状況:');
-        console.log('  総ブース数:', lastAssignments.length);
-        console.log('  講師がいるブース:', lastAssignments.filter(a => a.teacherId).length);
-        console.log('  講師がいないブース:', lastAssignments.filter(a => !a.teacherId).length);
+        logMessage('\n=== 講師割り当て完了 ===');
+        logMessage('講師割り当て状況:');
+        logMessage('  総ブース数: ' + lastAssignments.length);
+        logMessage('  講師がいるブース: ' + lastAssignments.filter(a => a.teacherId).length);
+        logMessage('  講師がいないブース: ' + lastAssignments.filter(a => !a.teacherId).length);
 
         // 生徒選択UIを準備するため、グローバル変数に保存
         window.currentAssignments = lastAssignments;
         window.currentDemands = studentDemandData; // 展開前の元データを使用（必要コマ数分のみ）
         window.currentSlots = slots;
 
-        console.log('\n=== 割り当て完了 ===');
-        console.log('1日内ブース割り当て:', teacherDailyBooth);
+        logMessage('\n=== 割り当て完了 ===');
+        logMessage('1日内ブース割り当て: ' + JSON.stringify(Array.from(teacherDailyBooth.entries())));
 
         updateProgress(95, '結果を集計中...');
         await new Promise(resolve => setTimeout(resolve, 10));
