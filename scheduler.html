@@ -201,6 +201,62 @@
       to { transform: rotate(360deg); }
     }
 
+    /* ========== 2カラムレイアウト ========== */
+    .main-container {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      width: 100%;
+    }
+
+    .sidebar-panel {
+      flex: 0 0 400px;
+      width: 400px;
+      max-width: 400px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      max-height: calc(100vh - 48px);
+    }
+
+    /* サイドバー内の要素を幅に収める */
+    .sidebar-panel .card {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .sidebar-panel input[type="file"],
+    .sidebar-panel select,
+    .sidebar-panel button,
+    .sidebar-panel textarea {
+      max-width: 100%;
+      box-sizing: border-box;
+      word-wrap: break-word;
+    }
+
+    .sidebar-panel table {
+      width: 100%;
+      table-layout: fixed;
+    }
+
+    .sidebar-panel .small {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .sidebar-panel h2 {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .preview-panel {
+      flex: 1;
+      min-width: 0;
+      position: sticky;
+      top: 24px;
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
+    }
+
     /* ========== レスポンシブ ========== */
     @media (max-width: 768px) {
       body { padding: 16px; }
@@ -209,6 +265,14 @@
       .grid { grid-template-columns: 1fr; }
       button { padding: 8px 16px; font-size: 13px; }
       #runBtn { font-size: 16px; padding: 12px 24px; }
+
+      /* サイドバーレイアウトを小画面でも維持 */
+      .sidebar-panel {
+        flex: 0 0 280px;
+        width: 280px;
+        max-width: 280px;
+        font-size: 12px;
+      }
     }
 
     /* ========== アニメーション ========== */
@@ -225,9 +289,12 @@
   <h1>SmartScheduler - 時間割自動作成システム</h1>
   <div class="version">v1.6 - 個別指導塾向けブラウザ完結型スケジューラ</div>
 
-  <div class="card">
+  <div class="main-container">
+    <!-- 左側: 操作ステップ（サイドバー） -->
+    <div class="sidebar-panel">
+      <div class="card">
     <div class="row">
-      <div class="small">ブース表と生徒・講師情報のExcelファイルを読み込んで、講師と生徒を自動配置します。</div>
+      <div class="small">元シート（講師提出時間割）と生徒・講師情報のExcelファイルを読み込んで、講師と生徒を自動配置します。</div>
     </div>
 
     <div class="row" style="margin-top:20px;">
@@ -240,8 +307,8 @@
     </div>
 
     <div class="row" style="margin-top:20px;">
-      <h2>② 生徒・講師情報（.xlsx）を読み込む</h2>
-      <div class="small">シート1: 指導可能教科一覧、シート2: 生徒コマ数表を含むファイル</div>
+      <h2>② 元シート（.xlsx）を読み込む</h2>
+      <div class="small">講師の提出した時間割（複数シート対応）</div>
       <div class="row">
         <input type="file" id="teacherExcelFile" accept=".xlsx,.xls" />
         <span id="teacherExcelStatus" class="small"></span>
@@ -249,13 +316,12 @@
     </div>
 
     <div class="row" style="margin-top:20px;">
-      <h2>③ 追加の生徒コマ数表（.xlsx）（オプション）</h2>
-      <div class="small">追加の生徒情報を読み込む場合に使用</div>
+      <h2>③ 生徒・講師情報（.xlsx）を読み込む</h2>
+      <div class="small">「指導可能教科一覧」シートと「生徒コマ数表」シートを含むファイル</div>
       <div class="row">
         <input type="file" id="studentExcelFile" accept=".xlsx,.xls" />
         <span id="studentExcelStatus" class="small"></span>
       </div>
-      <div class="small" style="margin-top:4px;">生徒の科目別コマ数と希望条件を読み込みます。未読み込みの場合は講師のみ割り当てます。</div>
     </div>
 
     <div class="row" style="margin-top:20px;">
@@ -356,17 +422,6 @@
     </div>
   </div>
 
-  <div class="card">
-    <div class="row nowrap"><strong>割当結果プレビュー</strong></div>
-    <div class="row">
-      <button id="togglePreviewBtn">プレビューを表示/非表示</button>
-    </div>
-    <div id="previewContainer" style="display:none; margin-top:12px; overflow-x:auto;">
-      <table id="previewTable" style="border-collapse:collapse; font-size:12px; min-width:100%;">
-      </table>
-    </div>
-  </div>
-
   <div class="card" style="display:none;" id="advancedCard">
     <div class="row">
       <button id="toggleAdvancedBtn">詳細設定・その他の出力を表示</button>
@@ -399,6 +454,22 @@
     </div>
   </div>
 
+    </div> <!-- sidebar-panel -->
+
+    <!-- 右側: 割り当てプレビュー（常に表示） -->
+    <div class="preview-panel">
+      <div class="card">
+        <div class="row nowrap"><strong>割当結果プレビュー</strong></div>
+        <div id="previewContainer" style="margin-top:12px; overflow-x:auto;">
+          <table id="previewTable" style="border-collapse:collapse; font-size:12px; min-width:100%;">
+            <tr><td style="padding:20px; text-align:center; color:#9ca3af;">割り当てを実行すると、ここに結果が表示されます</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div> <!-- main-container -->
+
   <script>
   (() => {
     const $ = id => document.getElementById(id);
@@ -416,7 +487,6 @@
     $('runBtn').onclick = run;
     $('saveTeacherExcelBtn').onclick = () => saveAsExcel('teacher');
     $('toggleRequiredClassBtn').onclick = toggleRequiredClass;
-    $('togglePreviewBtn').onclick = togglePreview;
     $('toggleAdvancedBtn').onclick = toggleAdvanced;
 
     // ドラッグ&ドロップによる割り当て更新イベントを処理
@@ -532,8 +602,8 @@
     // ---- Core ----
     let lastLog = { startedAt: null, warnings: [], decisions: [] };
     let lastAssignments = []; // 割当結果を保存
-    let boothData = []; // ブース表から読み込んだデータ
-    let teacherData = []; // 元シートから読み込んだデータ
+    let boothData = []; // 元シートから読み込んだデータ（講師提出時間割）
+    let teacherData = []; // （未使用 - 互換性のため保持）
     let studentDemandData = []; // 生徒コマ数表から読み込んだ需要データ
     let teacherSubjectMap = {}; // 講師の指導可能科目マップ { teacherId: ['算数', '国語', ...] }
     let teacherNameMap = {}; // 講師IDから講師名へのマップ { teacherId: teacherName }
@@ -708,24 +778,31 @@
 
         const slots = boothData;
 
-        // 講師データを自動生成: 各タイムスロットに全講師を割り当て可能として設定
-        const teachers = [];
-        const allTeacherIds = Object.keys(teacherSubjectMap);
-        logMessage('利用可能な講師: ' + allTeacherIds.join(', '));
+        // 講師データを元シート（teacherData）から取得
+        // teacherDataが空の場合は、全講師を全スロットに割り当て可能として設定（後方互換性）
+        let teachers = [];
+        if(teacherData && teacherData.length > 0){
+          logMessage('元シートから講師データを使用: ' + teacherData.length + '件');
+          teachers = teacherData;
+        } else {
+          logMessage('⚠️ 元シートが読み込まれていません。全講師を全スロットに割り当て可能として設定します。');
+          const allTeacherIds = Object.keys(teacherSubjectMap);
+          logMessage('利用可能な講師: ' + allTeacherIds.join(', '));
 
-        // boothDataの各スロットに対して、全講師を候補として追加
-        for(const slot of boothData){
-          for(const teacherId of allTeacherIds){
-            teachers.push({
-              date: slot.date,
-              time: slot.time,
-              teacherId: teacherId,
-              teacherName: teacherNameMap[teacherId] || teacherId, // 講師名を使用
-              constraints: {}
-            });
+          // boothDataの各スロットに対して、全講師を候補として追加（後方互換性）
+          for(const slot of boothData){
+            for(const teacherId of allTeacherIds){
+              teachers.push({
+                date: slot.date,
+                time: slot.time,
+                teacherId: teacherId,
+                teacherName: teacherNameMap[teacherId] || teacherId,
+                constraints: {}
+              });
+            }
           }
         }
-        console.log('生成された講師割り当て候補数:', teachers.length);
+        console.log('講師割り当て候補数:', teachers.length);
 
         // 生徒需要データを日付・時刻ベースに展開
         const demands = expandStudentDemands(studentDemandData, slots);
@@ -756,7 +833,16 @@
             teacherEarliestTime.set(dailyKey, t.time);
           }
         }
-        console.log('講師の最早出勤時刻:', teacherEarliestTime);
+        logMessage('講師の最早出勤時刻を計算完了: ' + teacherEarliestTime.size + '件');
+        // サンプル表示（最初の5件）
+        let count = 0;
+        for(const [key, time] of teacherEarliestTime.entries()){
+          if(count >= 5) break;
+          const [date, teacherId] = key.split(' ');
+          const teacherName = teacherNameMap[teacherId] || teacherId;
+          logMessage(`  ${teacherName} (${date}): ${time}`);
+          count++;
+        }
 
         // ヘルパー関数: 講師が指定ブースに割り当て可能かチェック（1日内ブース固定ルール）
         const canAssignTeacherToBooth = (teacher, boothId) => {
@@ -931,37 +1017,80 @@
               if (assignedTeacher) break;
             }
 
-            // 【修正】生徒需要がない場合は講師を配置しない
-            // If no demand or none matched, assign teacher-only if available
-            // ※ コメントアウト：元シートに提出されているコマのみ講師を配置
-            // if (!assignedTeacher){
-            //   // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う（1日内ブース固定）
-            //   const existingBoothTeacher = thList.find(x => {
-            //     const dailyKey = slot.date + ' ' + x.teacherId;
-            //     const assignedBooth = teacherDailyBooth.get(dailyKey);
-            //     return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-            //            assignedBooth === slot.boothId &&
-            //            teacherPreferences[x.teacherId] !== 'EXCLUDE';
-            //   });
-            //
-            //   if (existingBoothTeacher) {
-            //     assignedTeacher = existingBoothTeacher;
-            //     console.log(`  ✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId}`);
-            //   }
-            //
-            //   // 優先度2: 空いている講師（通常割り当て）
-            //   // ただし、1日内ブース固定ルールを厳守（既に別のブースに割り当て済みの講師は除外）
-            //   if (!assignedTeacher) {
-            //     assignedTeacher = thList.find(x =>
-            //       !usedTeacherAt.has(tkey+' '+x.teacherId) &&
-            //       teacherPreferences[x.teacherId] !== 'EXCLUDE' &&
-            //       canAssignTeacherToBooth(x, slot.boothId)  // 1日内ブース固定チェック
-            //     );
-            //     if(assignedTeacher){
-            //       console.log(`  → 通常割り当て: ${assignedTeacher.teacherName} -> ${slot.boothId}`);
-            //     }
-            //   }
-            // }
+            // 生徒需要がない場合でも、元シートで提出された時間には講師を配置
+            if (!assignedTeacher){
+              // 優先度1: その日既に割り当てられているブースがあれば、そのブースを使う（1日内ブース固定）
+              const existingBoothTeacher = thList.find(x => {
+                const dailyKey = slot.date + ' ' + x.teacherId;
+                const assignedBooth = teacherDailyBooth.get(dailyKey);
+                return !usedTeacherAt.has(tkey+' '+x.teacherId) &&
+                       assignedBooth === slot.boothId &&
+                       teacherPreferences[x.teacherId] !== 'EXCLUDE';
+              });
+
+              if (existingBoothTeacher) {
+                assignedTeacher = existingBoothTeacher;
+                console.log(`  ✓ 1日内ブース固定: ${existingBoothTeacher.teacherName} -> ${slot.boothId}`);
+              }
+
+              // 優先度2: 空いている講師（通常割り当て）
+              // ただし、1日内ブース固定ルールを厳守（既に別のブースに割り当て済みの講師は除外）
+              // thListは既に出勤時刻が早い順にソート済み
+              if (!assignedTeacher) {
+                // 初回割り当ての場合、この講師が今後も同じブースを使えるか事前チェック
+                for(const candidateTeacher of thList){
+                  if(usedTeacherAt.has(tkey+' '+candidateTeacher.teacherId)) continue;
+                  if(teacherPreferences[candidateTeacher.teacherId] === 'EXCLUDE') continue;
+                  if(!canAssignTeacherToBooth(candidateTeacher, slot.boothId)) continue;
+
+                  const dailyKey = candidateTeacher.date + ' ' + candidateTeacher.teacherId;
+                  const existingBooth = teacherDailyBooth.get(dailyKey);
+
+                  // 既にブースが決まっている場合: そのブースと一致するかチェック
+                  if(existingBooth){
+                    if(existingBooth === slot.boothId){
+                      assignedTeacher = candidateTeacher;
+                      const earliestTime = teacherEarliestTime.get(dailyKey) || '不明';
+                      console.log(`  → 通常割り当て: ${candidateTeacher.teacherName} (最早出勤: ${earliestTime}, 既存ブース: ${existingBooth}) -> ${slot.boothId}`);
+                      break;
+                    }
+                  } else {
+                    // 初回割り当て: この講師が今後も同じブースを使い続けられるか確認
+                    // 優先ブース設定がある講師が実際に出勤している場合のみ、そのブースを占有
+                    const futureTimeKeys = times.filter(t => t > tkey);
+                    const teacherFutureSlots = futureTimeKeys
+                      .map(ftkey => (teachersByTime.get(ftkey) || []).find(t => t.teacherId === candidateTeacher.teacherId))
+                      .filter(t => t !== undefined);
+
+                    let boothAvailableForAll = true;
+                    for(const futureSlot of teacherFutureSlots){
+                      const ftkey = key(futureSlot);
+                      const futureThList = teachersByTime.get(ftkey) || [];
+
+                      // この時間帯で、他の講師が優先ブース設定を持ち、かつ実際に出勤している場合のみブースを占有
+                      const conflictingTeacher = futureThList.find(t =>
+                        t.teacherId !== candidateTeacher.teacherId &&
+                        teacherPreferences[t.teacherId] === slot.boothId &&
+                        !usedTeacherAt.has(ftkey+' '+t.teacherId) // まだ割り当てられていない＝出勤可能
+                      );
+
+                      if(conflictingTeacher){
+                        boothAvailableForAll = false;
+                        console.log(`  ⚠️ ${candidateTeacher.teacherName}の初回ブース候補${slot.boothId}は、${ftkey}で${conflictingTeacher.teacherName}（優先ブース設定・出勤予定）により使用不可`);
+                        break;
+                      }
+                    }
+
+                    if(boothAvailableForAll){
+                      assignedTeacher = candidateTeacher;
+                      const earliestTime = teacherEarliestTime.get(dailyKey) || '不明';
+                      console.log(`  → 通常割り当て（初回・事前検証済）: ${candidateTeacher.teacherName} (最早出勤: ${earliestTime}) -> ${slot.boothId}`);
+                      break;
+                    }
+                  }
+                }
+              }
+            }
 
             if (assignedTeacher){
               usedTeacherAt.add(tkey+' '+assignedTeacher.teacherId);
@@ -1049,6 +1178,9 @@
         updateProgress(100, '講師割り当て完了!');
         await new Promise(resolve => setTimeout(resolve, 1000));
         hideProgress();
+
+        // プレビューを表示
+        renderPreview();
 
         toast('講師割り当てが完了しました。生徒を選択して割り当ててください。', 'ok');
       }catch(e){
@@ -1460,97 +1592,286 @@
       tbody.innerHTML += `<tr style="background:#f9fafb; font-weight:600;"><td colspan="5" style="border:1px solid #d1d5db; padding:8px; text-align:center;">${summaryMsg}</td></tr>`;
     }
 
-    function togglePreview(){
-      const container = $('previewContainer');
-      if(container.style.display === 'none'){
-        container.style.display = 'block';
-        renderPreview();
-      } else {
-        container.style.display = 'none';
-      }
-    }
-
     function renderPreview(){
-      if(lastAssignments.length === 0){
+      // window.currentAssignmentsが存在する場合はそれを使用（生徒割り当て後）
+      const assignments = window.currentAssignments || lastAssignments;
+
+      if(assignments.length === 0){
         $('previewTable').innerHTML = '<tr><td>割当結果がありません</td></tr>';
         return;
       }
 
-      const dates = [...new Set(lastAssignments.map(a=>a.date))].sort();
+      const dates = [...new Set(assignments.map(a=>a.date))].sort();
       // 丸付き数字はUnicodeコードポイント順にソート（①②③...の順）
-      const booths = [...new Set(lastAssignments.map(a=>a.boothId))].sort();
-      const times = [...new Set(lastAssignments.map(a=>a.time))].sort();
+      const booths = [...new Set(assignments.map(a=>a.boothId))].sort();
+      const times = [...new Set(assignments.map(a=>a.time))].sort();
 
-      // ブース表フォーマットに揃える: 日付行、曜日行、時間列、ブース番号＋講師名の2列構造
-      let html = '<thead>';
+      // 時間から秒を削除
+      const formatTime = (time) => {
+        const parts = time.split(':');
+        return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : time;
+      };
 
-      // 行0: 日付（各日2列×ブース数分を結合）
-      html += '<tr><th style="border:1px solid #d1d5db; background:#f3f4f6;"></th>'; // 左上空白
-      for(const date of dates){
-        const day = new Date(date).getDate();
-        html += `<th colspan="${booths.length * 2}" style="border:1px solid #d1d5db; background:#f3f4f6; text-align:center;">${day}</th>`;
-      }
-      html += '</tr>';
-
-      // 行1: 曜日（各日2列×ブース数分を結合）
-      html += '<tr><th style="border:1px solid #d1d5db; background:#f3f4f6;"></th>';
-      const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+      // 日付を週ごとに分割（月曜始まり）
+      const weekGroups = [];
+      let currentWeek = [];
       for(const date of dates){
         const d = new Date(date);
-        const weekday = weekdays[d.getDay()];
-        html += `<th colspan="${booths.length * 2}" style="border:1px solid #d1d5db; background:#f3f4f6; text-align:center;">${weekday}</th>`;
-      }
-      html += '</tr>';
-      html += '</thead><tbody>';
+        const dayOfWeek = d.getDay(); // 0=日, 1=月, ..., 6=土
 
-      // 時間行
-      for(const time of times){
-        html += `<tr><td style="font-weight:600; border:1px solid #d1d5db; padding:6px 8px; background:#f9fafb;">${time}</td>`;
-        for(const date of dates){
-          for(const booth of booths){
-            const a = lastAssignments.find(x=>x.date===date && x.time===time && x.boothId===booth);
+        // 月曜日（dayOfWeek=1）または週の開始で新しい週を作成
+        if(dayOfWeek === 1 && currentWeek.length > 0){
+          weekGroups.push(currentWeek);
+          currentWeek = [];
+        }
+
+        currentWeek.push(date);
+      }
+      if(currentWeek.length > 0){
+        weekGroups.push(currentWeek);
+      }
+
+      // ブース表フォーマットに揃える: 曜日を縦列に、週ごとに分割して表示
+      let html = '';
+      const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+
+      // 曜日ごとにデータを整理（月〜日の7列構造）
+      const dayOfWeekCols = [1, 2, 3, 4, 5, 6, 0]; // 月火水木金土日の順
+
+      // 週ごとにテーブルを作成
+      for(let weekIndex = 0; weekIndex < weekGroups.length; weekIndex++){
+        const weekDates = weekGroups[weekIndex];
+
+        // 曜日ごとにデータをマッピング
+        const dateByDayOfWeek = {};
+        for(const date of weekDates){
+          const d = new Date(date);
+          const dow = d.getDay();
+          dateByDayOfWeek[dow] = date;
+        }
+
+        // 週の区切り
+        if(weekIndex > 0){
+          html += '<tr><td colspan="100%" style="height:20px; background:#f3f4f6;"></td></tr>';
+        }
+
+        html += '<thead>';
+
+        // 行0: 曜日ヘッダー（月〜日の順）
+        html += '<tr><th style="border:1px solid #d1d5db; background:#f3f4f6; width:80px;">時間</th>';
+        for(const dow of dayOfWeekCols){
+          const date = dateByDayOfWeek[dow];
+          const dayLabel = weekdays[dow];
+          const dayNum = date ? new Date(date).getDate() : '-';
+          html += `<th colspan="${booths.length * 3}" style="border:1px solid #d1d5db; background:#f3f4f6; text-align:center;">${dayLabel} (${dayNum})</th>`;
+        }
+        html += '</tr>';
+        html += '</thead><tbody>';
+
+        // 時間行
+        for(const time of times){
+          html += `<tr><td style="font-weight:600; border:1px solid #d1d5db; padding:6px 8px; background:#f9fafb; position:sticky; left:0; z-index:10;">${formatTime(time)}</td>`;
+
+          for(const dow of dayOfWeekCols){
+            const date = dateByDayOfWeek[dow];
+
+            for(const booth of booths){
+              const a = date ? assignments.find(x=>x.date===date && x.time===time && x.boothId===booth) : null;
             const cls = (a && a.teacherId) ? 'assigned' : 'empty';
 
             // ブース番号セル（B1形式を丸付き数字に変換して表示）
             html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${boothIdToCircled(booth)}</td>`;
 
-            // 講師名セル（ドラッグ&ドロップ対応）
-            let text = '';
+            // 講師名セル
+            let teacherText = '';
             if(a && a.teacherId){
-              // 講師名を苗字+Tで表示
+              // 講師名を表示: 苗字が重複している場合は「名前+T」、それ以外は「苗字+T」
               const teacherName = a.teacherName || a.teacherId;
-              const surname = teacherName.replace(/T$/, '').split(/\s+/)[0]; // 空白で分割して最初を取得
-              text = surname + 'T';
+              const cleanName = teacherName.replace(/T$/, ''); // 末尾のTを削除
+              const parts = cleanName.split(/\s+/); // 空白で分割
+              const surname = parts[0] || cleanName; // 苗字
+              const givenName = parts[1] || ''; // 名前
 
-              // 生徒を表示（最大2人）
-              if(a.students && a.students.length > 0){
-                for(const student of a.students){
-                  text += '<br/><small style="font-weight:600;">' + (student.studentName || student.studentId);
-                  if(student.subject) text += '<span style="font-weight:normal;">(' + student.subject + ')</span>';
-                  text += '</small>';
-                }
+              // ユニークな講師のみを取得して苗字重複チェック
+              const uniqueTeachers = [...new Set(assignments.filter(x => x.teacherId).map(x => x.teacherId))];
+              const allSurnames = uniqueTeachers.map(tid => {
+                const assignment = assignments.find(x => x.teacherId === tid);
+                const tName = (assignment.teacherName || tid).replace(/T$/, '');
+                return { teacherId: tid, surname: tName.split(/\s+/)[0] };
+              });
+
+              // この講師と同じ苗字を持つ講師が他にいるかチェック
+              const sameSurnameTeachers = allSurnames.filter(t => t.surname === surname);
+              const hasDuplicateSurname = sameSurnameTeachers.length > 1;
+
+              // 苗字が重複している場合は名前+T、それ以外は苗字+T
+              if(hasDuplicateSurname && givenName){
+                teacherText = givenName + 'T';
+              } else {
+                teacherText = surname + 'T';
+              }
+
+              // 講師名をクリック可能なスパンで囲む
+              const teacherDisplayId = `teacher_${date}_${time}_${booth}`;
+              teacherText = `<span id="${teacherDisplayId}" class="teacher-name-clickable"
+                        style="cursor:pointer; text-decoration:underline; color:#2563eb;"
+                        onclick="showTeacherDropdown('${date}', '${time}', '${booth}', '${a.teacherId}')">${teacherText}</span>`;
+            }
+
+            const teacherCellId = `cell_teacher_${date}_${time}_${booth}`;
+            html += `<td class="${cls}" id="${teacherCellId}"
+                      style="border:1px solid #d1d5db; padding:4px; min-width:80px; background:#${a && a.teacherId ? 'e0f2fe' : 'fef3c7'};"
+                      data-date="${date}" data-time="${time}" data-booth="${booth}">${teacherText}</td>`;
+
+            // 生徒セル（最大2人）
+            let studentText = '';
+            if(a && a.students && a.students.length > 0){
+              for(const student of a.students){
+                if(studentText) studentText += '<br/>';
+                studentText += '<small style="font-weight:600;">' + (student.studentName || student.studentId);
+                if(student.subject) studentText += '<span style="font-weight:normal;">(' + student.subject + ')</span>';
+                studentText += '</small>';
               }
             }
 
-            const cellId = `cell_${date}_${time}_${booth}`;
-            const draggable = (a && a.teacherId) ? 'true' : 'false';
-            const cursor = (a && a.teacherId) ? 'move' : 'default';
-
-            html += `<td class="${cls}" id="${cellId}" draggable="${draggable}"
-                      style="border:1px solid #d1d5db; padding:4px; min-width:100px; cursor:${cursor};"
-                      data-date="${date}" data-time="${time}" data-booth="${booth}"
-                      ondragstart="handleDragStart(event)"
-                      ondragover="handleDragOver(event)"
-                      ondrop="handleDrop(event)"
-                      ondragenter="handleDragEnter(event)"
-                      ondragleave="handleDragLeave(event)">${text}</td>`;
+            const studentCellId = `cell_student_${date}_${time}_${booth}`;
+            html += `<td class="${a && a.students && a.students.length > 0 ? 'assigned' : 'empty'}" id="${studentCellId}"
+                      style="border:1px solid #d1d5db; padding:4px; min-width:120px; background:#${a && a.students && a.students.length > 0 ? 'd1fae5' : 'fff'};"
+                      data-date="${date}" data-time="${time}" data-booth="${booth}">${studentText}</td>`;
+            }
           }
+          html += '</tr>';
         }
-        html += '</tr>';
+        html += '</tbody>';
       }
-      html += '</tbody>';
 
       $('previewTable').innerHTML = html;
+    }
+
+    // ================= 講師変更プルダウン =================
+    let currentDropdown = null; // 現在表示中のプルダウン
+
+    // グローバルスコープに公開（HTMLのonclickから呼び出せるように）
+    window.showTeacherDropdown = function(date, time, booth, currentTeacherId){
+      // 既存のプルダウンを削除
+      if(currentDropdown){
+        currentDropdown.remove();
+        currentDropdown = null;
+      }
+
+      // その時間帯に出勤可能な講師を取得
+      const tkey = `${date}|${time}`;
+      const availableTeachers = teacherData.filter(t => t.date === date && t.time === time);
+
+      if(availableTeachers.length === 0){
+        toast('この時間帯に出勤可能な講師がいません', 'warn');
+        return;
+      }
+
+      // プルダウンを作成
+      const dropdown = document.createElement('div');
+      dropdown.id = 'teacherDropdown';
+      dropdown.style.cssText = `
+        position: absolute;
+        background: white;
+        border: 2px solid #2563eb;
+        border-radius: 4px;
+        padding: 8px;
+        z-index: 1000;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        max-height: 200px;
+        overflow-y: auto;
+        min-width: 150px;
+      `;
+
+      // ヘッダー
+      const header = document.createElement('div');
+      header.style.cssText = 'font-weight:600; margin-bottom:8px; font-size:12px; color:#374151;';
+      header.textContent = '講師を選択:';
+      dropdown.appendChild(header);
+
+      // 現在の講師を強調
+      const currentAssignment = lastAssignments.find(a => a.date === date && a.time === time && a.boothId === booth);
+
+      // 講師リスト
+      for(const teacher of availableTeachers){
+        const option = document.createElement('div');
+        option.style.cssText = `
+          padding: 6px 8px;
+          cursor: pointer;
+          border-radius: 3px;
+          font-size: 13px;
+          margin-bottom: 2px;
+          ${teacher.teacherId === currentTeacherId ? 'background:#dbeafe; font-weight:600;' : 'background:#f9fafb;'}
+        `;
+        option.textContent = teacher.teacherName || teacher.teacherId;
+        option.onmouseover = () => { if(teacher.teacherId !== currentTeacherId) option.style.background = '#e5e7eb'; };
+        option.onmouseout = () => { if(teacher.teacherId !== currentTeacherId) option.style.background = '#f9fafb'; };
+        option.onclick = () => {
+          changeTeacher(date, time, booth, teacher.teacherId);
+          dropdown.remove();
+          currentDropdown = null;
+        };
+        dropdown.appendChild(option);
+      }
+
+      // キャンセルボタン
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.style.cssText = `
+        width: 100%;
+        margin-top: 8px;
+        padding: 6px;
+        background: #f3f4f6;
+        border: 1px solid #d1d5db;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+      `;
+      cancelBtn.onclick = () => {
+        dropdown.remove();
+        currentDropdown = null;
+      };
+      dropdown.appendChild(cancelBtn);
+
+      // セルの位置を取得してプルダウンを配置
+      const cellId = `cell_${date}_${time}_${booth}`;
+      const cell = document.getElementById(cellId);
+      if(!cell){
+        toast('セルが見つかりませんでした', 'error');
+        return;
+      }
+
+      // セルに相対位置でプルダウンを追加
+      cell.style.position = 'relative';
+      cell.appendChild(dropdown);
+      currentDropdown = dropdown;
+    }
+
+    function changeTeacher(date, time, booth, newTeacherId){
+      // 割り当てを変更
+      const assignment = lastAssignments.find(a => a.date === date && a.time === time && a.boothId === booth);
+      if(!assignment){
+        toast('割り当てが見つかりませんでした', 'error');
+        return;
+      }
+
+      // 新しい講師情報を取得
+      const newTeacher = teacherData.find(t => t.teacherId === newTeacherId && t.date === date && t.time === time);
+      if(!newTeacher){
+        toast('講師情報が見つかりませんでした', 'error');
+        return;
+      }
+
+      // 割り当てを更新
+      assignment.teacherId = newTeacher.teacherId;
+      assignment.teacherName = newTeacher.teacherName || '';
+
+      // プレビューを再描画
+      renderPreview();
+      toast(`講師を ${newTeacher.teacherName || newTeacherId} に変更しました`, 'ok');
+
+      console.log(`✓ 講師変更: ${date} ${time} ${booth} -> ${newTeacher.teacherName}`);
     }
 
     // ================= Excel import: ブース表 =================
@@ -2087,6 +2408,7 @@
       }
     }
 
+    // ================= 元シート（講師提出シフト）の読み込み =================
     async function parseTeacherExcel(input){
       const file = input.files?.[0];
       if (!file){ $('teacherExcelStatus').textContent = 'ファイル未選択'; return; }
