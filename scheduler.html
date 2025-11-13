@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>SmartScheduler v1.4 - 時間割自動作成システム</title>
+  <title>SmartScheduler v1.6 - 時間割自動作成システム</title>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <style>
     /* ========== 基本設定 ========== */
@@ -223,23 +223,25 @@
 </head>
 <body>
   <h1>SmartScheduler - 時間割自動作成システム</h1>
-  <div class="version">v1.3 - 個別指導塾向けブラウザ完結型スケジューラ</div>
+  <div class="version">v1.6 - 個別指導塾向けブラウザ完結型スケジューラ</div>
 
   <div class="card">
     <div class="row">
-      <div class="small">ブース表と元シート（講師表）のExcelファイルを読み込んで、講師を自動配置します。</div>
+      <div class="small">ブース表と生徒・講師情報のExcelファイルを読み込んで、講師と生徒を自動配置します。</div>
     </div>
 
     <div class="row" style="margin-top:20px;">
       <h2>① ブース表（.xlsx）を読み込む</h2>
+      <div class="small">ブースの枠組みが定義されたExcelファイル（複数シート対応）</div>
       <div class="row">
-        <input type="file" id="boothExcelFile" accept=".xlsx,.xls" />
+        <input type="file" id="boothExcelFile" accept=".xlsx,.xls,.xlsm" />
         <span id="boothExcelStatus" class="small"></span>
       </div>
     </div>
 
     <div class="row" style="margin-top:20px;">
-      <h2>② 元シート（講師表 .xlsx）を読み込む</h2>
+      <h2>② 生徒・講師情報（.xlsx）を読み込む</h2>
+      <div class="small">シート1: 指導可能教科一覧、シート2: 生徒コマ数表を含むファイル</div>
       <div class="row">
         <input type="file" id="teacherExcelFile" accept=".xlsx,.xls" />
         <span id="teacherExcelStatus" class="small"></span>
@@ -247,7 +249,8 @@
     </div>
 
     <div class="row" style="margin-top:20px;">
-      <h2>③ 生徒コマ数表（.xlsx）を読み込む（オプション）</h2>
+      <h2>③ 追加の生徒コマ数表（.xlsx）（オプション）</h2>
+      <div class="small">追加の生徒情報を読み込む場合に使用</div>
       <div class="row">
         <input type="file" id="studentExcelFile" accept=".xlsx,.xls" />
         <span id="studentExcelStatus" class="small"></span>
@@ -259,11 +262,11 @@
       <h2>④ 講師の優先ブース設定（オプション）</h2>
       <div class="small">読み込み完了後、講師ごとに優先的に配置するブースを設定できます</div>
       <div class="row" style="margin-top:8px;">
-        <button id="showPreferenceBtn">優先ブース設定を表示</button>
-        <button id="savePreferenceBtn">設定を保存</button>
         <button id="loadPreferenceBtn">設定を読み込み</button>
+        <button id="savePreferenceBtn">設定を保存</button>
+        <button id="hidePreferenceBtn">設定を非表示</button>
       </div>
-      <div id="preferenceContainer" style="display:none; margin-top:12px; max-height:300px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
+      <div id="preferenceContainer" style="display:block; margin-top:12px; max-height:300px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px; padding:12px;">
         <table id="preferenceTable" style="width:100%; border-collapse:collapse;">
           <thead>
             <tr>
@@ -277,19 +280,79 @@
     </div>
 
     <div class="row" style="margin-top:24px;">
-      <button id="runBtn" style="font-size:16px; padding:12px 24px; font-weight:600;">⑤ 講師と生徒を割り当てる</button>
+      <button id="runBtn" style="font-size:16px; padding:12px 24px; font-weight:600;">⑤ 講師を割り当てる</button>
       <span id="status" class="small"></span>
+    </div>
+
+    <!-- 進行状況バー -->
+    <div id="progressContainer" style="display:none; margin-top:16px;">
+      <div style="margin-bottom:8px;">
+        <span id="progressText" style="font-size:14px; font-weight:600;"></span>
+      </div>
+      <div style="width:100%; background:#e5e7eb; border-radius:8px; height:24px; overflow:hidden;">
+        <div id="progressBar" style="width:0%; background:linear-gradient(90deg, #3b82f6, #2563eb); height:100%; transition:width 0.3s; display:flex; align-items:center; justify-content:center; color:white; font-size:12px; font-weight:600;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 生徒選択・割り当てUI -->
+  <div class="card" style="display:none;" id="studentSelectionCard">
+    <h3 style="margin:0 0 16px 0; color:#1f2937;">⑥ 生徒の割り当て</h3>
+
+    <div style="background:#f3f4f6; padding:12px; border-radius:6px; margin-bottom:16px;">
+      <p style="margin:0; font-size:14px; color:#4b5563;">
+        <strong>講師の割り当てが完了しました。</strong><br>
+        生徒を1人選択して「割り当て」ボタンを押すと、その生徒のすべての授業が自動的に割り当てられます。
+      </p>
+    </div>
+
+    <div class="row" style="gap:12px; align-items:center;">
+      <label for="studentSelect" style="font-weight:600; color:#374151;">生徒を選択:</label>
+      <select id="studentSelect" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:6px; font-size:14px; min-width:200px;">
+        <option value="">-- 生徒を選択してください --</option>
+      </select>
+      <button id="assignStudentBtn" style="padding:8px 24px; background:#3b82f6; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;" onclick="assignSelectedStudent()">
+        選択した生徒を割り当て
+      </button>
+    </div>
+
+    <div id="studentAssignmentStatus" style="margin-top:16px; padding:12px; background:#f9fafb; border-radius:6px; display:none;">
+      <h4 style="margin:0 0 8px 0; font-size:14px; color:#374151;">割り当て状況</h4>
+      <div id="studentStatusList" style="font-size:13px; color:#6b7280;"></div>
     </div>
   </div>
 
   <div class="card">
     <div class="row">
-      <h2>④ 結果を保存</h2>
+      <h2>⑦ 結果を保存</h2>
       <div class="small">講師が配置されたブース表をExcelファイルで保存します</div>
     </div>
     <div class="row">
       <button id="saveTeacherExcelBtn" style="font-size:16px; padding:12px 24px; font-weight:600; background:#10b981; color:white; border:none;">講師配置済みブース表.xlsxを保存</button>
       <span id="excelStatus" class="small"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row nowrap"><strong>必要コマ数確認表</strong></div>
+    <div class="small">生徒ごとの必要コマ数と割り当て済みコマ数を確認できます</div>
+    <div class="row">
+      <button id="toggleRequiredClassBtn">確認表を表示/非表示</button>
+    </div>
+    <div id="requiredClassContainer" style="display:none; margin-top:12px; overflow-x:auto;">
+      <table id="requiredClassTable" style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #d1d5db; padding:8px; background:#f3f4f6;">生徒名</th>
+            <th style="border:1px solid #d1d5db; padding:8px; background:#f3f4f6;">科目</th>
+            <th style="border:1px solid #d1d5db; padding:8px; background:#f3f4f6;">必要コマ数</th>
+            <th style="border:1px solid #d1d5db; padding:8px; background:#f3f4f6;">割当済み</th>
+            <th style="border:1px solid #d1d5db; padding:8px; background:#f3f4f6;">達成率</th>
+          </tr>
+        </thead>
+        <tbody id="requiredClassTableBody">
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -331,7 +394,6 @@
 
       <div class="row" style="margin-top:16px;">
         <button id="saveLogBtn">実行ログ(JSON)保存</button>
-        <button id="saveStudentExcelBtn">生徒配置済みブース表.xlsx（生徒情報含む）</button>
       </div>
     </div>
   </div>
@@ -352,11 +414,66 @@
 
     $('runBtn').onclick = run;
     $('saveTeacherExcelBtn').onclick = () => saveAsExcel('teacher');
+    $('toggleRequiredClassBtn').onclick = toggleRequiredClass;
     $('togglePreviewBtn').onclick = togglePreview;
     $('toggleAdvancedBtn').onclick = toggleAdvanced;
 
+    // ドラッグ&ドロップによる割り当て更新イベントを処理
+    document.addEventListener('updateAssignment', (e) => {
+      const { fromDate, fromTime, fromBooth, toDate, toTime, toBooth } = e.detail;
+
+      // ドラッグ元のassignmentを見つける
+      const fromIndex = lastAssignments.findIndex(a =>
+        a.date === fromDate && a.time === fromTime && a.boothId === fromBooth
+      );
+
+      // ドロップ先のassignmentを見つける（存在しない場合もある）
+      const toIndex = lastAssignments.findIndex(a =>
+        a.date === toDate && a.time === toTime && a.boothId === toBooth
+      );
+
+      if(fromIndex === -1){
+        console.warn('ドラッグ元のassignmentが見つかりません');
+        return;
+      }
+
+      const fromAssignment = lastAssignments[fromIndex];
+
+      if(toIndex !== -1){
+        // ドロップ先に既にassignmentがある場合は入れ替え
+        const toAssignment = lastAssignments[toIndex];
+
+        // fromAssignmentの位置情報を更新
+        fromAssignment.date = toDate;
+        fromAssignment.time = toTime;
+        fromAssignment.boothId = toBooth;
+
+        // toAssignmentの位置情報を更新
+        toAssignment.date = fromDate;
+        toAssignment.time = fromTime;
+        toAssignment.boothId = fromBooth;
+
+        console.log('✓ 割り当てを入れ替えました');
+      } else {
+        // ドロップ先が空の場合は移動のみ
+        fromAssignment.date = toDate;
+        fromAssignment.time = toTime;
+        fromAssignment.boothId = toBooth;
+
+        console.log('✓ 割り当てを移動しました');
+      }
+
+      // プレビューを再描画
+      renderPreview();
+      // 必要コマ数確認表も更新
+      if($('requiredClassContainer').style.display !== 'none'){
+        renderRequiredClassTable();
+      }
+      toast('割り当てを更新しました', 'ok');
+    });
+
     // 優先ブース設定
-    $('showPreferenceBtn').onclick = showPreferenceSettings;
+    $('hidePreferenceBtn').onclick = togglePreferenceSettings;
     $('savePreferenceBtn').onclick = savePreferenceSettings;
     $('loadPreferenceBtn').onclick = loadPreferenceSettings;
 
@@ -364,7 +481,6 @@
     $('copyCsvBtn').onclick = () => copyToClipboard(assignmentsOut.value);
     $('saveCsvBtn').onclick = () => downloadText(assignmentsOut.value, makeTsPrefix() + '_assignments.csv', 'text/csv');
     $('saveLogBtn').onclick = () => downloadText(JSON.stringify(lastLog, null, 2), makeTsPrefix() + '_run_log.json', 'application/json');
-    $('saveStudentExcelBtn').onclick = () => saveAsExcel('student');
     $('copyReportBtn').onclick = () => copyToClipboard(reportOut.value);
     $('saveReportBtn').onclick = () => downloadText(reportOut.value, makeTsPrefix() + '_report.csv', 'text/csv');
 
@@ -395,6 +511,22 @@
     function pad2(n){ return String(n).padStart(2,'0'); }
     function makeTsPrefix(){ const d=new Date(); return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`; }
 
+    // 進行状況バーを更新する関数
+    function updateProgress(percent, text) {
+      const container = document.getElementById('progressContainer');
+      const bar = document.getElementById('progressBar');
+      const textEl = document.getElementById('progressText');
+
+      container.style.display = 'block';
+      bar.style.width = percent + '%';
+      bar.textContent = Math.round(percent) + '%';
+      textEl.textContent = text;
+    }
+
+    function hideProgress() {
+      document.getElementById('progressContainer').style.display = 'none';
+    }
+
     // ---- Core ----
     let lastLog = { startedAt: null, warnings: [], decisions: [] };
     let lastAssignments = []; // 割当結果を保存
@@ -402,9 +534,13 @@
     let teacherData = []; // 元シートから読み込んだデータ
     let studentDemandData = []; // 生徒コマ数表から読み込んだ需要データ
     let teacherSubjectMap = {}; // 講師の指導可能科目マップ { teacherId: ['算数', '国語', ...] }
+    let teacherNameMap = {}; // 講師IDから講師名へのマップ { teacherId: teacherName }
     let originalBoothWorkbook = null; // 元のブース表ExcelJSワークブック（書式完全保持）
     let boothSheetInfo = {}; // ブース表のシート情報（行・列の位置）
     let teacherPreferences = {}; // 講師の優先ブース設定 { teacherId: 'B1' }
+    let studentAssignmentHistory = {}; // 生徒の割り当て履歴 { studentId_subject: [{dayOfWeek, time, teacherId}] }
+    let studentAssignedCount = {}; // 生徒の科目別割り当て済みコマ数 { studentId_subject: count }
+    let studentDailyBooth = {}; // 生徒の日別ブース割り当て { studentId_subject_date: boothId }
 
     function key(dt){ return dt.date + ' ' + dt.time; }
     function sameTime(a,b){ return a.date===b.date && a.time===b.time; }
@@ -525,29 +661,69 @@
       return expanded;
     }
 
-    function run(){
+    async function run(){
       lastLog = { startedAt: new Date().toISOString(), warnings: [], decisions: [] };
       lastAssignments = [];
+      studentAssignmentHistory = {}; // リセット
+      studentAssignedCount = {}; // リセット
+      studentDailyBooth = {}; // リセット
       assignmentsOut.value = '';
       reportOut.value = '';
+
+      // 進行状況バーを初期化
+      updateProgress(0, '初期化中...');
+
       try{
         if(boothData.length === 0){
+          hideProgress();
           throw new Error('ブース表を先に読み込んでください');
         }
-        if(teacherData.length === 0){
-          throw new Error('元シート（講師表）を先に読み込んでください');
+
+        // 講師-科目マップが空の場合はエラー
+        if(!teacherSubjectMap || Object.keys(teacherSubjectMap).length === 0){
+          hideProgress();
+          throw new Error('講師の指導可能科目情報を読み込んでください（生徒・講師情報.xlsxの「指導可能教科一覧」シート）');
         }
+
+        updateProgress(5, 'データを読み込み中...');
+        await new Promise(resolve => setTimeout(resolve, 10)); // UI更新のための待機
 
         console.log('=== 割り当て開始 ===');
         console.log('優先ブース設定:', teacherPreferences);
         console.log('生徒需要データ:', studentDemandData.length, '件');
+        console.log('講師-科目マップ:', teacherSubjectMap);
+        console.log('ブースデータ件数:', boothData.length);
 
         const slots = boothData;
-        const teachers = teacherData;
+
+        // 講師データを自動生成: 各タイムスロットに全講師を割り当て可能として設定
+        const teachers = [];
+        const allTeacherIds = Object.keys(teacherSubjectMap);
+        console.log('利用可能な講師:', allTeacherIds);
+
+        // boothDataの各スロットに対して、全講師を候補として追加
+        for(const slot of boothData){
+          for(const teacherId of allTeacherIds){
+            teachers.push({
+              date: slot.date,
+              time: slot.time,
+              teacherId: teacherId,
+              teacherName: teacherNameMap[teacherId] || teacherId, // 講師名を使用
+              constraints: {}
+            });
+          }
+        }
+        console.log('生成された講師割り当て候補数:', teachers.length);
 
         // 生徒需要データを日付・時刻ベースに展開
         const demands = expandStudentDemands(studentDemandData, slots);
         console.log('展開後の需要データ:', demands.length, '件');
+        if(demands.length > 0) {
+          console.log('需要データサンプル (最初の3件):');
+          demands.slice(0, 3).forEach(d => {
+            console.log('  -', d.studentName, d.subject, d.date, d.time, 'NG講師:', d.ngTeachers);
+          });
+        }
 
         // index by time
         const slotsByTime = groupBy(slots, s => key(s));
@@ -578,19 +754,8 @@
           return !assignedBooth || assignedBooth === boothId;
         };
 
-        // ヘルパー関数: 講師が指定科目を指導可能かチェック
-        const canTeachSubject = (teacherId, subject) => {
-          // 科目が指定されていない場合は常にOK
-          if (!subject) return true;
-          // teacherSubjectMapが空の場合は常にOK（後方互換性）
-          if (!teacherSubjectMap || Object.keys(teacherSubjectMap).length === 0) return true;
-          // 講師の指導可能科目リストを取得
-          const teachableSubjects = teacherSubjectMap[teacherId];
-          if (!teachableSubjects) return false; // 講師情報がない場合はNG
-          // 科目名を正規化して比較
-          const normalizedSubject = normalizeSubjectName(subject);
-          return teachableSubjects.includes(normalizedSubject);
-        };
+        // ヘルパー関数: グローバル関数を参照
+        const canTeachSubject = window.canTeachSubject;
 
         // ヘルパー関数: NG生徒が同じ時間帯に割り当てられていないかチェック
         const hasNgStudentConflict = (demand, assignedStudentsInTime) => {
@@ -609,9 +774,22 @@
 
         const lines = [ 'date,time,boothId,teacherId,teacherName,studentId,subject' ];
 
+        updateProgress(10, '講師の割り当てを準備中...');
+        await new Promise(resolve => setTimeout(resolve, 10));
+
         // Iterate over time slots in chronological order
-        const times = Array.from(new Set([...slots.map(key)])).sort();
+        const times = Array.from(new Set([...slots.map(slot => key(slot))])).sort();
+        const totalTimes = times.length;
+        let processedTimes = 0;
+
         for(const tkey of times){
+          // 進行状況を更新 (10-60%の範囲で)
+          processedTimes++;
+          const progressPercent = 10 + (processedTimes / totalTimes) * 50;
+          if(processedTimes % Math.max(1, Math.floor(totalTimes / 20)) === 0){
+            updateProgress(progressPercent, `講師を割り当て中... (${processedTimes}/${totalTimes} 時間帯)`);
+            await new Promise(resolve => setTimeout(resolve, 1));
+          }
           const sList = slotsByTime.get(tkey) || [];
           const thList = (teachersByTime.get(tkey) || []).slice();
           const ddList = (demandByTime.get(tkey) || []).slice();
@@ -686,8 +864,7 @@
               boothId: targetSlot.boothId,
               teacherId: teacher.teacherId,
               teacherName: teacher.teacherName||'',
-              studentId: '',
-              subject: ''
+              students: [] // 最大2人まで後で追加
             };
             lastAssignments.push(assignmentRecord);
             lines.push([targetSlot.date, targetSlot.time, targetSlot.boothId, teacher.teacherId, (teacher.teacherName||''), '', ''].join(','));
@@ -802,49 +979,72 @@
                 boothId: slot.boothId,
                 teacherId: assignedTeacher.teacherId,
                 teacherName: assignedTeacher.teacherName||'',
-                studentId: assignedDemand?.studentId||'',
-                subject: assignedDemand?.subject||''
+                students: [] // 最大2人まで後で追加（assignedDemandは後のフェーズで処理）
               };
               lastAssignments.push(assignmentRecord);
               lines.push([slot.date, slot.time, slot.boothId, assignedTeacher.teacherId, (assignedTeacher.teacherName||''), (assignedDemand?.studentId||''), (assignedDemand?.subject||'')].join(','));
               lastLog.decisions.push({ tkey, boothId: slot.boothId, teacherId: assignedTeacher.teacherId, studentId: assignedDemand?.studentId || null });
             } else {
-              // No teacher available
+              // No teacher available - 講師がいないブースには生徒を配置しない
               const assignmentRecord = {
                 date: slot.date,
                 time: slot.time,
                 boothId: slot.boothId,
                 teacherId: '',
                 teacherName: '',
-                studentId: ddList[0]?.studentId||'',
-                subject: ddList[0]?.subject||''
+                students: [] // 講師がいないので生徒も配置しない
               };
               lastAssignments.push(assignmentRecord);
-              lines.push([slot.date, slot.time, slot.boothId, '', '', (ddList[0]?.studentId||''), (ddList[0]?.subject||'')].join(','));
+              lines.push([slot.date, slot.time, slot.boothId, '', '', '', ''].join(','));
               lastLog.warnings.push({ tkey, boothId: slot.boothId, reason: '講師不足' });
             }
           }
         }
 
-        console.log('=== 割り当て完了 ===');
+        // === 講師割り当て完了 ===
+        console.log('\n=== 講師割り当て完了 ===');
+        console.log('講師割り当て状況:');
+        console.log('  総ブース数:', lastAssignments.length);
+        console.log('  講師がいるブース:', lastAssignments.filter(a => a.teacherId).length);
+        console.log('  講師がいないブース:', lastAssignments.filter(a => !a.teacherId).length);
+
+        // 生徒選択UIを準備するため、グローバル変数に保存
+        window.currentAssignments = lastAssignments;
+        window.currentDemands = studentDemandData; // 展開前の元データを使用（必要コマ数分のみ）
+        window.currentSlots = slots;
+
+        console.log('\n=== 割り当て完了 ===');
         console.log('1日内ブース割り当て:', teacherDailyBooth);
+
+        updateProgress(95, '結果を集計中...');
+        await new Promise(resolve => setTimeout(resolve, 10));
 
         assignmentsOut.value = lines.join('\n');
 
-        // レポート生成
-        generateReport(slots, lastAssignments, demands);
+        // レポート生成（講師のみ）
+        generateReport(slots, lastAssignments, demands, null);
 
         // 詳細設定カードを表示
         $('advancedCard').style.display = 'block';
 
-        toast('割当が完了しました: ' + (lines.length-1) + '件', 'ok');
+        // 生徒選択UIを表示
+        if(studentDemandData.length > 0){
+          showStudentSelectionUI();
+        }
+
+        updateProgress(100, '講師割り当て完了!');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        hideProgress();
+
+        toast('講師割り当てが完了しました。生徒を選択して割り当ててください。', 'ok');
       }catch(e){
         console.error(e);
+        hideProgress();
         toast('エラー: ' + e.message, 'err');
       }
     }
 
-    function generateReport(slots, assignments, demands){
+    function generateReport(slots, assignments, demands, demandAssigned){
       const reportLines = ['type,date,time,boothId,teacherId,teacherName,studentId,subject,reason'];
 
       // 未割当の講師をチェック
@@ -852,17 +1052,19 @@
       for(const slot of slots){
         const sk = `${slot.date}_${slot.time}_${slot.boothId}`;
         if(!assignedSlots.has(sk)){
-          const a = assignments.find(x=>x.date===slot.date && x.time===slot.time && x.boothId===slot.boothId);
-          reportLines.push(['未割当講師',slot.date,slot.time,slot.boothId,'','',a?.studentId||'',a?.subject||'','講師が配置されていません'].join(','));
+          reportLines.push(['未割当講師',slot.date,slot.time,slot.boothId,'','','','','講師が配置されていません'].join(','));
         }
       }
 
-      // 未割当の生徒需要をチェック
-      const assignedDemands = new Set(assignments.filter(a=>a.studentId).map(a=>`${a.date}_${a.time}_${a.studentId}`));
-      for(const demand of demands){
-        const dk = `${demand.date}_${demand.time}_${demand.studentId}`;
-        if(!assignedDemands.has(dk)){
-          reportLines.push(['未割当生徒',demand.date,demand.time,'','','',demand.studentId,demand.subject||'','生徒が配置されていません'].join(','));
+      // 未割当の生徒需要をチェック（新しい構造に対応）
+      if(demandAssigned){
+        for(let i = 0; i < demands.length; i++){
+          if(!demandAssigned[i]){
+            const demand = demands[i];
+            const classIndex = demand.classIndex !== undefined ? demand.classIndex : 0;
+            const totalClasses = demand.totalClasses !== undefined ? demand.totalClasses : 1;
+            reportLines.push(['未割当生徒','','','','','',demand.studentId,demand.subject||'',`生徒が配置されていません (${classIndex + 1}/${totalClasses}回目)`].join(','));
+          }
         }
       }
 
@@ -873,6 +1075,375 @@
       }
 
       reportOut.value = reportLines.join('\n');
+    }
+
+    // グローバルヘルパー関数: 講師が指定科目を指導可能かチェック
+    window.canTeachSubject = function(teacherId, subject) {
+      // 科目が指定されていない場合は常にOK
+      if (!subject) return true;
+      // teacherSubjectMapが空の場合は常にOK（後方互換性）
+      if (!teacherSubjectMap || Object.keys(teacherSubjectMap).length === 0) return true;
+      // 講師の指導可能科目リストを取得
+      const teachableSubjects = teacherSubjectMap[teacherId];
+      if (!teachableSubjects) return false; // 講師情報がない場合はNG
+      // 科目名を正規化して比較
+      const normalizedSubject = normalizeSubjectName(subject);
+      return teachableSubjects.includes(normalizedSubject);
+    };
+
+    // 生徒選択UIを表示
+    function showStudentSelectionUI(){
+      const card = $('studentSelectionCard');
+      const select = $('studentSelect');
+      const statusDiv = $('studentAssignmentStatus');
+      const statusList = $('studentStatusList');
+
+      // 生徒リストを取得（重複を除く）
+      const studentSet = new Set();
+      window.currentDemands.forEach(d => studentSet.add(d.studentId));
+      const students = Array.from(studentSet).sort();
+
+      // プルダウンに生徒を追加
+      select.innerHTML = '<option value="">-- 生徒を選択してください --</option>';
+      students.forEach(studentId => {
+        const option = document.createElement('option');
+        option.value = studentId;
+        option.textContent = studentId;
+        select.appendChild(option);
+      });
+
+      // グローバル変数を初期化
+      if(!window.studentAssignmentData){
+        window.studentAssignmentData = {
+          demandAssigned: new Array(window.currentDemands.length).fill(false),
+          studentAssignmentHistory: {},
+          studentDailyBooth: {},
+          assignedStudents: []
+        };
+      }
+
+      // カードを表示
+      card.style.display = 'block';
+
+      console.log(`\n📋 生徒選択UIを表示: ${students.length}人`);
+    }
+
+    // 選択した生徒を割り当て（グローバル関数）
+    window.assignSelectedStudent = async function(){
+      const select = $('studentSelect');
+      const selectedStudent = select.value;
+
+      if(!selectedStudent){
+        toast('生徒を選択してください', 'err');
+        return;
+      }
+
+      // 既に割り当て済みかチェック
+      if(window.studentAssignmentData.assignedStudents.includes(selectedStudent)){
+        toast(`${selectedStudent}は既に割り当て済みです`, 'err');
+        return;
+      }
+
+      try{
+        console.log(`\n${'='.repeat(60)}`);
+        console.log(`🎓 【${selectedStudent}】の割り当てを開始`);
+        console.log(`${'='.repeat(60)}`);
+
+        // この生徒の需要を取得
+        const studentDemands = [];
+        window.currentDemands.forEach((demand, idx) => {
+          if(demand.studentId === selectedStudent){
+            studentDemands.push({ demand, index: idx });
+          }
+        });
+
+        // 科目・classIndexでソート
+        studentDemands.sort((a, b) => {
+          if(a.demand.subject !== b.demand.subject){
+            return a.demand.subject.localeCompare(b.demand.subject);
+          }
+          return (a.demand.classIndex || 0) - (b.demand.classIndex || 0);
+        });
+
+        console.log(`  合計: ${studentDemands.length}コマ`);
+
+        // 各需要を割り当て
+        let assignedCount = 0;
+        for(const { demand, index } of studentDemands){
+          // 既に割り当て済みの場合はスキップ
+          if(window.studentAssignmentData.demandAssigned[index]){
+            console.log(`  ⏭️ スキップ: ${demand.subject} - 既に割り当て済み`);
+            continue;
+          }
+
+          const result = assignSingleDemand(demand, index);
+          if(result){
+            assignedCount++;
+          }
+        }
+
+        // 割り当て済みリストに追加
+        window.studentAssignmentData.assignedStudents.push(selectedStudent);
+
+        // 選択をリセット
+        select.value = '';
+
+        // 状況を更新
+        updateStudentAssignmentStatus();
+
+        // 結果を表示
+        renderPreview();
+        renderRequiredClassTable();
+
+        toast(`${selectedStudent}の割り当てが完了しました (${assignedCount}/${studentDemands.length}コマ)`, 'ok');
+
+        console.log(`✓ ${selectedStudent}の割り当て完了: ${assignedCount}/${studentDemands.length}コマ`);
+
+      }catch(e){
+        console.error(e);
+        toast('エラー: ' + e.message, 'err');
+      }
+    }
+
+    // 1つの需要を割り当て
+    function assignSingleDemand(demand, demandIndex){
+      const studentKey = `${demand.studentId}_${demand.subject}`;
+      const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+
+      // NGの曜日をSetに変換（高速化）
+      const ngDaysSet = demand.ngDays && demand.ngDays.length > 0 ? new Set(demand.ngDays) : null;
+      const ngTeachersSet = demand.ngTeachers && demand.ngTeachers.length > 0 ? new Set(demand.ngTeachers) : null;
+
+      // 全ての利用可能なスロットから候補を探す
+      const candidateAssignments = [];
+      for(let i = 0; i < window.currentAssignments.length; i++){
+        const a = window.currentAssignments[i];
+        if(!a.teacherId) continue;
+        if(a.students.length >= 2) continue;
+        if(!canTeachSubject(a.teacherId, demand.subject)) continue;
+        if(ngTeachersSet && ngTeachersSet.has(a.teacherId)) continue;
+        if(ngDaysSet){
+          const dateObj = new Date(a.date);
+          const dayName = dayNames[dateObj.getDay()];
+          if(ngDaysSet.has(dayName)) continue;
+        }
+        candidateAssignments.push(a);
+      }
+
+      if(candidateAssignments.length === 0){
+        return false;
+      }
+
+      // 履歴を取得
+      const history = window.studentAssignmentData.studentAssignmentHistory[studentKey] || [];
+      const assignedDatesSet = new Set(history.map(h => h.date));
+      const assignedTimesMap = {}; // time -> count
+      for(const h of history){
+        assignedTimesMap[h.time] = (assignedTimesMap[h.time] || 0) + 1;
+      }
+
+      // 最適なスロットを選択
+      let bestAssignment = null;
+      let bestScore = -Infinity;
+
+      for(const assignment of candidateAssignments){
+        let score = 0;
+        const dailyBoothKey = `${studentKey}_${assignment.date}`;
+        const sameDayBooth = window.studentAssignmentData.studentDailyBooth[dailyBoothKey];
+
+        // 同じ日の既存ブースを最優先
+        if(sameDayBooth && assignment.boothId === sameDayBooth){
+          score += 10000;
+        }
+
+        // 同じ時間帯を優先
+        const sameTimeCount = assignedTimesMap[assignment.time] || 0;
+        if(sameTimeCount > 0){
+          score += 500 * sameTimeCount;
+        }
+
+        // 既に割り当てられた日付を避ける
+        if(assignedDatesSet.has(assignment.date)){
+          score -= 1000;
+        } else if(history.length > 0){
+          const assignmentDate = new Date(assignment.date);
+          let minDiff = Infinity;
+          for(const h of history){
+            const diff = Math.abs(assignmentDate - new Date(h.date)) / (1000 * 60 * 60 * 24);
+            if(diff < minDiff) minDiff = diff;
+          }
+          score += minDiff * 10;
+        }
+
+        // 同じ講師を優先
+        for(const h of history){
+          if(h.teacherId === assignment.teacherId){
+            score += 100;
+            break;
+          }
+        }
+
+        if(score > bestScore){
+          bestScore = score;
+          bestAssignment = assignment;
+        }
+      }
+
+      if(!bestAssignment){
+        bestAssignment = candidateAssignments[0];
+      }
+
+      // 生徒を割り当て
+      bestAssignment.students.push({
+        studentId: demand.studentId,
+        studentName: demand.studentName,
+        subject: demand.subject
+      });
+
+      // 割り当て済みフラグを設定
+      window.studentAssignmentData.demandAssigned[demandIndex] = true;
+
+      // 履歴を更新
+      const dateObj = new Date(bestAssignment.date);
+      const dayOfWeek = dateObj.getDay();
+      if(!window.studentAssignmentData.studentAssignmentHistory[studentKey]){
+        window.studentAssignmentData.studentAssignmentHistory[studentKey] = [];
+      }
+      window.studentAssignmentData.studentAssignmentHistory[studentKey].push({
+        date: bestAssignment.date,
+        dayOfWeek: dayOfWeek,
+        time: bestAssignment.time,
+        teacherId: bestAssignment.teacherId
+      });
+
+      // 同じ日のブース割り当てを記録
+      const dailyBoothKey = `${studentKey}_${bestAssignment.date}`;
+      if(!window.studentAssignmentData.studentDailyBooth[dailyBoothKey]){
+        window.studentAssignmentData.studentDailyBooth[dailyBoothKey] = bestAssignment.boothId;
+      }
+
+      return true;
+    }
+
+    // 生徒割り当て状況を更新
+    function updateStudentAssignmentStatus(){
+      const statusDiv = $('studentAssignmentStatus');
+      const statusList = $('studentStatusList');
+
+      if(window.studentAssignmentData.assignedStudents.length === 0){
+        statusDiv.style.display = 'none';
+        return;
+      }
+
+      statusDiv.style.display = 'block';
+
+      let html = '<ul style="margin:0; padding-left:20px;">';
+      window.studentAssignmentData.assignedStudents.forEach(studentId => {
+        html += `<li style="margin:4px 0;">✓ ${studentId}</li>`;
+      });
+      html += '</ul>';
+
+      statusList.innerHTML = html;
+    }
+
+    function toggleRequiredClass(){
+      const container = $('requiredClassContainer');
+      if(container.style.display === 'none'){
+        container.style.display = 'block';
+        renderRequiredClassTable();
+      } else {
+        container.style.display = 'none';
+      }
+    }
+
+    function renderRequiredClassTable(){
+      const tbody = $('requiredClassTableBody');
+
+      if(studentDemandData.length === 0){
+        tbody.innerHTML = '<tr><td colspan="5" style="padding:12px; text-align:center; color:#6b7280;">生徒コマ数表が読み込まれていません</td></tr>';
+        return;
+      }
+
+      // 生徒ごと・科目ごとの必要コマ数を集計
+      const requiredByStu = {}; // { 生徒名: { 科目: 必要コマ数 } }
+      for(const demand of studentDemandData){
+        if(!requiredByStu[demand.studentName]){
+          requiredByStu[demand.studentName] = {};
+        }
+        if(!requiredByStu[demand.studentName][demand.subject]){
+          requiredByStu[demand.studentName][demand.subject] = 0;
+        }
+        requiredByStu[demand.studentName][demand.subject]++;
+      }
+
+      // 割り当て済みコマ数を集計（新しい構造に対応）
+      const assignedByStu = {}; // { 生徒名: { 科目: 割り当て済みコマ数 } }
+      for(const assignment of lastAssignments){
+        if(assignment.students && assignment.students.length > 0){
+          for(const student of assignment.students){
+            if(!assignedByStu[student.studentName]){
+              assignedByStu[student.studentName] = {};
+            }
+            if(!assignedByStu[student.studentName][student.subject]){
+              assignedByStu[student.studentName][student.subject] = 0;
+            }
+            assignedByStu[student.studentName][student.subject]++;
+          }
+        }
+      }
+
+      // テーブルを構築（生徒一人につき1行）
+      let html = '';
+      let allComplete = true;
+
+      for(const [studentName, subjects] of Object.entries(requiredByStu)){
+        let totalRequired = 0;
+        let totalAssigned = 0;
+        let subjectDetails = [];
+
+        for(const [subject, required] of Object.entries(subjects)){
+          const assigned = assignedByStu[studentName]?.[subject] || 0;
+          totalRequired += required;
+          totalAssigned += assigned;
+          subjectDetails.push(`${subject}:${assigned}/${required}`);
+        }
+
+        const rate = totalRequired > 0 ? Math.round((totalAssigned / totalRequired) * 100) : 0;
+        const isComplete = totalAssigned >= totalRequired;
+
+        if(!isComplete) allComplete = false;
+
+        const bgColor = isComplete ? '#d1fae5' : (totalAssigned > 0 ? '#fef3c7' : '#fee2e2');
+        const rateColor = isComplete ? '#10b981' : (totalAssigned > 0 ? '#f59e0b' : '#ef4444');
+
+        html += `<tr style="background:${bgColor};">`;
+        html += `<td style="border:1px solid #d1d5db; padding:6px;">${studentName}</td>`;
+        html += `<td style="border:1px solid #d1d5db; padding:6px;"><small>${subjectDetails.join(', ')}</small></td>`;
+        html += `<td style="border:1px solid #d1d5db; padding:6px; text-align:center;">${totalRequired}</td>`;
+        html += `<td style="border:1px solid #d1d5db; padding:6px; text-align:center;">${totalAssigned}</td>`;
+        html += `<td style="border:1px solid #d1d5db; padding:6px; text-align:center; color:${rateColor}; font-weight:600;">${rate}%</td>`;
+        html += '</tr>';
+      }
+
+      tbody.innerHTML = html;
+
+      // サマリーメッセージを表示
+      const totalStudents = Object.keys(requiredByStu).length;
+      const completedStudents = Object.entries(requiredByStu).filter(([studentName, subjects]) => {
+        let totalRequired = 0;
+        let totalAssigned = 0;
+        for(const [subject, required] of Object.entries(subjects)){
+          totalRequired += required;
+          totalAssigned += (assignedByStu[studentName]?.[subject] || 0);
+        }
+        return totalAssigned >= totalRequired;
+      }).length;
+      const summaryMsg = allComplete
+        ? `<span class="ok">✓ すべての生徒の必要コマ数が達成されています（${completedStudents}/${totalStudents}人）</span>`
+        : `<span class="warn">⚠ 未達成の生徒がいます（${completedStudents}/${totalStudents}人達成）</span>`;
+
+      // サマリー行を追加
+      tbody.innerHTML += `<tr style="background:#f9fafb; font-weight:600;"><td colspan="5" style="border:1px solid #d1d5db; padding:8px; text-align:center;">${summaryMsg}</td></tr>`;
     }
 
     function togglePreview(){
@@ -929,14 +1500,36 @@
             // ブース番号セル（B1形式を丸付き数字に変換して表示）
             html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${boothIdToCircled(booth)}</td>`;
 
-            // 講師名セル
+            // 講師名セル（ドラッグ&ドロップ対応）
             let text = '';
-            if(a){
-              text = a.teacherName || a.teacherId || '';
-              if(a.studentId) text += '<br/><small>' + a.studentId + '</small>';
-              if(a.subject) text += '<br/><small>(' + a.subject + ')</small>';
+            if(a && a.teacherId){
+              // 講師名を苗字+Tで表示
+              const teacherName = a.teacherName || a.teacherId;
+              const surname = teacherName.replace(/T$/, '').split(/\s+/)[0]; // 空白で分割して最初を取得
+              text = surname + 'T';
+
+              // 生徒を表示（最大2人）
+              if(a.students && a.students.length > 0){
+                for(const student of a.students){
+                  text += '<br/><small style="font-weight:600;">' + (student.studentName || student.studentId);
+                  if(student.subject) text += '<span style="font-weight:normal;">(' + student.subject + ')</span>';
+                  text += '</small>';
+                }
+              }
             }
-            html += `<td class="${cls}" style="border:1px solid #d1d5db; padding:4px; min-width:80px;">${text}</td>`;
+
+            const cellId = `cell_${date}_${time}_${booth}`;
+            const draggable = (a && a.teacherId) ? 'true' : 'false';
+            const cursor = (a && a.teacherId) ? 'move' : 'default';
+
+            html += `<td class="${cls}" id="${cellId}" draggable="${draggable}"
+                      style="border:1px solid #d1d5db; padding:4px; min-width:100px; cursor:${cursor};"
+                      data-date="${date}" data-time="${time}" data-booth="${booth}"
+                      ondragstart="handleDragStart(event)"
+                      ondragover="handleDragOver(event)"
+                      ondrop="handleDrop(event)"
+                      ondragenter="handleDragEnter(event)"
+                      ondragleave="handleDragLeave(event)">${text}</td>`;
           }
         }
         html += '</tr>';
@@ -1190,6 +1783,9 @@
         boothData = allSlots;
         console.log('\n🔵 parseBoothExcel: 完了 -', allSlots.length, '件のスロット（', workbook.worksheets.length, 'シート統合）');
         $('boothExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${allSlots.length}件（${workbook.worksheets.length}シート統合、書式保持モード）`;
+
+        // 優先ブース設定テーブルを構築
+        buildPreferenceTable();
       }catch(e){
         console.error('❌ parseBoothExcel エラー:', e);
         console.error('エラースタック:', e.stack);
@@ -1339,37 +1935,42 @@
 
           if(!pos) continue;
 
-          // ExcelJSでセルを取得（1始まり、pos.rowとpos.teacherColは既に1始まり）
-          const cell = worksheet.getCell(pos.row, pos.teacherCol);
+          // 講師セルを取得
+          const teacherCell = worksheet.getCell(pos.row, pos.teacherCol);
 
-          let cellValue = '';
-          if(mode === 'teacher'){
-            // 講師配置のみ（苗字+T形式、重複時は名+T）
-            cellValue = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId, allTeacherNames);
-          } else if(mode === 'student'){
-            // 講師 + 生徒
-            const teacher = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId, allTeacherNames);
-            const student = assignment.studentId ? `\n${assignment.studentId}` : '';
-            const subject = assignment.subject ? `(${assignment.subject})` : '';
-            cellValue = teacher + student + subject;
-          }
+          // 講師名を記入（苗字+T形式）
+          const teacherName = formatTeacherNameForExcel(assignment.teacherName || assignment.teacherId, allTeacherNames);
 
           // 既存のセル値をチェック（丸付き数字がある場合は保持）
-          let existingValue = cell.value || '';
-          let finalValue = cellValue;
+          let existingValue = teacherCell.value || '';
+          let finalTeacherValue = teacherName;
 
-          // 既存の値が文字列で、丸付き数字が含まれている場合は保持して改行追加
           if (typeof existingValue === 'string' && /[\u2460-\u2473]/.test(existingValue)) {
-            // 丸付き数字 + 改行 + 講師名
-            finalValue = existingValue.trim() + '\n' + cellValue;
-            console.log(`  既存の丸付き数字を保持: ${existingValue.trim()} → ${finalValue}`);
+            finalTeacherValue = existingValue.trim() + '\n' + teacherName;
+            console.log(`  既存の丸付き数字を保持: ${existingValue.trim()} → ${finalTeacherValue}`);
           }
 
-          // セルの値を更新
-          cell.value = finalValue;
+          teacherCell.value = finalTeacherValue;
+          formattedCells.push({ row: pos.row, col: pos.teacherCol, cellValue: finalTeacherValue });
 
-          // 後でフォーマット設定するためにセル位置情報を記録（cellオブジェクトではなく行列番号を記録）
-          formattedCells.push({ row: pos.row, col: pos.teacherCol, cellValue });
+          // 生徒を記入（講師列の右の列）
+          if(assignment.students && assignment.students.length > 0){
+            const studentCol = pos.teacherCol + 1; // 講師列の右
+            const studentCell = worksheet.getCell(pos.row, studentCol);
+
+            let studentValue = '';
+            for(let i = 0; i < assignment.students.length; i++){
+              const student = assignment.students[i];
+              if(i > 0) studentValue += '\n';
+              studentValue += student.studentName;
+              if(student.subject) studentValue += `(${student.subject})`;
+            }
+
+            studentCell.value = studentValue;
+            formattedCells.push({ row: pos.row, col: studentCol, cellValue: studentValue });
+            console.log(`  生徒記入: ${studentValue} -> セル(${pos.row}, ${studentCol})`);
+          }
+
           assignedCount++;
         }
 
@@ -1564,6 +2165,9 @@
         teacherData = allShifts;
         console.log('\n🟢 parseTeacherExcel: 完了 -', allShifts.length, '件（', workbook.worksheets.length, 'シート統合）');
         $('teacherExcelStatus').innerHTML = `<span class="ok">✓ 読み込み完了:</span> ${allShifts.length}件（${workbook.worksheets.length}シート統合）`;
+
+        // 優先ブース設定テーブルを構築
+        buildPreferenceTable();
       }catch(e){
         console.error('❌ parseTeacherExcel エラー:', e);
         console.error('エラースタック:', e.stack);
@@ -1665,11 +2269,11 @@
 
             const grade = String(row[0] || '').trim();
             const schoolName = String(row[1] || '').trim();
-            const preferredTeachers = parseCommaSeparated(row[20]); // 列U (0-indexed: 20)
-            const ngTeachers = parseCommaSeparated(row[21]);         // 列V
-            const ngStudents = parseCommaSeparated(row[22]);         // 列W
-            const preferredTimes = parseCommaSeparated(row[23]);     // 列X (例: 月17,水19)
-            const ngDays = parseCommaSeparated(row[24]);             // 列Y (例: 火,土)
+            const preferredTeachers = parseCommaSeparated(row[20]) || []; // 列U (0-indexed: 20)
+            const ngTeachers = parseCommaSeparated(row[21]) || [];         // 列V
+            const ngStudents = parseCommaSeparated(row[22]) || [];         // 列W
+            const preferredTimes = parseCommaSeparated(row[23]) || [];     // 列X (例: 月17,水19)
+            const ngDays = parseCommaSeparated(row[24]) || [];             // 列Y (例: 火,土)
             const note = String(row[25] || '').trim();               // 列Z
 
             console.log(`\n📚 生徒: ${studentName}`);
@@ -1681,7 +2285,7 @@
 
               console.log(`  ${subjectName}: ${count}コマ`);
 
-              // コマ数分の需要を生成
+              // 必要コマ数分だけ需要データを生成
               for (let i = 0; i < count; i++) {
                 demands.push({
                   studentId: studentName,       // 生徒名をIDとして使用
@@ -1695,7 +2299,9 @@
                   preferredTimes: preferredTimes,  // 例: ['月17', '水19']
                   ngDays: ngDays,                  // 例: ['火', '土']
                   note: note,
-                  priority: calculatePriority(grade, note)  // 優先度計算
+                  priority: calculatePriority(grade, note),  // 優先度計算
+                  classIndex: i,  // このコマが何回目か（0始まり）
+                  totalClasses: count  // 全体で何コマ必要か
                 });
               }
             }
@@ -1725,20 +2331,9 @@
     }
 
     // 優先度を計算（高い方が優先）
+    // 優先度計算は使用しない（全生徒を平等に扱う）
     function calculatePriority(grade, note){
-      let priority = 5; // デフォルト
-
-      // 受験生は優先度を上げる
-      if (note && (note.includes('受験') || note.includes('入試'))) {
-        priority += 3;
-      }
-
-      // 高校生は中優先度
-      if (grade && grade.startsWith('H')) {
-        priority += 1;
-      }
-
-      return priority;
+      return 5; // 固定値
     }
 
     // 指導可能教科一覧をパース
@@ -1790,6 +2385,7 @@
 
         if (subjects.length > 0) {
           teacherMap[teacherId] = subjects;
+          teacherNameMap[teacherId] = teacherName; // 講師名も保存
           console.log(`  ${teacherName} (${teacherId}): ${subjects.join(', ')}`);
         }
       }
@@ -1827,17 +2423,15 @@
     }
 
     // ================= 優先ブース設定 =================
-    function showPreferenceSettings(){
-      console.log('showPreferenceSettings called');
+    function buildPreferenceTable(){
+      console.log('buildPreferenceTable called');
       console.log('teacherData.length:', teacherData.length);
       console.log('boothData.length:', boothData.length);
 
       if(teacherData.length === 0 || boothData.length === 0){
-        toast('先にブース表と元シートを読み込んでください', 'warn');
         return;
       }
 
-      const container = $('preferenceContainer');
       const tbody = $('preferenceTableBody');
 
       // 講師リストを取得（重複排除）
@@ -1919,13 +2513,19 @@
       }
 
       console.log('テーブル構築完了');
+    }
 
-      // コンテナを表示
+    function togglePreferenceSettings(){
+      const container = $('preferenceContainer');
+      const btn = $('hidePreferenceBtn');
+
       if(container.style.display === 'none'){
         container.style.display = 'block';
-        toast('優先ブース設定を表示しました（' + Object.keys(teachers).length + '人）', 'ok');
+        btn.textContent = '設定を非表示';
+        toast('優先ブース設定を表示しました', 'ok');
       } else {
         container.style.display = 'none';
+        btn.textContent = '設定を表示';
         toast('優先ブース設定を非表示にしました', 'ok');
       }
     }
@@ -1948,8 +2548,7 @@
           toast('優先ブース設定を読み込みました', 'ok');
           // UIが表示されている場合は更新
           if($('preferenceContainer').style.display !== 'none'){
-            showPreferenceSettings(); // 再表示
-            showPreferenceSettings(); // トグルで開いたままにする
+            buildPreferenceTable(); // テーブルを再構築
           }
         } else {
           toast('保存された設定が見つかりません', 'warn');
@@ -1960,6 +2559,82 @@
       }
     }
   })();
+
+  // ================= ドラッグ&ドロップハンドラ（グローバルスコープ） =================
+  let draggedCell = null;
+
+  function handleDragStart(e){
+    draggedCell = e.target;
+    e.target.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.target.innerHTML);
+  }
+
+  function handleDragOver(e){
+    if (e.preventDefault) {
+      e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+  }
+
+  function handleDragEnter(e){
+    if(e.target.tagName === 'TD' && e.target.dataset.date){
+      e.target.style.background = '#dbeafe';
+    }
+  }
+
+  function handleDragLeave(e){
+    if(e.target.tagName === 'TD' && e.target.dataset.date){
+      // 元の背景色に戻す
+      const isEmpty = !e.target.innerHTML.trim() || e.target.innerHTML === '';
+      e.target.style.background = isEmpty ? '' : '';
+    }
+  }
+
+  function handleDrop(e){
+    if (e.stopPropagation) {
+      e.stopPropagation();
+    }
+
+    e.target.style.background = '';
+
+    if (draggedCell === e.target) {
+      return false;
+    }
+
+    // ドラッグ元とドロップ先の情報を取得
+    const fromDate = draggedCell.dataset.date;
+    const fromTime = draggedCell.dataset.time;
+    const fromBooth = draggedCell.dataset.booth;
+
+    const toDate = e.target.dataset.date;
+    const toTime = e.target.dataset.time;
+    const toBooth = e.target.dataset.booth;
+
+    if(!toDate || !toTime || !toBooth){
+      console.warn('無効なドロップ先です');
+      draggedCell.style.opacity = '';
+      return false;
+    }
+
+    // lastAssignments配列を更新
+    const $ = id => document.getElementById(id);
+    const scriptScope = window; // スコープを取得
+
+    // IIFEのスコープにアクセスできないため、代替方法を使用
+    // プレビューを再描画する関数を呼び出す
+    console.log(`移動: ${fromDate} ${fromTime} ${fromBooth} → ${toDate} ${toTime} ${toBooth}`);
+
+    // カスタムイベントを発火して、IIFE内のlastAssignmentsを更新
+    const event = new CustomEvent('updateAssignment', {
+      detail: { fromDate, fromTime, fromBooth, toDate, toTime, toBooth }
+    });
+    document.dispatchEvent(event);
+
+    draggedCell.style.opacity = '';
+    return false;
+  }
   </script>
 </body>
 </html>
