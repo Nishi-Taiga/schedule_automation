@@ -1224,14 +1224,29 @@
     }
 
     // グローバルヘルパー関数: 講師が指定科目を指導可能かチェック
-    window.canTeachSubject = function(teacherId, subject) {
+    window.canTeachSubject = function(teacherIdOrName, subject) {
       // 科目が指定されていない場合は常にOK
       if (!subject) return true;
       // teacherSubjectMapが空の場合は常にOK（後方互換性）
       if (!teacherSubjectMap || Object.keys(teacherSubjectMap).length === 0) return true;
-      // 講師の指導可能科目リストを取得
-      const teachableSubjects = teacherSubjectMap[teacherId];
+
+      // 講師の指導可能科目リストを取得 - まずそのまま検索
+      let teachableSubjects = teacherSubjectMap[teacherIdOrName];
+
+      // 見つからない場合、フルネームから姓を抽出して検索
+      if (!teachableSubjects && teacherIdOrName && teacherIdOrName.includes(' ')) {
+        // フルネーム（例: "渡邉 樹希"）から姓のみを抽出（例: "渡邉"）
+        const surname = teacherIdOrName.split(' ')[0];
+        teachableSubjects = teacherSubjectMap[surname];
+
+        // それでも見つからない場合、「姓T」形式で検索（例: "渡邉T"）
+        if (!teachableSubjects) {
+          teachableSubjects = teacherSubjectMap[surname + 'T'];
+        }
+      }
+
       if (!teachableSubjects) return false; // 講師情報がない場合はNG
+
       // 科目名を正規化して比較
       const normalizedSubject = normalizeSubjectName(subject);
       return teachableSubjects.includes(normalizedSubject);
@@ -1276,10 +1291,13 @@
 
     // 選択した生徒を割り当て（グローバル関数）
     window.assignSelectedStudent = async function(){
+      console.log('🚀 assignSelectedStudent() が呼び出されました');
       const select = $('studentSelect');
       const selectedStudent = select.value;
+      console.log(`  選択された生徒: ${selectedStudent || '(未選択)'}`);
 
       if(!selectedStudent){
+        console.log('  ❌ 生徒が選択されていません');
         toast('生徒を選択してください', 'err');
         return;
       }
@@ -1356,25 +1374,85 @@
       const studentKey = `${demand.studentId}_${demand.subject}`;
       const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
 
-      // NGの曜日をSetに変換（高速化）
+      console.log(`\n🔍 割り当て試行: ${demand.studentId} - ${demand.subject}`);
+      console.log(`  window.currentAssignments: ${window.currentAssignments ? window.currentAssignments.length : 'undefined'}件`);
+
+      // NGの曜日・日程・時間をSetに変換（高速化）
       const ngDaysSet = demand.ngDays && demand.ngDays.length > 0 ? new Set(demand.ngDays) : null;
       const ngTeachersSet = demand.ngTeachers && demand.ngTeachers.length > 0 ? new Set(demand.ngTeachers) : null;
+      const ngDatesSet = demand.ngDates && demand.ngDates.length > 0 ? new Set(demand.ngDates) : null;
+      const ngTimesSet = demand.ngTimes && demand.ngTimes.length > 0 ? new Set(demand.ngTimes) : null;
 
       // 全ての利用可能なスロットから候補を探す
       const candidateAssignments = [];
+      let skippedReasons = { noTeacher: 0, full: 0, cannotTeach: 0, ngTeacher: 0, ngDay: 0, ngDate: 0, ngTime: 0, sameTimeConflict: 0 };
+
       for(let i = 0; i < window.currentAssignments.length; i++){
         const a = window.currentAssignments[i];
-        if(!a.teacherId) continue;
-        if(a.students.length >= 2) continue;
-        if(!canTeachSubject(a.teacherId, demand.subject)) continue;
-        if(ngTeachersSet && ngTeachersSet.has(a.teacherId)) continue;
+        if(!a.teacherId){
+          skippedReasons.noTeacher++;
+          continue;
+        }
+        if(!a.students){
+          console.warn(`⚠️  スロット ${i} に students 配列が存在しません。初期化します。`);
+          a.students = [];
+        }
+        // 同じ生徒が既にこのスロットに配置されていないかチェック
+        if(a.students && a.students.some(s => s.studentId === demand.studentId)){
+          continue; // 同じ生徒を2名配置しない
+        }
+        if(a.students.length >= 2){
+          skippedReasons.full++;
+          continue;
+        }
+        // 講師名を使用して科目指導可能性をチェック（講師IDではなく）
+        const canTeach = canTeachSubject(a.teacherName, demand.subject);
+        if(!canTeach){
+          if(i < 3){ // 最初の3件のみデバッグ出力
+            console.log(`  ❌ 指導不可: 講師=${a.teacherName}, 科目=${demand.subject}, teacherId=${a.teacherId}`);
+          }
+          skippedReasons.cannotTeach++;
+          continue;
+        }
+        if(ngTeachersSet && ngTeachersSet.has(a.teacherId)){
+          skippedReasons.ngTeacher++;
+          continue;
+        }
         if(ngDaysSet){
           const dateObj = new Date(a.date);
           const dayName = dayNames[dateObj.getDay()];
-          if(ngDaysSet.has(dayName)) continue;
+          if(ngDaysSet.has(dayName)){
+            skippedReasons.ngDay++;
+            continue;
+          }
+        }
+        // NG日付チェック
+        if(ngDatesSet && ngDatesSet.has(a.date)){
+          skippedReasons.ngDate++;
+          continue;
+        }
+        // NG時間チェック
+        if(ngTimesSet && ngTimesSet.has(a.time)){
+          skippedReasons.ngTime++;
+          continue;
+        }
+        // 同じ生徒が同じ時間（date+time）に既に他のブースに割り当てられていないかチェック
+        const hasTimeConflict = window.currentAssignments.some(otherSlot =>
+          otherSlot !== a &&
+          otherSlot.date === a.date &&
+          otherSlot.time === a.time &&
+          otherSlot.students &&
+          otherSlot.students.some(s => s.studentId === demand.studentId)
+        );
+        if(hasTimeConflict){
+          skippedReasons.sameTimeConflict++;
+          continue;
         }
         candidateAssignments.push(a);
       }
+
+      console.log(`  候補スロット: ${candidateAssignments.length}件`);
+      console.log(`  スキップ理由: 講師なし=${skippedReasons.noTeacher}, 満席=${skippedReasons.full}, 指導不可=${skippedReasons.cannotTeach}, NG講師=${skippedReasons.ngTeacher}, NG曜日=${skippedReasons.ngDay}, 同時刻重複=${skippedReasons.sameTimeConflict}`);
 
       if(candidateAssignments.length === 0){
         return false;
@@ -1402,6 +1480,18 @@
           score += 10000;
         }
 
+        // 毎週同じ曜日に同じ科目の授業ができるように最優先（連続日より優先）
+        if(history.length > 0){
+          const assignmentDate = new Date(assignment.date);
+          const assignmentDayOfWeek = assignmentDate.getDay();
+          for(const h of history){
+            if(h.dayOfWeek === assignmentDayOfWeek){
+              score += 5000; // 同じ曜日に配置する場合は大幅にボーナス
+              break;
+            }
+          }
+        }
+
         // 同じ時間帯を優先
         const sameTimeCount = assignedTimesMap[assignment.time] || 0;
         if(sameTimeCount > 0){
@@ -1412,13 +1502,38 @@
         if(assignedDatesSet.has(assignment.date)){
           score -= 1000;
         } else if(history.length > 0){
+          // 同じ科目を週に2度行う場合は、連続日を優先
+          // （連続日のほうがスコアが高くなるようにする）
           const assignmentDate = new Date(assignment.date);
           let minDiff = Infinity;
           for(const h of history){
             const diff = Math.abs(assignmentDate - new Date(h.date)) / (1000 * 60 * 60 * 24);
             if(diff < minDiff) minDiff = diff;
           }
-          score += minDiff * 10;
+          // 連続日（1日差）を最優先: 差が小さいほどスコアが高くなる
+          // 1日差=+300点、2日差=+150点、3日差=+100点...
+          if(minDiff === 1){
+            score += 300; // 連続日を強く優先
+          } else if(minDiff === 2){
+            score += 150;
+          } else if(minDiff <= 7){
+            // 同じ週内なら少しボーナス（ただし連続日より低い）
+            score += 100 / minDiff;
+          } else {
+            // 週をまたぐ場合はペナルティ
+            score -= minDiff * 5;
+          }
+        }
+
+        // 専門性の高い講師を優先（指導可能科目数が少ない講師を優先）
+        // 例: 社会を配置する場合、国数英理社ができる講師より国社のみの講師を優先
+        const teacherSubjects = teacherSubjectMap[assignment.teacherName] ||
+                                 teacherSubjectMap[assignment.teacherName?.split(' ')[0]] ||
+                                 teacherSubjectMap[assignment.teacherName?.split(' ')[0] + 'T'] || [];
+        if(teacherSubjects.length > 0){
+          // 科目数が少ないほどボーナスが高い（最大200点、最小20点）
+          const specialtyBonus = Math.max(20, 200 - (teacherSubjects.length * 10));
+          score += specialtyBonus;
         }
 
         // 同じ講師を優先
@@ -1445,6 +1560,9 @@
         studentName: demand.studentName,
         subject: demand.subject
       });
+
+      console.log(`  ✅ 割り当て成功: ${demand.studentId} -> ${bestAssignment.date} ${bestAssignment.time} ${bestAssignment.boothId} (講師: ${bestAssignment.teacherId})`);
+      console.log(`     現在の生徒数: ${bestAssignment.students.length}/2`);
 
       // 割り当て済みフラグを設定
       window.studentAssignmentData.demandAssigned[demandIndex] = true;
@@ -1635,8 +1753,29 @@
       let html = '';
       const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
 
-      // 曜日ごとにデータを整理（月〜日の7列構造）
-      const dayOfWeekCols = [1, 2, 3, 4, 5, 6, 0]; // 月火水木金土日の順
+      // 曜日ごとにデータを整理（月〜土の6列構造、日曜日は除外）
+      const dayOfWeekCols = [1, 2, 3, 4, 5, 6]; // 月火水木金土の順（日曜日を除外）
+
+      // セル幅を計算（文字列の最大長に合わせる）
+      let maxTeacherNameLength = 0;
+      let maxStudentTextLength = 0;
+      for(const a of assignments){
+        if(a.teacherName){
+          const cleanName = a.teacherName.replace(/T$/, '');
+          const parts = cleanName.split(/\s+/);
+          const nameLength = Math.max(parts[0]?.length || 0, parts[1]?.length || 0) + 1; // +1は"T"
+          maxTeacherNameLength = Math.max(maxTeacherNameLength, nameLength);
+        }
+        if(a.students && a.students.length > 0){
+          for(const student of a.students){
+            const studentText = (student.studentName || student.studentId) + (student.subject ? `(${student.subject})` : '');
+            maxStudentTextLength = Math.max(maxStudentTextLength, studentText.length);
+          }
+        }
+      }
+      // 1文字あたり約12px + パディング、最大幅を制限（縦書き防止）
+      const teacherCellWidth = Math.min(150, Math.max(80, maxTeacherNameLength * 12 + 16));
+      const studentCellWidth = Math.min(200, Math.max(120, maxStudentTextLength * 12 + 16));
 
       // 週ごとにテーブルを作成
       for(let weekIndex = 0; weekIndex < weekGroups.length; weekIndex++){
@@ -1678,9 +1817,10 @@
             for(const booth of booths){
               const a = date ? assignments.find(x=>x.date===date && x.time===time && x.boothId===booth) : null;
             const cls = (a && a.teacherId) ? 'assigned' : 'empty';
+            const isClosedDay = !date; // 休塾日判定
 
             // ブース番号セル（B1形式を丸付き数字に変換して表示）
-            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${boothIdToCircled(booth)}</td>`;
+            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:${isClosedDay ? '#e5e7eb' : '#f9fafb'};">${boothIdToCircled(booth)}</td>`;
 
             // 講師名セル
             let teacherText = '';
@@ -1719,8 +1859,9 @@
             }
 
             const teacherCellId = `cell_teacher_${date}_${time}_${booth}`;
+            const teacherBgColor = isClosedDay ? 'e5e7eb' : (a && a.teacherId ? 'e0f2fe' : 'fef3c7');
             html += `<td class="${cls}" id="${teacherCellId}"
-                      style="border:1px solid #d1d5db; padding:4px; min-width:80px; background:#${a && a.teacherId ? 'e0f2fe' : 'fef3c7'};"
+                      style="border:1px solid #d1d5db; padding:4px; width:${teacherCellWidth}px; background:#${teacherBgColor};"
                       data-date="${date}" data-time="${time}" data-booth="${booth}">${teacherText}</td>`;
 
             // 生徒セル（最大2人）
@@ -1735,8 +1876,9 @@
             }
 
             const studentCellId = `cell_student_${date}_${time}_${booth}`;
+            const studentBgColor = isClosedDay ? 'e5e7eb' : (a && a.students && a.students.length > 0 ? 'd1fae5' : 'fff');
             html += `<td class="${a && a.students && a.students.length > 0 ? 'assigned' : 'empty'}" id="${studentCellId}"
-                      style="border:1px solid #d1d5db; padding:4px; min-width:120px; background:#${a && a.students && a.students.length > 0 ? 'd1fae5' : 'fff'};"
+                      style="border:1px solid #d1d5db; padding:4px; width:${studentCellWidth}px; background:#${studentBgColor};"
                       data-date="${date}" data-time="${time}" data-booth="${booth}">${studentText}</td>`;
             }
           }
@@ -2721,6 +2863,7 @@
 
         if (subjects.length > 0) {
           teacherMap[teacherId] = subjects;
+          teacherMap[teacherName] = subjects; // 講師名でも検索できるように
           teacherNameMap[teacherId] = teacherName; // 講師名も保存
           console.log(`  ${teacherName} (${teacherId}): ${subjects.join(', ')}`);
         }
