@@ -671,9 +671,23 @@
               const dayOfWeek = dateObj.getDay();
 
               if (dayOfWeek === targetDayOfWeek && slot.time === timeStr) {
-                // NG日程のチェック
-                if (demand.ngDays && demand.ngDays.includes(dayChar)) {
-                  continue; // NG日程なのでスキップ
+                // NG日付チェック (MM/DD形式)
+                if (demand.ngDates && demand.ngDates.length > 0) {
+                  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                  const day = String(dateObj.getDate()).padStart(2, '0');
+                  const dateStr = `${month}/${day}`;
+                  const dateStrNoZero = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+                  if (demand.ngDates.includes(dateStr) || demand.ngDates.includes(dateStrNoZero)) {
+                    continue; // NG日付なのでスキップ
+                  }
+                }
+
+                // NG時間チェック
+                if (demand.ngTimes && demand.ngTimes.length > 0) {
+                  const slotHour = parseInt(slot.time.split(':')[0]);
+                  if (demand.ngTimes.includes(slotHour)) {
+                    continue; // NG時間なのでスキップ
+                  }
                 }
 
                 // NGTeachersをフォーマット（講師名からID形式に変換）
@@ -709,9 +723,23 @@
             const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
             const dayChar = dayNames[dateObj.getDay()];
 
-            // NG日程のチェック
-            if (demand.ngDays && demand.ngDays.includes(dayChar)) {
-              continue;
+            // NG日付チェック (MM/DD形式)
+            if (demand.ngDates && demand.ngDates.length > 0) {
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              const dateStr = `${month}/${day}`;
+              const dateStrNoZero = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+              if (demand.ngDates.includes(dateStr) || demand.ngDates.includes(dateStrNoZero)) {
+                continue; // NG日付なのでスキップ
+              }
+            }
+
+            // NG時間チェック
+            if (demand.ngTimes && demand.ngTimes.length > 0) {
+              const slotHour = parseInt(slot.time.split(':')[0]);
+              if (demand.ngTimes.includes(slotHour)) {
+                continue; // NG時間なのでスキップ
+              }
             }
 
             const ngTeachersSet = new Set();
@@ -1377,11 +1405,12 @@
       console.log(`\n🔍 割り当て試行: ${demand.studentId} - ${demand.subject}`);
       console.log(`  window.currentAssignments: ${window.currentAssignments ? window.currentAssignments.length : 'undefined'}件`);
 
-      // NGの曜日・日程・時間をSetに変換（高速化）
-      const ngDaysSet = demand.ngDays && demand.ngDays.length > 0 ? new Set(demand.ngDays) : null;
+      // NG講師をSetに変換（高速化）
       const ngTeachersSet = demand.ngTeachers && demand.ngTeachers.length > 0 ? new Set(demand.ngTeachers) : null;
-      const ngDatesSet = demand.ngDates && demand.ngDates.length > 0 ? new Set(demand.ngDates) : null;
-      const ngTimesSet = demand.ngTimes && demand.ngTimes.length > 0 ? new Set(demand.ngTimes) : null;
+
+      // NG日付とNG時間を取得
+      const ngDates = demand.ngDates || [];
+      const ngTimes = demand.ngTimes || [];
 
       // 全ての利用可能なスロットから候補を探す
       const candidateAssignments = [];
@@ -1418,24 +1447,30 @@
           skippedReasons.ngTeacher++;
           continue;
         }
-        if(ngDaysSet){
-          const dateObj = new Date(a.date);
-          const dayName = dayNames[dateObj.getDay()];
-          if(ngDaysSet.has(dayName)){
-            skippedReasons.ngDay++;
+
+        // NG日付チェック (MM/DD形式)
+        if(ngDates.length > 0){
+          const assignmentDate = new Date(a.date);
+          const month = String(assignmentDate.getMonth() + 1).padStart(2, '0');
+          const day = String(assignmentDate.getDate()).padStart(2, '0');
+          const dateStr = `${month}/${day}`;
+          // ゼロパディング無しもチェック
+          const dateStrNoZero = `${assignmentDate.getMonth() + 1}/${assignmentDate.getDate()}`;
+          if(ngDates.includes(dateStr) || ngDates.includes(dateStrNoZero)){
+            skippedReasons.ngDate++;
             continue;
           }
         }
-        // NG日付チェック
-        if(ngDatesSet && ngDatesSet.has(a.date)){
-          skippedReasons.ngDate++;
-          continue;
+
+        // NG時間チェック (時間のみ)
+        if(ngTimes.length > 0){
+          const assignmentHour = parseInt(a.time.split(':')[0]);
+          if(ngTimes.includes(assignmentHour)){
+            skippedReasons.ngTime++;
+            continue;
+          }
         }
-        // NG時間チェック
-        if(ngTimesSet && ngTimesSet.has(a.time)){
-          skippedReasons.ngTime++;
-          continue;
-        }
+
         // 同じ生徒が同じ時間（date+time）に既に他のブースに割り当てられていないかチェック
         const hasTimeConflict = window.currentAssignments.some(otherSlot =>
           otherSlot !== a &&
@@ -1448,11 +1483,12 @@
           skippedReasons.sameTimeConflict++;
           continue;
         }
+
         candidateAssignments.push(a);
       }
 
       console.log(`  候補スロット: ${candidateAssignments.length}件`);
-      console.log(`  スキップ理由: 講師なし=${skippedReasons.noTeacher}, 満席=${skippedReasons.full}, 指導不可=${skippedReasons.cannotTeach}, NG講師=${skippedReasons.ngTeacher}, NG曜日=${skippedReasons.ngDay}, 同時刻重複=${skippedReasons.sameTimeConflict}`);
+      console.log(`  スキップ理由: 講師なし=${skippedReasons.noTeacher}, 満席=${skippedReasons.full}, 指導不可=${skippedReasons.cannotTeach}, NG講師=${skippedReasons.ngTeacher}, NG日付=${skippedReasons.ngDate}, NG時間=${skippedReasons.ngTime}, 同時刻重複=${skippedReasons.sameTimeConflict}`);
 
       if(candidateAssignments.length === 0){
         return false;
@@ -2751,10 +2787,13 @@
             const ngTeachers = parseCommaSeparated(row[21]) || [];         // 列V
             const ngStudents = parseCommaSeparated(row[22]) || [];         // 列W
             const preferredTimes = parseCommaSeparated(row[23]) || [];     // 列X (例: 月17,水19)
-            const ngDays = parseCommaSeparated(row[24]) || [];             // 列Y (例: 火,土)
-            const note = String(row[25] || '').trim();               // 列Z
+            const ngSchedules = parseNgSchedules(row[24]);                 // 列Y: NG日程 (例: 01/15,17,19-20)
+            const note = String(row[25] || '').trim();                     // 列Z
 
             console.log(`\n📚 生徒: ${studentName}`);
+            if(ngSchedules.ngDates.length > 0 || ngSchedules.ngTimes.length > 0){
+              console.log(`  NG日程: 日付[${ngSchedules.ngDates.join(', ')}] 時間[${ngSchedules.ngTimes.join(', ')}]`);
+            }
 
             // 各科目のコマ数を取得して需要データを生成
             for (const [colIdx, subjectName] of Object.entries(subjectMap)) {
@@ -2775,7 +2814,8 @@
                   ngTeachers: ngTeachers,
                   ngStudents: ngStudents,
                   preferredTimes: preferredTimes,  // 例: ['月17', '水19']
-                  ngDays: ngDays,                  // 例: ['火', '土']
+                  ngDates: ngSchedules.ngDates,    // NG日付 (例: ['01/15', '02/20'])
+                  ngTimes: ngSchedules.ngTimes,    // NG時間 (例: [17, 19, 20])
                   note: note,
                   priority: calculatePriority(grade, note),  // 優先度計算
                   classIndex: i,  // このコマが何回目か（0始まり）
@@ -2806,6 +2846,41 @@
     function parseCommaSeparated(value){
       if (!value) return [];
       return String(value).split(',').map(s => s.trim()).filter(s => s);
+    }
+
+    // NG日程をパース（日付と時間に分離）
+    // 入力例: "01/15, 02/20, 17, 19-20"
+    // 戻り値: { ngDates: ['01/15', '02/20'], ngTimes: [17, 19, 20] }
+    function parseNgSchedules(value){
+      const result = { ngDates: [], ngTimes: [] };
+      if (!value) return result;
+
+      const items = String(value).split(',').map(s => s.trim()).filter(s => s);
+
+      for(const item of items){
+        // MM/DD形式の日付をチェック
+        if(/^\d{1,2}\/\d{1,2}$/.test(item)){
+          result.ngDates.push(item);
+        }
+        // 時間範囲をチェック (例: 17-19, 18-20)
+        else if(/^\d{1,2}-\d{1,2}$/.test(item)){
+          const [start, end] = item.split('-').map(s => parseInt(s));
+          for(let hour = start; hour <= end; hour++){
+            if(!result.ngTimes.includes(hour)){
+              result.ngTimes.push(hour);
+            }
+          }
+        }
+        // 単一の時間をチェック (例: 17, 19)
+        else if(/^\d{1,2}$/.test(item)){
+          const hour = parseInt(item);
+          if(!result.ngTimes.includes(hour)){
+            result.ngTimes.push(hour);
+          }
+        }
+      }
+
+      return result;
     }
 
     // 優先度を計算（高い方が優先）
