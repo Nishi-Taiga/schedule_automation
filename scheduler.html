@@ -466,6 +466,25 @@
           </table>
         </div>
       </div>
+
+      <div class="card" id="teacherSummaryCard" style="display:none; margin-top:16px;">
+        <div class="row nowrap"><strong>講師割り当て数サマリ</strong></div>
+        <div id="teacherSummaryContainer" style="margin-top:12px; overflow-x:auto;">
+          <table id="teacherSummaryTable" style="border-collapse:collapse; font-size:13px; width:100%;">
+            <thead>
+              <tr style="background:#f3f4f6;">
+                <th style="border:1px solid #d1d5db; padding:8px; text-align:left;">講師名</th>
+                <th style="border:1px solid #d1d5db; padding:8px; text-align:center;">提出シフトコマ数</th>
+                <th style="border:1px solid #d1d5db; padding:8px; text-align:center;">割り当てコマ数</th>
+                <th style="border:1px solid #d1d5db; padding:8px; text-align:center;">割当率</th>
+              </tr>
+            </thead>
+            <tbody id="teacherSummaryBody">
+              <tr><td colspan="4" style="padding:20px; text-align:center; color:#9ca3af;">データなし</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
   </div> <!-- main-container -->
@@ -671,9 +690,23 @@
               const dayOfWeek = dateObj.getDay();
 
               if (dayOfWeek === targetDayOfWeek && slot.time === timeStr) {
-                // NG日程のチェック
-                if (demand.ngDays && demand.ngDays.includes(dayChar)) {
-                  continue; // NG日程なのでスキップ
+                // NG日付チェック (MM/DD形式)
+                if (demand.ngDates && demand.ngDates.length > 0) {
+                  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                  const day = String(dateObj.getDate()).padStart(2, '0');
+                  const dateStr = `${month}/${day}`;
+                  const dateStrNoZero = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+                  if (demand.ngDates.includes(dateStr) || demand.ngDates.includes(dateStrNoZero)) {
+                    continue; // NG日付なのでスキップ
+                  }
+                }
+
+                // NG時間チェック
+                if (demand.ngTimes && demand.ngTimes.length > 0) {
+                  const slotHour = parseInt(slot.time.split(':')[0]);
+                  if (demand.ngTimes.includes(slotHour)) {
+                    continue; // NG時間なのでスキップ
+                  }
                 }
 
                 // NGTeachersをフォーマット（講師名からID形式に変換）
@@ -709,9 +742,23 @@
             const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
             const dayChar = dayNames[dateObj.getDay()];
 
-            // NG日程のチェック
-            if (demand.ngDays && demand.ngDays.includes(dayChar)) {
-              continue;
+            // NG日付チェック (MM/DD形式)
+            if (demand.ngDates && demand.ngDates.length > 0) {
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              const dateStr = `${month}/${day}`;
+              const dateStrNoZero = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+              if (demand.ngDates.includes(dateStr) || demand.ngDates.includes(dateStrNoZero)) {
+                continue; // NG日付なのでスキップ
+              }
+            }
+
+            // NG時間チェック
+            if (demand.ngTimes && demand.ngTimes.length > 0) {
+              const slotHour = parseInt(slot.time.split(':')[0]);
+              if (demand.ngTimes.includes(slotHour)) {
+                continue; // NG時間なのでスキップ
+              }
             }
 
             const ngTeachersSet = new Set();
@@ -1224,14 +1271,29 @@
     }
 
     // グローバルヘルパー関数: 講師が指定科目を指導可能かチェック
-    window.canTeachSubject = function(teacherId, subject) {
+    window.canTeachSubject = function(teacherIdOrName, subject) {
       // 科目が指定されていない場合は常にOK
       if (!subject) return true;
       // teacherSubjectMapが空の場合は常にOK（後方互換性）
       if (!teacherSubjectMap || Object.keys(teacherSubjectMap).length === 0) return true;
-      // 講師の指導可能科目リストを取得
-      const teachableSubjects = teacherSubjectMap[teacherId];
+
+      // 講師の指導可能科目リストを取得 - まずそのまま検索
+      let teachableSubjects = teacherSubjectMap[teacherIdOrName];
+
+      // 見つからない場合、フルネームから姓を抽出して検索
+      if (!teachableSubjects && teacherIdOrName && teacherIdOrName.includes(' ')) {
+        // フルネーム（例: "渡邉 樹希"）から姓のみを抽出（例: "渡邉"）
+        const surname = teacherIdOrName.split(' ')[0];
+        teachableSubjects = teacherSubjectMap[surname];
+
+        // それでも見つからない場合、「姓T」形式で検索（例: "渡邉T"）
+        if (!teachableSubjects) {
+          teachableSubjects = teacherSubjectMap[surname + 'T'];
+        }
+      }
+
       if (!teachableSubjects) return false; // 講師情報がない場合はNG
+
       // 科目名を正規化して比較
       const normalizedSubject = normalizeSubjectName(subject);
       return teachableSubjects.includes(normalizedSubject);
@@ -1276,10 +1338,13 @@
 
     // 選択した生徒を割り当て（グローバル関数）
     window.assignSelectedStudent = async function(){
+      console.log('🚀 assignSelectedStudent() が呼び出されました');
       const select = $('studentSelect');
       const selectedStudent = select.value;
+      console.log(`  選択された生徒: ${selectedStudent || '(未選択)'}`);
 
       if(!selectedStudent){
+        console.log('  ❌ 生徒が選択されていません');
         toast('生徒を選択してください', 'err');
         return;
       }
@@ -1356,25 +1421,93 @@
       const studentKey = `${demand.studentId}_${demand.subject}`;
       const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
 
-      // NGの曜日をSetに変換（高速化）
-      const ngDaysSet = demand.ngDays && demand.ngDays.length > 0 ? new Set(demand.ngDays) : null;
+      console.log(`\n🔍 割り当て試行: ${demand.studentId} - ${demand.subject}`);
+      console.log(`  window.currentAssignments: ${window.currentAssignments ? window.currentAssignments.length : 'undefined'}件`);
+
+      // NG講師をSetに変換（高速化）
       const ngTeachersSet = demand.ngTeachers && demand.ngTeachers.length > 0 ? new Set(demand.ngTeachers) : null;
+
+      // NG日付とNG時間を取得
+      const ngDates = demand.ngDates || [];
+      const ngTimes = demand.ngTimes || [];
 
       // 全ての利用可能なスロットから候補を探す
       const candidateAssignments = [];
+      let skippedReasons = { noTeacher: 0, full: 0, cannotTeach: 0, ngTeacher: 0, ngDay: 0, ngDate: 0, ngTime: 0, sameTimeConflict: 0 };
+
       for(let i = 0; i < window.currentAssignments.length; i++){
         const a = window.currentAssignments[i];
-        if(!a.teacherId) continue;
-        if(a.students.length >= 2) continue;
-        if(!canTeachSubject(a.teacherId, demand.subject)) continue;
-        if(ngTeachersSet && ngTeachersSet.has(a.teacherId)) continue;
-        if(ngDaysSet){
-          const dateObj = new Date(a.date);
-          const dayName = dayNames[dateObj.getDay()];
-          if(ngDaysSet.has(dayName)) continue;
+        if(!a.teacherId){
+          skippedReasons.noTeacher++;
+          continue;
         }
+        if(!a.students){
+          console.warn(`⚠️  スロット ${i} に students 配列が存在しません。初期化します。`);
+          a.students = [];
+        }
+        // 同じ生徒が既にこのスロットに配置されていないかチェック
+        if(a.students && a.students.some(s => s.studentId === demand.studentId)){
+          continue; // 同じ生徒を2名配置しない
+        }
+        if(a.students.length >= 2){
+          skippedReasons.full++;
+          continue;
+        }
+        // 講師名を使用して科目指導可能性をチェック（講師IDではなく）
+        const canTeach = canTeachSubject(a.teacherName, demand.subject);
+        if(!canTeach){
+          if(i < 3){ // 最初の3件のみデバッグ出力
+            console.log(`  ❌ 指導不可: 講師=${a.teacherName}, 科目=${demand.subject}, teacherId=${a.teacherId}`);
+          }
+          skippedReasons.cannotTeach++;
+          continue;
+        }
+        if(ngTeachersSet && ngTeachersSet.has(a.teacherId)){
+          skippedReasons.ngTeacher++;
+          continue;
+        }
+
+        // NG日付チェック (MM/DD形式)
+        if(ngDates.length > 0){
+          const assignmentDate = new Date(a.date);
+          const month = String(assignmentDate.getMonth() + 1).padStart(2, '0');
+          const day = String(assignmentDate.getDate()).padStart(2, '0');
+          const dateStr = `${month}/${day}`;
+          // ゼロパディング無しもチェック
+          const dateStrNoZero = `${assignmentDate.getMonth() + 1}/${assignmentDate.getDate()}`;
+          if(ngDates.includes(dateStr) || ngDates.includes(dateStrNoZero)){
+            skippedReasons.ngDate++;
+            continue;
+          }
+        }
+
+        // NG時間チェック (時間のみ)
+        if(ngTimes.length > 0){
+          const assignmentHour = parseInt(a.time.split(':')[0]);
+          if(ngTimes.includes(assignmentHour)){
+            skippedReasons.ngTime++;
+            continue;
+          }
+        }
+
+        // 同じ生徒が同じ時間（date+time）に既に他のブースに割り当てられていないかチェック
+        const hasTimeConflict = window.currentAssignments.some(otherSlot =>
+          otherSlot !== a &&
+          otherSlot.date === a.date &&
+          otherSlot.time === a.time &&
+          otherSlot.students &&
+          otherSlot.students.some(s => s.studentId === demand.studentId)
+        );
+        if(hasTimeConflict){
+          skippedReasons.sameTimeConflict++;
+          continue;
+        }
+
         candidateAssignments.push(a);
       }
+
+      console.log(`  候補スロット: ${candidateAssignments.length}件`);
+      console.log(`  スキップ理由: 講師なし=${skippedReasons.noTeacher}, 満席=${skippedReasons.full}, 指導不可=${skippedReasons.cannotTeach}, NG講師=${skippedReasons.ngTeacher}, NG日付=${skippedReasons.ngDate}, NG時間=${skippedReasons.ngTime}, 同時刻重複=${skippedReasons.sameTimeConflict}`);
 
       if(candidateAssignments.length === 0){
         return false;
@@ -1402,6 +1535,18 @@
           score += 10000;
         }
 
+        // 毎週同じ曜日に同じ科目の授業ができるように最優先（連続日より優先）
+        if(history.length > 0){
+          const assignmentDate = new Date(assignment.date);
+          const assignmentDayOfWeek = assignmentDate.getDay();
+          for(const h of history){
+            if(h.dayOfWeek === assignmentDayOfWeek){
+              score += 5000; // 同じ曜日に配置する場合は大幅にボーナス
+              break;
+            }
+          }
+        }
+
         // 同じ時間帯を優先
         const sameTimeCount = assignedTimesMap[assignment.time] || 0;
         if(sameTimeCount > 0){
@@ -1412,13 +1557,38 @@
         if(assignedDatesSet.has(assignment.date)){
           score -= 1000;
         } else if(history.length > 0){
+          // 同じ科目を週に2度行う場合は、連続日を優先
+          // （連続日のほうがスコアが高くなるようにする）
           const assignmentDate = new Date(assignment.date);
           let minDiff = Infinity;
           for(const h of history){
             const diff = Math.abs(assignmentDate - new Date(h.date)) / (1000 * 60 * 60 * 24);
             if(diff < minDiff) minDiff = diff;
           }
-          score += minDiff * 10;
+          // 連続日（1日差）を最優先: 差が小さいほどスコアが高くなる
+          // 1日差=+300点、2日差=+150点、3日差=+100点...
+          if(minDiff === 1){
+            score += 300; // 連続日を強く優先
+          } else if(minDiff === 2){
+            score += 150;
+          } else if(minDiff <= 7){
+            // 同じ週内なら少しボーナス（ただし連続日より低い）
+            score += 100 / minDiff;
+          } else {
+            // 週をまたぐ場合はペナルティ
+            score -= minDiff * 5;
+          }
+        }
+
+        // 専門性の高い講師を優先（指導可能科目数が少ない講師を優先）
+        // 例: 社会を配置する場合、国数英理社ができる講師より国社のみの講師を優先
+        const teacherSubjects = teacherSubjectMap[assignment.teacherName] ||
+                                 teacherSubjectMap[assignment.teacherName?.split(' ')[0]] ||
+                                 teacherSubjectMap[assignment.teacherName?.split(' ')[0] + 'T'] || [];
+        if(teacherSubjects.length > 0){
+          // 科目数が少ないほどボーナスが高い（最大200点、最小20点）
+          const specialtyBonus = Math.max(20, 200 - (teacherSubjects.length * 10));
+          score += specialtyBonus;
         }
 
         // 同じ講師を優先
@@ -1445,6 +1615,9 @@
         studentName: demand.studentName,
         subject: demand.subject
       });
+
+      console.log(`  ✅ 割り当て成功: ${demand.studentId} -> ${bestAssignment.date} ${bestAssignment.time} ${bestAssignment.boothId} (講師: ${bestAssignment.teacherId})`);
+      console.log(`     現在の生徒数: ${bestAssignment.students.length}/2`);
 
       // 割り当て済みフラグを設定
       window.studentAssignmentData.demandAssigned[demandIndex] = true;
@@ -1601,6 +1774,30 @@
         return;
       }
 
+      // 生徒ごと・科目ごとの必要コマ数と配置済みコマ数を計算
+      const studentSubjectStats = {}; // { 'studentId_subject': { required: N, assigned: M } }
+      if(window.studentDemandData){
+        for(const demand of window.studentDemandData){
+          const key = `${demand.studentId}_${demand.subject}`;
+          if(!studentSubjectStats[key]){
+            studentSubjectStats[key] = { required: 0, assigned: 0 };
+          }
+          studentSubjectStats[key].required++;
+        }
+      }
+      // 配置済みコマ数を集計
+      for(const assignment of assignments){
+        if(assignment.students && assignment.students.length > 0){
+          for(const student of assignment.students){
+            const key = `${student.studentId}_${student.subject}`;
+            if(!studentSubjectStats[key]){
+              studentSubjectStats[key] = { required: 0, assigned: 0 };
+            }
+            studentSubjectStats[key].assigned++;
+          }
+        }
+      }
+
       const dates = [...new Set(assignments.map(a=>a.date))].sort();
       // 丸付き数字はUnicodeコードポイント順にソート（①②③...の順）
       const booths = [...new Set(assignments.map(a=>a.boothId))].sort();
@@ -1635,8 +1832,29 @@
       let html = '';
       const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
 
-      // 曜日ごとにデータを整理（月〜日の7列構造）
-      const dayOfWeekCols = [1, 2, 3, 4, 5, 6, 0]; // 月火水木金土日の順
+      // 曜日ごとにデータを整理（月〜土の6列構造、日曜日は除外）
+      const dayOfWeekCols = [1, 2, 3, 4, 5, 6]; // 月火水木金土の順（日曜日を除外）
+
+      // セル幅を計算（文字列の最大長に合わせる）
+      let maxTeacherNameLength = 0;
+      let maxStudentTextLength = 0;
+      for(const a of assignments){
+        if(a.teacherName){
+          const cleanName = a.teacherName.replace(/T$/, '');
+          const parts = cleanName.split(/\s+/);
+          const nameLength = Math.max(parts[0]?.length || 0, parts[1]?.length || 0) + 1; // +1は"T"
+          maxTeacherNameLength = Math.max(maxTeacherNameLength, nameLength);
+        }
+        if(a.students && a.students.length > 0){
+          for(const student of a.students){
+            const studentText = (student.studentName || student.studentId) + (student.subject ? `(${student.subject})` : '');
+            maxStudentTextLength = Math.max(maxStudentTextLength, studentText.length);
+          }
+        }
+      }
+      // 1文字あたり約12px + パディング、最大幅を制限（縦書き防止）
+      const teacherCellWidth = Math.min(150, Math.max(80, maxTeacherNameLength * 12 + 16));
+      const studentCellWidth = Math.min(200, Math.max(120, maxStudentTextLength * 12 + 16));
 
       // 週ごとにテーブルを作成
       for(let weekIndex = 0; weekIndex < weekGroups.length; weekIndex++){
@@ -1663,7 +1881,8 @@
           const date = dateByDayOfWeek[dow];
           const dayLabel = weekdays[dow];
           const dayNum = date ? new Date(date).getDate() : '-';
-          html += `<th colspan="${booths.length * 3}" style="border:1px solid #d1d5db; background:#f3f4f6; text-align:center;">${dayLabel} (${dayNum})</th>`;
+          // ブース番号(1) + 講師名(1) + 生徒1名前(1) + 生徒1科目(1) + 生徒2名前(1) + 生徒2科目(1) = 6列
+          html += `<th colspan="${booths.length * 6}" style="border:1px solid #d1d5db; background:#f3f4f6; text-align:center;">${dayLabel} (${dayNum})</th>`;
         }
         html += '</tr>';
         html += '</thead><tbody>';
@@ -1678,9 +1897,10 @@
             for(const booth of booths){
               const a = date ? assignments.find(x=>x.date===date && x.time===time && x.boothId===booth) : null;
             const cls = (a && a.teacherId) ? 'assigned' : 'empty';
+            const isClosedDay = !date; // 休塾日判定
 
             // ブース番号セル（B1形式を丸付き数字に変換して表示）
-            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:#f9fafb;">${boothIdToCircled(booth)}</td>`;
+            html += `<td style="border:1px solid #d1d5db; padding:4px; text-align:center; font-weight:600; width:40px; background:${isClosedDay ? '#e5e7eb' : '#f9fafb'};">${boothIdToCircled(booth)}</td>`;
 
             // 講師名セル
             let teacherText = '';
@@ -1719,25 +1939,89 @@
             }
 
             const teacherCellId = `cell_teacher_${date}_${time}_${booth}`;
+            const teacherBgColor = isClosedDay ? 'e5e7eb' : (a && a.teacherId ? 'e0f2fe' : 'fef3c7');
             html += `<td class="${cls}" id="${teacherCellId}"
-                      style="border:1px solid #d1d5db; padding:4px; min-width:80px; background:#${a && a.teacherId ? 'e0f2fe' : 'fef3c7'};"
+                      style="border:1px solid #d1d5db; padding:4px; width:${teacherCellWidth}px; background:#${teacherBgColor};"
                       data-date="${date}" data-time="${time}" data-booth="${booth}">${teacherText}</td>`;
 
-            // 生徒セル（最大2人）
-            let studentText = '';
-            if(a && a.students && a.students.length > 0){
-              for(const student of a.students){
-                if(studentText) studentText += '<br/>';
-                studentText += '<small style="font-weight:600;">' + (student.studentName || student.studentId);
-                if(student.subject) studentText += '<span style="font-weight:normal;">(' + student.subject + ')</span>';
-                studentText += '</small>';
+            // 生徒セル（最大2人、名前と科目を横並びに分割）
+            // 同じ時間に同じ生徒が配置されているか確認
+            const checkDuplicateStudent = (studentId, currentDate, currentTime, currentBooth) => {
+              if(!studentId) return false;
+              return assignments.some(otherAssignment =>
+                otherAssignment.date === currentDate &&
+                otherAssignment.time === currentTime &&
+                otherAssignment.boothId !== currentBooth &&
+                otherAssignment.students &&
+                otherAssignment.students.some(s => s.studentId === studentId)
+              );
+            };
+
+            // 生徒1の名前セル
+            const student1 = (a && a.students && a.students[0]) ? a.students[0] : null;
+            const student1Name = student1 ? (student1.studentName || student1.studentId) : '';
+            const student1HasDuplicate = student1 ? checkDuplicateStudent(student1.studentId, date, time, booth) : false;
+            const student1NameBg = isClosedDay ? 'e5e7eb' : (student1HasDuplicate ? 'fca5a5' : (student1 ? 'd1fae5' : 'fff'));
+            const student1NameCellId = `cell_student1_name_${date}_${time}_${booth}`;
+            html += `<td class="${student1 ? 'assigned' : 'empty'}" id="${student1NameCellId}"
+                      style="border:1px solid #d1d5db; padding:4px; width:80px; background:#${student1NameBg}; cursor:${student1 || !isClosedDay ? 'pointer' : 'default'};"
+                      data-date="${date}" data-time="${time}" data-booth="${booth}" data-student-index="0"
+                      onclick="${!isClosedDay ? `showStudentDropdown('${date}', '${time}', '${booth}', 0)` : ''}"
+                      title="${student1HasDuplicate ? '⚠️ 同じ時間に2コマ配置されています' : ''}">
+                      <small style="font-weight:600;">${student1Name}</small></td>`;
+
+            // 生徒1の科目セル（必要コマ数と配置済みコマ数を表示）
+            let student1SubjectText = '';
+            if(student1){
+              const student1Subject = student1.subject || '';
+              const statsKey = `${student1.studentId}_${student1Subject}`;
+              const stats = studentSubjectStats[statsKey];
+              if(stats){
+                student1SubjectText = `${student1Subject}<br/><span style="font-size:10px; color:#6b7280;">(${stats.assigned}/${stats.required})</span>`;
+              } else {
+                student1SubjectText = student1Subject;
               }
             }
+            const student1SubjectBg = isClosedDay ? 'e5e7eb' : (student1HasDuplicate ? 'fca5a5' : (student1 ? 'dcfce7' : 'fff'));
+            const student1SubjectCellId = `cell_student1_subject_${date}_${time}_${booth}`;
+            html += `<td class="${student1 ? 'assigned' : 'empty'}" id="${student1SubjectCellId}"
+                      style="border:1px solid #d1d5db; padding:4px; width:80px; background:#${student1SubjectBg}; cursor:${student1 ? 'pointer' : 'default'};"
+                      data-date="${date}" data-time="${time}" data-booth="${booth}" data-student-index="0"
+                      onclick="${student1 ? `showSubjectDropdown('${date}', '${time}', '${booth}', 0)` : ''}">
+                      <small>${student1SubjectText}</small></td>`;
 
-            const studentCellId = `cell_student_${date}_${time}_${booth}`;
-            html += `<td class="${a && a.students && a.students.length > 0 ? 'assigned' : 'empty'}" id="${studentCellId}"
-                      style="border:1px solid #d1d5db; padding:4px; min-width:120px; background:#${a && a.students && a.students.length > 0 ? 'd1fae5' : 'fff'};"
-                      data-date="${date}" data-time="${time}" data-booth="${booth}">${studentText}</td>`;
+            // 生徒2の名前セル
+            const student2 = (a && a.students && a.students[1]) ? a.students[1] : null;
+            const student2Name = student2 ? (student2.studentName || student2.studentId) : '';
+            const student2HasDuplicate = student2 ? checkDuplicateStudent(student2.studentId, date, time, booth) : false;
+            const student2NameBg = isClosedDay ? 'e5e7eb' : (student2HasDuplicate ? 'fca5a5' : (student2 ? 'd1fae5' : 'fff'));
+            const student2NameCellId = `cell_student2_name_${date}_${time}_${booth}`;
+            html += `<td class="${student2 ? 'assigned' : 'empty'}" id="${student2NameCellId}"
+                      style="border:1px solid #d1d5db; padding:4px; width:80px; background:#${student2NameBg}; cursor:${student2 || !isClosedDay ? 'pointer' : 'default'};"
+                      data-date="${date}" data-time="${time}" data-booth="${booth}" data-student-index="1"
+                      onclick="${!isClosedDay ? `showStudentDropdown('${date}', '${time}', '${booth}', 1)` : ''}"
+                      title="${student2HasDuplicate ? '⚠️ 同じ時間に2コマ配置されています' : ''}">
+                      <small style="font-weight:600;">${student2Name}</small></td>`;
+
+            // 生徒2の科目セル（必要コマ数と配置済みコマ数を表示）
+            let student2SubjectText = '';
+            if(student2){
+              const student2Subject = student2.subject || '';
+              const statsKey = `${student2.studentId}_${student2Subject}`;
+              const stats = studentSubjectStats[statsKey];
+              if(stats){
+                student2SubjectText = `${student2Subject}<br/><span style="font-size:10px; color:#6b7280;">(${stats.assigned}/${stats.required})</span>`;
+              } else {
+                student2SubjectText = student2Subject;
+              }
+            }
+            const student2SubjectBg = isClosedDay ? 'e5e7eb' : (student2HasDuplicate ? 'fca5a5' : (student2 ? 'dcfce7' : 'fff'));
+            const student2SubjectCellId = `cell_student2_subject_${date}_${time}_${booth}`;
+            html += `<td class="${student2 ? 'assigned' : 'empty'}" id="${student2SubjectCellId}"
+                      style="border:1px solid #d1d5db; padding:4px; width:80px; background:#${student2SubjectBg}; cursor:${student2 ? 'pointer' : 'default'};"
+                      data-date="${date}" data-time="${time}" data-booth="${booth}" data-student-index="1"
+                      onclick="${student2 ? `showSubjectDropdown('${date}', '${time}', '${booth}', 1)` : ''}">
+                      <small>${student2SubjectText}</small></td>`;
             }
           }
           html += '</tr>';
@@ -1746,6 +2030,66 @@
       }
 
       $('previewTable').innerHTML = html;
+
+      // 講師サマリテーブルを表示
+      renderTeacherSummary(assignments);
+    }
+
+    // ================= 講師サマリテーブル =================
+    function renderTeacherSummary(assignments){
+      if(!teacherData || teacherData.length === 0){
+        $('teacherSummaryCard').style.display = 'none';
+        return;
+      }
+
+      // 講師ごとの提出シフトコマ数を集計
+      const teacherShiftCounts = {};
+      for(const teacher of teacherData){
+        if(!teacherShiftCounts[teacher.teacherId]){
+          teacherShiftCounts[teacher.teacherId] = {
+            teacherName: teacher.teacherName || teacher.teacherId,
+            shiftCount: 0,
+            assignedCount: 0
+          };
+        }
+        teacherShiftCounts[teacher.teacherId].shiftCount++;
+      }
+
+      // 割り当てコマ数を集計
+      for(const assignment of assignments){
+        if(assignment.teacherId){
+          if(!teacherShiftCounts[assignment.teacherId]){
+            teacherShiftCounts[assignment.teacherId] = {
+              teacherName: assignment.teacherName || assignment.teacherId,
+              shiftCount: 0,
+              assignedCount: 0
+            };
+          }
+          teacherShiftCounts[assignment.teacherId].assignedCount++;
+        }
+      }
+
+      // テーブルを生成
+      let html = '';
+      const teacherIds = Object.keys(teacherShiftCounts).sort((a, b) => {
+        return teacherShiftCounts[a].teacherName.localeCompare(teacherShiftCounts[b].teacherName);
+      });
+
+      for(const teacherId of teacherIds){
+        const data = teacherShiftCounts[teacherId];
+        const rate = data.shiftCount > 0 ? Math.round((data.assignedCount / data.shiftCount) * 100) : 0;
+        const rateColor = rate >= 80 ? '#10b981' : (rate >= 50 ? '#f59e0b' : '#ef4444');
+
+        html += `<tr>
+          <td style="border:1px solid #d1d5db; padding:8px;">${data.teacherName}</td>
+          <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">${data.shiftCount}</td>
+          <td style="border:1px solid #d1d5db; padding:8px; text-align:center;">${data.assignedCount}</td>
+          <td style="border:1px solid #d1d5db; padding:8px; text-align:center; color:${rateColor}; font-weight:600;">${rate}%</td>
+        </tr>`;
+      }
+
+      $('teacherSummaryBody').innerHTML = html;
+      $('teacherSummaryCard').style.display = 'block';
     }
 
     // ================= 講師変更プルダウン =================
@@ -1872,6 +2216,305 @@
       toast(`講師を ${newTeacher.teacherName || newTeacherId} に変更しました`, 'ok');
 
       console.log(`✓ 講師変更: ${date} ${time} ${booth} -> ${newTeacher.teacherName}`);
+    }
+
+    // ================= 生徒変更プルダウン =================
+    // グローバルスコープに公開
+    window.showStudentDropdown = function(date, time, booth, studentIndex){
+      // 既存のプルダウンを削除
+      if(currentDropdown){
+        currentDropdown.remove();
+        currentDropdown = null;
+      }
+
+      // 割り当てを取得
+      const assignments = window.currentAssignments || lastAssignments;
+      const assignment = assignments.find(a => a.date === date && a.time === time && a.boothId === booth);
+      if(!assignment){
+        toast('割り当てが見つかりませんでした', 'error');
+        return;
+      }
+
+      // 割り当て可能な生徒リストを取得（studentDemandDataから）
+      if(!window.studentDemandData || window.studentDemandData.length === 0){
+        toast('生徒データが読み込まれていません', 'warn');
+        return;
+      }
+
+      // ユニークな生徒リストを取得
+      const uniqueStudents = [...new Set(window.studentDemandData.map(d => d.studentId))].sort();
+
+      // プルダウンを作成
+      const dropdown = document.createElement('div');
+      dropdown.id = 'studentDropdown';
+      dropdown.style.cssText = `
+        position: absolute;
+        background: white;
+        border: 2px solid #10b981;
+        border-radius: 4px;
+        padding: 8px;
+        z-index: 1000;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        max-height: 250px;
+        overflow-y: auto;
+        min-width: 150px;
+      `;
+
+      // ヘッダー
+      const header = document.createElement('div');
+      header.style.cssText = 'font-weight:600; margin-bottom:8px; font-size:12px; color:#374151;';
+      header.textContent = '生徒を選択:';
+      dropdown.appendChild(header);
+
+      // 現在の生徒
+      const currentStudent = assignment.students && assignment.students[studentIndex] ? assignment.students[studentIndex].studentId : null;
+
+      // 「削除」オプション（既に生徒が配置されている場合のみ）
+      if(currentStudent){
+        const removeOption = document.createElement('div');
+        removeOption.style.cssText = `
+          padding: 6px 8px;
+          cursor: pointer;
+          border-radius: 3px;
+          font-size: 13px;
+          margin-bottom: 2px;
+          background: #fee2e2;
+          color: #991b1b;
+          font-weight: 600;
+        `;
+        removeOption.textContent = '✕ 削除';
+        removeOption.onmouseover = () => { removeOption.style.background = '#fecaca'; };
+        removeOption.onmouseout = () => { removeOption.style.background = '#fee2e2'; };
+        removeOption.onclick = () => {
+          changeStudent(date, time, booth, studentIndex, null, null);
+          dropdown.remove();
+          currentDropdown = null;
+        };
+        dropdown.appendChild(removeOption);
+      }
+
+      // 生徒リスト
+      for(const studentId of uniqueStudents){
+        const option = document.createElement('div');
+        option.style.cssText = `
+          padding: 6px 8px;
+          cursor: pointer;
+          border-radius: 3px;
+          font-size: 13px;
+          margin-bottom: 2px;
+          ${studentId === currentStudent ? 'background:#d1fae5; font-weight:600;' : 'background:#f9fafb;'}
+        `;
+        option.textContent = studentId;
+        option.onmouseover = () => { if(studentId !== currentStudent) option.style.background = '#e5e7eb'; };
+        option.onmouseout = () => { if(studentId !== currentStudent) option.style.background = '#f9fafb'; };
+        option.onclick = () => {
+          // この生徒の最初の科目を取得（デフォルト科目）
+          const studentDemand = window.studentDemandData.find(d => d.studentId === studentId);
+          const defaultSubject = studentDemand ? studentDemand.subject : '';
+          changeStudent(date, time, booth, studentIndex, studentId, defaultSubject);
+          dropdown.remove();
+          currentDropdown = null;
+        };
+        dropdown.appendChild(option);
+      }
+
+      // キャンセルボタン
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.style.cssText = `
+        width: 100%;
+        margin-top: 8px;
+        padding: 6px;
+        background: #f3f4f6;
+        border: 1px solid #d1d5db;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+      `;
+      cancelBtn.onclick = () => {
+        dropdown.remove();
+        currentDropdown = null;
+      };
+      dropdown.appendChild(cancelBtn);
+
+      // セルの位置を取得してプルダウンを配置
+      const cellId = `cell_student${studentIndex + 1}_name_${date}_${time}_${booth}`;
+      const cell = document.getElementById(cellId);
+      if(!cell){
+        toast('セルが見つかりませんでした', 'error');
+        return;
+      }
+
+      // セルに相対位置でプルダウンを追加
+      cell.style.position = 'relative';
+      cell.appendChild(dropdown);
+      currentDropdown = dropdown;
+    }
+
+    function changeStudent(date, time, booth, studentIndex, newStudentId, newSubject){
+      // 割り当てを変更
+      const assignments = window.currentAssignments || lastAssignments;
+      const assignment = assignments.find(a => a.date === date && a.time === time && a.boothId === booth);
+      if(!assignment){
+        toast('割り当てが見つかりませんでした', 'error');
+        return;
+      }
+
+      // students配列を初期化（存在しない場合）
+      if(!assignment.students){
+        assignment.students = [];
+      }
+
+      // 削除の場合
+      if(!newStudentId){
+        if(assignment.students[studentIndex]){
+          assignment.students.splice(studentIndex, 1);
+          renderPreview();
+          toast('生徒を削除しました', 'ok');
+        }
+        return;
+      }
+
+      // 新しい生徒を設定
+      const studentName = newStudentId; // studentIdとstudentNameは同じ
+      if(assignment.students[studentIndex]){
+        assignment.students[studentIndex].studentId = newStudentId;
+        assignment.students[studentIndex].studentName = studentName;
+        assignment.students[studentIndex].subject = newSubject;
+      } else {
+        assignment.students[studentIndex] = {
+          studentId: newStudentId,
+          studentName: studentName,
+          subject: newSubject
+        };
+      }
+
+      // プレビューを再描画
+      renderPreview();
+      toast(`生徒を ${studentName} に変更しました`, 'ok');
+    }
+
+    // ================= 科目変更プルダウン =================
+    window.showSubjectDropdown = function(date, time, booth, studentIndex){
+      // 既存のプルダウンを削除
+      if(currentDropdown){
+        currentDropdown.remove();
+        currentDropdown = null;
+      }
+
+      // 割り当てを取得
+      const assignments = window.currentAssignments || lastAssignments;
+      const assignment = assignments.find(a => a.date === date && a.time === time && a.boothId === booth);
+      if(!assignment || !assignment.students || !assignment.students[studentIndex]){
+        toast('生徒が配置されていません', 'warn');
+        return;
+      }
+
+      const currentStudent = assignment.students[studentIndex];
+
+      // この生徒の科目一覧を取得
+      const studentSubjects = window.studentDemandData
+        .filter(d => d.studentId === currentStudent.studentId)
+        .map(d => d.subject);
+      const uniqueSubjects = [...new Set(studentSubjects)].sort();
+
+      if(uniqueSubjects.length === 0){
+        toast('この生徒の科目が見つかりません', 'warn');
+        return;
+      }
+
+      // プルダウンを作成
+      const dropdown = document.createElement('div');
+      dropdown.id = 'subjectDropdown';
+      dropdown.style.cssText = `
+        position: absolute;
+        background: white;
+        border: 2px solid #8b5cf6;
+        border-radius: 4px;
+        padding: 8px;
+        z-index: 1000;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        max-height: 200px;
+        overflow-y: auto;
+        min-width: 120px;
+      `;
+
+      // ヘッダー
+      const header = document.createElement('div');
+      header.style.cssText = 'font-weight:600; margin-bottom:8px; font-size:12px; color:#374151;';
+      header.textContent = '科目を選択:';
+      dropdown.appendChild(header);
+
+      // 科目リスト
+      for(const subject of uniqueSubjects){
+        const option = document.createElement('div');
+        option.style.cssText = `
+          padding: 6px 8px;
+          cursor: pointer;
+          border-radius: 3px;
+          font-size: 13px;
+          margin-bottom: 2px;
+          ${subject === currentStudent.subject ? 'background:#e9d5ff; font-weight:600;' : 'background:#f9fafb;'}
+        `;
+        option.textContent = subject;
+        option.onmouseover = () => { if(subject !== currentStudent.subject) option.style.background = '#e5e7eb'; };
+        option.onmouseout = () => { if(subject !== currentStudent.subject) option.style.background = '#f9fafb'; };
+        option.onclick = () => {
+          changeSubject(date, time, booth, studentIndex, subject);
+          dropdown.remove();
+          currentDropdown = null;
+        };
+        dropdown.appendChild(option);
+      }
+
+      // キャンセルボタン
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.style.cssText = `
+        width: 100%;
+        margin-top: 8px;
+        padding: 6px;
+        background: #f3f4f6;
+        border: 1px solid #d1d5db;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+      `;
+      cancelBtn.onclick = () => {
+        dropdown.remove();
+        currentDropdown = null;
+      };
+      dropdown.appendChild(cancelBtn);
+
+      // セルの位置を取得してプルダウンを配置
+      const cellId = `cell_student${studentIndex + 1}_subject_${date}_${time}_${booth}`;
+      const cell = document.getElementById(cellId);
+      if(!cell){
+        toast('セルが見つかりませんでした', 'error');
+        return;
+      }
+
+      // セルに相対位置でプルダウンを追加
+      cell.style.position = 'relative';
+      cell.appendChild(dropdown);
+      currentDropdown = dropdown;
+    }
+
+    function changeSubject(date, time, booth, studentIndex, newSubject){
+      // 割り当てを変更
+      const assignments = window.currentAssignments || lastAssignments;
+      const assignment = assignments.find(a => a.date === date && a.time === time && a.boothId === booth);
+      if(!assignment || !assignment.students || !assignment.students[studentIndex]){
+        toast('生徒が配置されていません', 'error');
+        return;
+      }
+
+      // 科目を変更
+      assignment.students[studentIndex].subject = newSubject;
+
+      // プレビューを再描画
+      renderPreview();
+      toast(`科目を ${newSubject} に変更しました`, 'ok');
     }
 
     // ================= Excel import: ブース表 =================
@@ -2609,10 +3252,13 @@
             const ngTeachers = parseCommaSeparated(row[21]) || [];         // 列V
             const ngStudents = parseCommaSeparated(row[22]) || [];         // 列W
             const preferredTimes = parseCommaSeparated(row[23]) || [];     // 列X (例: 月17,水19)
-            const ngDays = parseCommaSeparated(row[24]) || [];             // 列Y (例: 火,土)
-            const note = String(row[25] || '').trim();               // 列Z
+            const ngSchedules = parseNgSchedules(row[24]);                 // 列Y: NG日程 (例: 01/15,17,19-20)
+            const note = String(row[25] || '').trim();                     // 列Z
 
             console.log(`\n📚 生徒: ${studentName}`);
+            if(ngSchedules.ngDates.length > 0 || ngSchedules.ngTimes.length > 0){
+              console.log(`  NG日程: 日付[${ngSchedules.ngDates.join(', ')}] 時間[${ngSchedules.ngTimes.join(', ')}]`);
+            }
 
             // 各科目のコマ数を取得して需要データを生成
             for (const [colIdx, subjectName] of Object.entries(subjectMap)) {
@@ -2633,7 +3279,8 @@
                   ngTeachers: ngTeachers,
                   ngStudents: ngStudents,
                   preferredTimes: preferredTimes,  // 例: ['月17', '水19']
-                  ngDays: ngDays,                  // 例: ['火', '土']
+                  ngDates: ngSchedules.ngDates,    // NG日付 (例: ['01/15', '02/20'])
+                  ngTimes: ngSchedules.ngTimes,    // NG時間 (例: [17, 19, 20])
                   note: note,
                   priority: calculatePriority(grade, note),  // 優先度計算
                   classIndex: i,  // このコマが何回目か（0始まり）
@@ -2664,6 +3311,41 @@
     function parseCommaSeparated(value){
       if (!value) return [];
       return String(value).split(',').map(s => s.trim()).filter(s => s);
+    }
+
+    // NG日程をパース（日付と時間に分離）
+    // 入力例: "01/15, 02/20, 17, 19-20"
+    // 戻り値: { ngDates: ['01/15', '02/20'], ngTimes: [17, 19, 20] }
+    function parseNgSchedules(value){
+      const result = { ngDates: [], ngTimes: [] };
+      if (!value) return result;
+
+      const items = String(value).split(',').map(s => s.trim()).filter(s => s);
+
+      for(const item of items){
+        // MM/DD形式の日付をチェック
+        if(/^\d{1,2}\/\d{1,2}$/.test(item)){
+          result.ngDates.push(item);
+        }
+        // 時間範囲をチェック (例: 17-19, 18-20)
+        else if(/^\d{1,2}-\d{1,2}$/.test(item)){
+          const [start, end] = item.split('-').map(s => parseInt(s));
+          for(let hour = start; hour <= end; hour++){
+            if(!result.ngTimes.includes(hour)){
+              result.ngTimes.push(hour);
+            }
+          }
+        }
+        // 単一の時間をチェック (例: 17, 19)
+        else if(/^\d{1,2}$/.test(item)){
+          const hour = parseInt(item);
+          if(!result.ngTimes.includes(hour)){
+            result.ngTimes.push(hour);
+          }
+        }
+      }
+
+      return result;
     }
 
     // 優先度を計算（高い方が優先）
@@ -2721,6 +3403,7 @@
 
         if (subjects.length > 0) {
           teacherMap[teacherId] = subjects;
+          teacherMap[teacherName] = subjects; // 講師名でも検索できるように
           teacherNameMap[teacherId] = teacherName; // 講師名も保存
           console.log(`  ${teacherName} (${teacherId}): ${subjects.join(', ')}`);
         }

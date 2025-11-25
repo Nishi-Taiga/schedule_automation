@@ -148,6 +148,56 @@ async def test_scheduler():
             status = await page.locator("#status").inner_text()
             print(f"  {status}")
 
+            # 生徒の割り当て
+            print(f"\n✓ 生徒の割り当てを実行中...")
+
+            # 生徒選択UIが表示されるまで待機
+            try:
+                await page.wait_for_selector("#studentSelectionCard", state="visible", timeout=5000)
+                print(f"  生徒選択UIが表示されました")
+            except Exception as e:
+                print(f"  ⚠️ 生徒選択UIが表示されませんでした: {e}")
+
+            # 生徒のプルダウンから全ての生徒を取得
+            student_select = await page.query_selector("#studentSelect")
+            student_options = await student_select.query_selector_all("option")
+
+            students = []
+            for option in student_options:
+                value = await option.get_attribute("value")
+                if value:  # 空のオプションを除外
+                    students.append(value)
+
+            print(f"  生徒数: {len(students)}人")
+
+            # 各生徒を割り当て（最大5人をテスト）
+            test_student_count = min(5, len(students))
+            print(f"  テスト対象: 最初の{test_student_count}人")
+
+            for i, student_id in enumerate(students[:test_student_count], 1):
+                print(f"\n  [{i}/{test_student_count}] {student_id} を割り当て中...")
+
+                # プルダウンから生徒を選択
+                await student_select.select_option(value=student_id)
+                await page.wait_for_timeout(200)
+
+                # 割り当てボタンをクリック
+                assign_btn = await page.query_selector("#assignStudentBtn")
+                await assign_btn.click()
+
+                # 割り当て完了を待機（ステータスメッセージが更新されるまで）
+                try:
+                    await page.wait_for_function(
+                        f"""document.getElementById('status').textContent.includes('{student_id}')""",
+                        timeout=10000
+                    )
+                    result_status = await page.locator("#status").inner_text()
+                    print(f"    ✓ {result_status}")
+                except Exception as e:
+                    print(f"    ⚠️ タイムアウト: {e}")
+
+                await page.wait_for_timeout(500)
+
             # CSV出力を確認
             print(f"\n✓ 割り当て結果を確認中...")
             assignments_out = await page.locator("#assignmentsOut").input_value()
