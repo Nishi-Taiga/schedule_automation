@@ -20,32 +20,84 @@ app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 # パスワード（環境変数 or デフォルト）
 APP_PASSWORD = os.environ.get('APP_PASSWORD', 'booth2026')
 
-# 一時ファイル管理
-UPLOAD_DIR = tempfile.mkdtemp(prefix='booth_')
-SESSIONS = {}  # session_id -> {files, result, last_access}
+# 一時ファイル管理（ディスクベース: gunicornマルチワーカー対応）
+UPLOAD_BASE = os.path.join(tempfile.gettempdir(), 'booth_sessions')
+os.makedirs(UPLOAD_BASE, exist_ok=True)
 SESSION_TIMEOUT = 3600  # 1時間でクリーンアップ
+
+def _session_dir(sid):
+    """セッションIDからディレクトリパスを返す"""
+    return os.path.join(UPLOAD_BASE, sid)
+
+def _session_meta_path(sid):
+    """セッションのメタデータJSONファイルパス"""
+    return os.path.join(_session_dir(sid), '_meta.json')
+
+def _load_meta(sid):
+    """ディスクからセッションメタデータを読み込む"""
+    mp = _session_meta_path(sid)
+    if os.path.exists(mp):
+        with open(mp, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+def _save_meta(sid, meta):
+    """セッションメタデータをディスクに保存"""
+    mp = _session_meta_path(sid)
+    with open(mp, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, ensure_ascii=False)
 
 def cleanup_old_sessions():
     """古いセッションの一時ファイルを削除"""
     now = time.time()
-    to_del = [sid for sid, s in SESSIONS.items() if now - s.get('last_access', 0) > SESSION_TIMEOUT]
-    for sid in to_del:
-        sdir = SESSIONS[sid].get('dir')
-        if sdir and os.path.exists(sdir):
+    if not os.path.exists(UPLOAD_BASE):
+        return
+    for name in os.listdir(UPLOAD_BASE):
+        sdir = os.path.join(UPLOAD_BASE, name)
+        if not os.path.isdir(sdir):
+            continue
+        meta = _load_meta(name)
+        if meta and now - meta.get('last_access', 0) > SESSION_TIMEOUT:
             shutil.rmtree(sdir, ignore_errors=True)
-        del SESSIONS[sid]
 
 def get_session_data():
-    """現在のセッションのデータを取得(なければ作成)"""
+    """現在のセッションのデータを取得(なければ作成) - ディスクベース"""
     cleanup_old_sessions()
     sid = session.get('sid')
-    if not sid or sid not in SESSIONS:
+    sdir = _session_dir(sid) if sid else None
+    if not sid or not os.path.exists(_session_meta_path(sid)):
         sid = secrets.token_hex(16)
         session['sid'] = sid
-        sdir = tempfile.mkdtemp(prefix='booth_sess_')
-        SESSIONS[sid] = {'files': {}, 'result': {}, 'dir': sdir, 'last_access': time.time()}
-    SESSIONS[sid]['last_access'] = time.time()
-    return SESSIONS[sid]
+        sdir = _session_dir(sid)
+        os.makedirs(sdir, exist_ok=True)
+        meta = {'files': {}, 'dir': sdir, 'last_access': time.time()}
+        _save_meta(sid, meta)
+    meta = _load_meta(sid)
+    meta['last_access'] = time.time()
+    meta['dir'] = sdir  # 常にパスを保証
+    _save_meta(sid, meta)
+    # resultはインメモリで保持（大きいため）、ただしfilesパスはディスクから復元
+    if not hasattr(get_session_data, '_cache'):
+        get_session_data._cache = {}
+    if sid not in get_session_data._cache:
+        get_session_data._cache[sid] = {'result': {}}
+    cached = get_session_data._cache[sid]
+    return {**meta, 'result': cached.get('result', {}), '_sid': sid}
+
+def save_session_files(sd):
+    """ファイルパス情報をディスクに保存"""
+    sid = sd['_sid']
+    meta = _load_meta(sid)
+    meta['files'] = sd['files']
+    meta['last_access'] = time.time()
+    _save_meta(sid, meta)
+
+def save_session_result(sd):
+    """resultをインメモリキャッシュに保存"""
+    sid = sd['_sid']
+    if not hasattr(get_session_data, '_cache'):
+        get_session_data._cache = {}
+    get_session_data._cache[sid] = {'result': sd['result']}
 
 # ========== 認証 ==========
 def login_required(f):
@@ -72,15 +124,16 @@ def login_page():
 @app.route('/logout')
 def logout():
     sid = session.get('sid')
-    if sid and sid in SESSIONS:
-        sdir = SESSIONS[sid].get('dir')
-        if sdir and os.path.exists(sdir):
+    if sid:
+        sdir = _session_dir(sid)
+        if os.path.exists(sdir):
             shutil.rmtree(sdir, ignore_errors=True)
-        del SESSIONS[sid]
+        if hasattr(get_session_data, '_cache') and sid in get_session_data._cache:
+            del get_session_data._cache[sid]
     session.clear()
     return redirect(url_for('login_page'))
 
-ALLOWED_EXT = {'.xlsx', '.xlsm'}
+ALLOWED_EXT = {'.xlsx'}
 def validate_file(f):
     if not f or not f.filename:
         return False, 'ファイルが選択されていません'
@@ -172,7 +225,7 @@ def can_teach(teacher, grade, subject, skills):
     return any(k in skills[teacher] for k in keys)
 
 def load_teacher_skills(wb):
-    """ブース表xlsm内の講師指導可能科目シートを読み込む"""
+    """ブース表xlsx内の講師指導可能科目シートを読み込む"""
     # シート名を自動検出（「一覧表」「指導可能」等を含むシート）
     skill_sheet = None
     for sn in wb.sheetnames:
@@ -198,7 +251,7 @@ def load_teacher_skills(wb):
     return skills
 
 def load_booth_pref(wb):
-    """ブース表xlsm内の講師ブース希望シートを読み込む"""
+    """ブース表xlsx内の講師ブース希望シートを読み込む"""
     for sn in wb.sheetnames:
         if 'ブース希望' in sn:
             ws = wb[sn]
@@ -560,7 +613,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
 
 # ========== Excel出力 ==========
 def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
-    wb = openpyxl.load_workbook(booth_path, keep_vba=False)
+    wb = openpyxl.load_workbook(booth_path)
     for sn in wb.sheetnames[4:]:
         del wb[sn]
 
@@ -665,6 +718,7 @@ def upload():
             f.save(path)
             saved[key] = path
     sd['files'] = {**sd.get('files',{}), **saved}
+    save_session_files(sd)
     return jsonify({'ok': True, 'files': {k: os.path.basename(v) for k,v in sd.get('files',{}).items()}})
 
 @app.route('/api/generate', methods=['POST'])
@@ -683,8 +737,8 @@ def generate():
     booth_pref_ui = {k: int(v) for k, v in booth_pref_ui.items() if v}
 
     try:
-        # ブース表xlsmから全データを読み込み
-        booth_wb = openpyxl.load_workbook(files['booth'], keep_vba=True)
+        # ブース表xlsxから全データを読み込み
+        booth_wb = openpyxl.load_workbook(files['booth'])
         skills = load_teacher_skills(booth_wb)
         file_booth_pref = load_booth_pref(booth_wb)
         students = load_students_from_wb(booth_wb)
@@ -722,6 +776,7 @@ def generate():
             'booth_pref': booth_pref,
             'students': students,
         }
+        save_session_result(sd)
 
         # 生徒データJSON化（NG情報含む）
         students_json = []
@@ -797,6 +852,7 @@ def update_schedule():
     res['schedule_json'] = sched_json
     res['unplaced'] = data.get('unplaced', [])
     sd['result'] = res
+    save_session_result(sd)
 
     placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     return jsonify({'ok': True, 'placed': placed})

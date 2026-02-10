@@ -121,8 +121,8 @@ table.up .ct{font-weight:700;color:var(--red)}
 </div>
 <div id="pUpload" class="card">
 <h2>ファイルアップロード</h2>
-<label class="upload-row" id="uSrc"><div class="icon">📁</div><div><div class="label">ブース表元シート (.xlsx)</div><div class="desc" id="nSrc">出勤可能講師の一覧</div></div><input type="file" accept=".xlsx,.xlsm" onchange="onF(this,'src')"></label>
-<label class="upload-row" id="uBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsm)</div><div class="desc" id="nBooth">生徒情報・講師指導可能科目・テンプレート</div></div><input type="file" accept=".xlsx,.xlsm" onchange="onF(this,'booth')"></label>
+<label class="upload-row" id="uSrc"><div class="icon">📁</div><div><div class="label">ブース表元シート (.xlsx)</div><div class="desc" id="nSrc">出勤可能講師の一覧</div></div><input type="file" accept=".xlsx" onchange="onF(this,'src')"></label>
+<label class="upload-row" id="uBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsx)</div><div class="desc" id="nBooth">生徒情報・講師指導可能科目・テンプレート</div></div><input type="file" accept=".xlsx" onchange="onF(this,'booth')"></label>
 <div class="file-note">※ ブース表に「必要コマ数」「一覧表」「講師ブース希望」シートが含まれている必要があります</div>
 <div class="bg"><button class="btn btn-p" id="toS" disabled onclick="go('settings')">次へ: 設定 →</button></div>
 <div class="status" id="upSt"></div>
