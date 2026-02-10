@@ -26,7 +26,7 @@ body{font-family:'Zen Kaku Gothic New','Hiragino Kaku Gothic ProN',sans-serif;ba
 .upload-row.done{border-color:var(--green);background:#f0fdf4}
 .upload-row .icon{font-size:26px}.upload-row .label{font-weight:600;font-size:13.5px}
 .upload-row .desc{font-size:11.5px;color:var(--ink3)}.upload-row input{display:none}
-.sg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.sg{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
 .si{background:#f7f9fb;padding:10px 12px;border-radius:8px}
 .si label{font-weight:600;font-size:13px;display:block;margin-bottom:4px}
 .si input,.si select{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit}
@@ -62,15 +62,15 @@ table.sch td{padding:2px 4px;border-bottom:1px solid #eef1f5;vertical-align:top}
 .or td{font-weight:700;background:#ebf1ff;text-align:center;font-size:12px;color:var(--accent)}
 .cd{background:#f0f0f0}
 tr.er{background:#fafbfc}
-.tn{display:inline-block;font-weight:600;color:var(--accent2);font-size:11px;margin-bottom:1px;cursor:grab;padding:1px 4px;border-radius:3px;border:1px solid transparent;transition:all .12s;user-select:none}
+.tn{display:block;font-weight:600;color:var(--accent2);font-size:11px;margin-bottom:2px;cursor:grab;padding:1px 4px;border-radius:3px;border:1px solid transparent;transition:all .12s;user-select:none;width:100%;text-align:center}
 .tn:hover{background:#e0e7ff;border-color:#93c5fd}.tn:active{cursor:grabbing}
 .tn.drag-over-t{background:#dbeafe;border-color:var(--accent)}
-.slot-chip{display:inline-flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;margin:1px 0;font-size:10px;cursor:grab;user-select:none;transition:all .12s;max-width:100%;background:#e8f5e9;border:1px solid #a5d6a7}
+.slot-chip{display:flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;margin:1px 0;font-size:10px;cursor:grab;user-select:none;transition:all .12s;width:100%;background:#e8f5e9;border:1px solid #a5d6a7}
 .slot-chip:active{cursor:grabbing}.slot-chip:hover{background:#c8e6c9;border-color:#66bb6a}
 .slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32;cursor:pointer;text-decoration:underline dotted transparent;transition:text-decoration .2s}.slot-chip .s:hover{text-decoration-color:#2e7d32}
 .slot-chip .j{color:#558b2f;font-size:9px}
 .slot-chip.ng{background:#ffebee;border-color:#e57373}.slot-chip.ng .s{color:#c62828}
-.booth-cell{min-height:34px;min-width:90px;position:relative;transition:background .12s}
+.booth-cell{min-height:34px;min-width:90px;position:relative;transition:background .12s;display:flex;flex-direction:column;align-items:stretch;padding:2px 3px}
 .booth-cell.drag-over{background:#e3f2fd !important;outline:2px dashed var(--accent);outline-offset:-2px}
 .booth-cell.full{background:#fff3e0}
 .unplaced-zone{min-height:60px;border:2px dashed var(--border);border-radius:8px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:4px;transition:all .12s;margin-top:6px}
@@ -162,7 +162,7 @@ table.up .ct{font-weight:700;color:var(--red)}
 <script>
 const D=['月','火','水','木','金','土'],WT=['16:00','17:05','18:10','19:15','20:20'],ST=['14:55','16:00','17:05','18:10'];
 const TL=['14:55','16:00','17:05','18:10','19:15','20:20'],TS={'14:55':'14','16:00':'16','17:05':'17','18:10':'18','19:15':'19','20:20':'20'},TSR={'14':'14:55','16':'16:00','17':'17:05','18':'18:10','19':'19:15','20':'20:20'},BL=['①','②','③','④','⑤','⑥'];
-let OR={月:'石川T',火:'石川T',水:'西T',木:'石川T',金:'石川T',土:'越智T'};
+let OR={月:['石川T'],火:['石川T'],水:['西T'],木:['石川T'],金:['石川T'],土:['越智T']};
 let BP=[],R=null,PW=0,uploaded={},edited=false,dragData=null,calStudent=null;
 let ngMap={},ngStudentMap={};
 function buildNgMap(){ngMap={};ngStudentMap={};if(!R||!R.students)return;R.students.forEach(s=>{ngMap[s.name]=new Set(s.ng_teachers||[]);ngStudentMap[s.name]=new Set(s.ng_students||[])});}
@@ -176,7 +176,12 @@ document.getElementById('toS').disabled=!(uploaded.src&&uploaded.booth);}
 
 function go(step){document.getElementById('pUpload').style.display=step==='upload'?'':'none';document.getElementById('pSettings').style.display=step==='settings'?'':'none';document.getElementById('pResult').style.display=step==='result'?'':'none';
 for(const[k,id]of[['upload','sb1'],['settings','sb2'],['result','sb3']])document.getElementById(id).className='step-btn'+(step===k?' active':'');if(step==='settings')buildSettingsUI();}
-function buildSettingsUI(){const g=document.getElementById('oGrid');g.innerHTML='';for(const d of D){const div=document.createElement('div');div.className='si';div.innerHTML='<label>'+d+'曜</label><input value="'+OR[d]+'" onchange="OR[\''+d+'\']=this.value">';g.appendChild(div);}renderBP();}
+function buildSettingsUI(){const g=document.getElementById('oGrid');g.innerHTML='';for(const d of D){const div=document.createElement('div');div.className='si';
+if(!Array.isArray(OR[d]))OR[d]=[OR[d]||'石川T'];
+let html='<label>'+d+'曜</label>';
+OR[d].forEach((c,i)=>{html+='<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center"><span style="font-size:11px;color:var(--ink3);min-width:16px">'+(i+1)+'.</span><input style="flex:1" value="'+c+'" onchange="OR[\''+d+'\']['+i+']=this.value">'+(OR[d].length>1?'<button type="button" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px" onclick="OR[\''+d+'\'].splice('+i+',1);buildSettingsUI()">✕</button>':'')+'</div>';});
+html+='<button type="button" style="background:#7c3aed;color:#fff;font-size:11px;padding:3px 8px;border:none;border-radius:4px;cursor:pointer;margin-top:2px" onclick="OR[\''+d+'\'].push(\'\');buildSettingsUI()">＋ 追加</button>';
+div.innerHTML=html;g.appendChild(div);}renderBP();}
 function renderBP(){const g=document.getElementById('bpGrid');g.innerHTML='';BP.forEach((bp,i)=>{const div=document.createElement('div');div.className='bp-item';
 div.innerHTML='<input style="min-width:80px;max-width:100px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;font-weight:600" value="'+bp.teacher+'" onchange="BP['+i+'].teacher=this.value">'
 +'<select onchange="BP['+i+'].booth=parseInt(this.value)||0"><option value="0">なし</option>'+[1,2,3,4,5,6].map(n=>'<option value="'+n+'"'+(bp.booth===n?' selected':'')+'>'+BL[n-1]+'</option>').join('')+'</select>'
@@ -238,17 +243,55 @@ el.innerHTML='<span class="g">'+u.grade+'</span><span class="s" onclick="event.s
 el.addEventListener('dragstart',e=>{dragData={type:'unplaced',ui,slot:[u.grade,u.name,u.subject]};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
 el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});return el;}
 
-function doBooth(wi,day,ts,bi){if(!dragData)return;const ws=R.schedule[wi],booth=ws[day][ts][bi];if(booth.slots.length>=2)return;
+function doBooth(wi,day,ts,bi){if(!dragData)return;const ws=R.schedule[wi],booth=ws[day][ts][bi];
+if(booth.slots.length<2){
+// 空きあり: 通常の移動
 if(dragData.type==='booth'){if(dragData.wi!==wi||dragData.ts!==ts)return;if(dragData.day===day&&dragData.bi===bi)return;
 ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si,1);booth.slots.push(dragData.slot);}
 else if(dragData.type==='unplaced'){const u=R.unplaced[dragData.ui];if(!u||u.count<=0)return;booth.slots.push(dragData.slot);u.count--;if(u.count<=0)R.unplaced.splice(dragData.ui,1);}
-else if(dragData.type==='calSlot'){// From calendar D&D
-const src=R.schedule[dragData.wi][dragData.day][dragData.ts][dragData.bi];src.slots.splice(dragData.si,1);booth.slots.push(dragData.slot);}
-edited=true;dragData=null;rR();}
+else if(dragData.type==='calSlot'){const src=R.schedule[dragData.wi][dragData.day][dragData.ts][dragData.bi];src.slots.splice(dragData.si,1);booth.slots.push(dragData.slot);}
+edited=true;dragData=null;rR();return;}
+// 満席: スワップモード（booth/calSlotのみ）
+if(dragData.type==='booth'||dragData.type==='calSlot'){
+if(dragData.type==='booth'&&(dragData.wi!==wi||dragData.ts!==ts))return;
+if(dragData.day===day&&dragData.bi===bi)return;
+if(booth.slots.length===1){doSwapExec(wi,day,ts,bi,0);}
+else{showSwapModal(wi,day,ts,bi,booth);}}}
 
 function doUnplaced(){if(!dragData||(dragData.type!=='booth'&&dragData.type!=='calSlot'))return;
 const wi=dragData.wi,ws=R.schedule[wi],slot=ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si,1)[0];
 const ex=R.unplaced.find(u=>u.name===slot[1]&&u.subject===slot[2]);if(ex)ex.count++;else R.unplaced.push({grade:slot[0],name:slot[1],subject:slot[2],count:1});
+edited=true;dragData=null;rR();}
+
+function showSwapModal(wi,day,ts,bi,booth){
+const saved={...dragData};
+const root=document.getElementById('modalRoot');
+const bg=document.createElement('div');bg.className='modal-bg';
+const modal=document.createElement('div');modal.className='modal';
+modal.innerHTML='<h3>🔄 交換する生徒を選択</h3><p style="font-size:12px;color:var(--ink3);margin-bottom:10px">ドラッグ中の生徒と入れ替えます</p>';
+const opts=document.createElement('div');opts.className='modal-opts';
+booth.slots.forEach((sl,si)=>{
+const btn=document.createElement('div');btn.className='modal-opt';
+btn.innerHTML='<span class="t-name">'+sl[0]+' '+sl[1]+'</span><span class="t-info">'+sl[2]+'</span>';
+btn.onclick=()=>{root.innerHTML='';dragData=saved;doSwapExec(wi,day,ts,bi,si);};
+opts.appendChild(btn);});
+modal.appendChild(opts);
+const cancel=document.createElement('div');cancel.className='modal-cancel';
+cancel.innerHTML='<button class="btn btn-o" style="padding:6px 16px;font-size:12px">キャンセル</button>';
+cancel.querySelector('button').onclick=()=>{root.innerHTML='';dragData=null;};
+modal.appendChild(cancel);bg.appendChild(modal);root.appendChild(bg);
+bg.addEventListener('click',e=>{if(e.target===bg){root.innerHTML='';dragData=null;}});}
+
+function doSwapExec(wi,day,ts,bi,targetSi){
+if(!dragData)return;
+const ws=R.schedule[wi];
+const targetBooth=ws[day][ts][bi];
+const swappedOut=targetBooth.slots[targetSi];
+if(dragData.type==='booth'||dragData.type==='calSlot'){
+const srcBooth=R.schedule[dragData.wi][dragData.day][dragData.ts][dragData.bi];
+srcBooth.slots.splice(dragData.si,1);
+srcBooth.slots.push(swappedOut);
+targetBooth.slots[targetSi]=dragData.slot;}
 edited=true;dragData=null;rR();}
 
 function rW(wrap,wi){const ws=R.schedule[wi];const tbl=document.createElement('table');tbl.className='sch';
@@ -265,8 +308,9 @@ td.className='booth-cell';const bs=ws[d]?.[ts]||[],b=bs[bi];
 if(b&&b.teacher){td.appendChild(mkTeacher(b.teacher,wi,d,ts,bi));
 b.slots.forEach((sl,si)=>{td.appendChild(mkChip(sl,wi,d,ts,bi,si,b.teacher));});if(b.slots.length>=2)td.classList.add('full');}
 td.addEventListener('dragover',e=>{e.preventDefault();if(!dragData)return;const bth=bs[bi];if(!bth||!bth.teacher)return;
-if(dragData.type==='teacher')return;if(bth.slots.length>=2)return;
+if(dragData.type==='teacher')return;
 if(dragData.type==='booth'&&(dragData.wi!==wi||dragData.ts!==ts))return;
+if(dragData.type==='unplaced'&&bth.slots.length>=2)return;
 td.classList.add('drag-over');});
 td.addEventListener('dragleave',()=>{td.classList.remove('drag-over');});
 td.addEventListener('drop',e=>{e.preventDefault();td.classList.remove('drag-over');if(dragData&&dragData.type!=='teacher')doBooth(wi,d,ts,bi);});

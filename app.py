@@ -450,6 +450,23 @@ def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office
         result[ts] = assign_booth_order(available)
     return result
 
+def resolve_office_teacher(day, candidates, day_data):
+    """教室業務担当を優先順位リストから決定する。
+    - 石川Tは出勤チェック不要で即確定
+    - それ以外は day_data（その週・その曜日の出勤講師データ）で出勤確認
+    - 誰も出勤していなければ None（教室業務なし）
+    """
+    if isinstance(candidates, str):
+        candidates = [candidates]
+    for candidate in candidates:
+        if candidate == '石川T':
+            return candidate
+        # day_data: {ts: [teacher, ...]} — いずれかの時間帯に出勤していれば可
+        for ts, teachers in day_data.items():
+            if candidate in teachers:
+                return candidate
+    return None
+
 # ========== スケジューラー ==========
 def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
     remaining = {s['name']: dict(s['needs']) for s in students}
@@ -463,7 +480,11 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
         wish_teachers_set.update(s['wish_teachers'])
 
     for wi in range(4):
-        ot = {d: office_rule.get(d, '石川T') for d in DAYS}
+        ot = {}
+        for d in DAYS:
+            candidates = office_rule.get(d, ['石川T'])
+            d_data = weekly_teachers[wi].get(d, {})
+            ot[d] = resolve_office_teacher(d, candidates, d_data)
         office_teachers.append(ot)
         ws = {}
         for day in DAYS:
@@ -497,6 +518,16 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                     for g,sn,sb in b['slots']:
                         if sn==name: r.add((day,ts))
         return r
+
+    def get_any_placed_days(ws, name):
+        """生徒が任意の科目で既に配置されている曜日の集合を返す"""
+        days = set()
+        for day in DAYS:
+            for ts, booths in ws.get(day,{}).items():
+                for b in booths:
+                    for g,sn,sb in b['slots']:
+                        if sn==name: days.add(day)
+        return days
 
     def get_teacher_booth(ws, day, teacher):
         for ts, booths in ws.get(day,{}).items():
@@ -541,10 +572,10 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                 return True
         return False
 
-    def find_slot(ws, s, subj, placed_days, existing, wi):
+    def find_slot(ws, s, subj, placed_days, existing, wi, any_placed_days):
         cands = []
         for day in DAYS:
-            if day in placed_days: continue
+            if day in placed_days: continue  # 同一科目の同曜日配置を防止
             # NG日程チェック
             if (wi, day) in s.get('ng_dates', set()): continue
             times = SATURDAY_TIMES if day=='土' else WEEKDAY_TIMES
@@ -556,6 +587,8 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                 for bi,b in enumerate(ws[day][ts]):
                     if not check_booth(b, bi, s, day, subj, ws): continue
                     sc = 0
+                    # 同曜日に既に別科目が配置されている場合を最優先
+                    if day in any_placed_days: sc += 150
                     if b['teacher'] in s['wish_teachers']: sc += 100
                     t = b['teacher']
                     if t in booth_pref and booth_pref[t]==bi+1: sc += 10
@@ -597,7 +630,8 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                     if remaining[s['name']].get(subj,0) <= 0: break
                     pd = get_placed_days(schedule[wi], s['name'], subj)
                     ex = get_student_slots(schedule[wi], s['name'])
-                    best = find_slot(schedule[wi], s, subj, pd, ex, wi)
+                    apd = get_any_placed_days(schedule[wi], s['name'])
+                    best = find_slot(schedule[wi], s, subj, pd, ex, wi, apd)
                     if best:
                         day, ts, bi = best
                         schedule[wi][day][ts][bi]['slots'].append((s['grade'],s['name'],subj))
@@ -731,7 +765,7 @@ def generate():
 
     data = request.get_json() or {}
     office_rule = data.get('officeRule', {
-        '月':'石川T','火':'石川T','水':'西T','木':'石川T','金':'石川T','土':'越智T'
+        '月':['石川T'],'火':['石川T'],'水':['西T'],'木':['石川T'],'金':['石川T'],'土':['越智T']
     })
     booth_pref_ui = data.get('boothPref', {})
     booth_pref_ui = {k: int(v) for k, v in booth_pref_ui.items() if v}
