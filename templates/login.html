@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>ログイン - ブース表自動生成</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Outfit:wght@400;600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Zen Kaku Gothic New',sans-serif;background:#f4f6f9;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-card{background:#fff;border-radius:12px;padding:40px;width:360px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+.login-card h1{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:#1b2838;margin-bottom:6px}
+.login-card p{font-size:13px;color:#6b7f95;margin-bottom:24px}
+.login-card label{font-size:13px;font-weight:600;color:#3d4f63;display:block;margin-bottom:6px}
+.login-card input{width:100%;padding:10px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:16px}
+.login-card input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.login-card button{width:100%;padding:12px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:background .15s}
+.login-card button:hover{background:#1d4ed8}
+.error{background:#fef2f2;color:#dc2626;padding:10px 14px;border-radius:8px;font-size:12.5px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="login-card">
+<h1>📋 ブース表自動生成</h1>
+<p>パスワードを入力してください</p>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="POST" action="/login">
+<label for="password">パスワード</label>
+<input type="password" id="password" name="password" autofocus placeholder="パスワード">
+<button type="submit">ログイン</button>
+</form>
+</div>
+</body>
+</html>
