@@ -15,7 +15,9 @@ random.seed(42)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB上限
-app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+# SECRET_KEYが未設定の場合は固定のフォールバックキーを使用
+# （Render再起動でセッションが消えないようにするため）
+app.secret_key = os.environ.get('SECRET_KEY', 'booth-schedule-generator-default-key-2026')
 
 # パスワード（環境変数 or デフォルト）
 APP_PASSWORD = os.environ.get('APP_PASSWORD', 'booth2026')
@@ -756,6 +758,7 @@ def get_teachers():
 @login_required
 def upload():
     sd = get_session_data()
+    print(f"[upload] sid={sd.get('_sid','?')}, existing_files={list(sd.get('files',{}).keys())}", flush=True)
     saved = {}
     for key in ['src','booth']:
         f = request.files.get(key)
@@ -766,6 +769,7 @@ def upload():
             path = os.path.join(sd['dir'], key + '_' + f.filename)
             f.save(path)
             saved[key] = path
+            print(f"[upload] saved {key} -> {path} (exists={os.path.exists(path)})", flush=True)
     sd['files'] = {**sd.get('files',{}), **saved}
     save_session_files(sd)
     return jsonify({'ok': True, 'files': {k: os.path.basename(v) for k,v in sd.get('files',{}).items()}})
@@ -775,8 +779,15 @@ def upload():
 def generate():
     sd = get_session_data()
     files = sd.get('files',{})
+    print(f"[generate] sid={sd.get('_sid','?')}, files_keys={list(files.keys())}", flush=True)
     if not all(k in files for k in ['src','booth']):
-        return jsonify({'error': 'ファイルが不足しています'}), 400
+        print(f"[generate] ERROR: ファイル不足 files={files}", flush=True)
+        return jsonify({'error': 'ファイルが不足しています。再度アップロードしてください。'}), 400
+    # ファイルが実際に存在するか確認
+    for k in ['src', 'booth']:
+        if not os.path.exists(files[k]):
+            print(f"[generate] ERROR: ファイルが見つかりません: {k}={files[k]}", flush=True)
+            return jsonify({'error': f'{k}ファイルが見つかりません。再度アップロードしてください。'}), 400
 
     data = request.get_json() or {}
     office_rule = data.get('officeRule', {

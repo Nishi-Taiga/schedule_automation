@@ -212,7 +212,8 @@ const bpObj={};BP.forEach(bp=>{if(bp.teacher&&bp.booth)bpObj[bp.teacher]=bp.boot
 try{
 updateProgress('配置を計算しています（数秒かかります）');
 const res=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({officeRule:OR,boothPref:bpObj})});const d=await res.json();
-if(d.error){hideProgress();st.textContent='エラー: '+d.error;st.className='status err';return;}
+if(d.error){hideProgress();st.textContent='エラー: '+d.error;st.className='status err';
+if(d.error.includes('アップロード')||d.error.includes('不足')||d.error.includes('見つかりません')){st.textContent+=' ファイルを再アップロードしてください。';setTimeout(()=>go('upload'),2000);}return;}
 updateProgress('結果を表示しています');
 R=d;PW=0;edited=false;calStudent=null;buildNgMap();
 if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));
