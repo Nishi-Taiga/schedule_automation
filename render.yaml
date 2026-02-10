@@ -2,8 +2,8 @@ services:
   - type: web
     name: booth-scheduler
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python -m gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     envVars:
       - key: APP_PASSWORD
         sync: false  # Render dashboard で設定
