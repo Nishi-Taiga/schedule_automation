@@ -109,6 +109,14 @@ table.up .ct{font-weight:700;color:var(--red)}
 .modal-opt:hover{background:#f0f5ff;border-color:var(--accent)}
 .modal-opt .t-name{font-weight:600}.modal-opt .t-info{font-size:11px;color:var(--ink3)}
 .modal-cancel{margin-top:12px;text-align:right}
+/* Progress overlay */
+.progress-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center}
+.progress-box{background:#fff;border-radius:16px;padding:40px 50px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25);min-width:280px}
+.progress-spinner{width:48px;height:48px;border:4px solid #e2e8f0;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 18px}
+.progress-title{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:6px}
+.progress-msg{font-size:13px;color:var(--ink3);line-height:1.6}
+.progress-dots::after{content:'';animation:dots 1.5s steps(4,end) infinite}
+@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
 </style>
 </head>
 <body>
@@ -163,7 +171,7 @@ table.up .ct{font-weight:700;color:var(--red)}
 const D=['月','火','水','木','金','土'],WT=['16:00','17:05','18:10','19:15','20:20'],ST=['14:55','16:00','17:05','18:10'];
 const TL=['14:55','16:00','17:05','18:10','19:15','20:20'],TS={'14:55':'14','16:00':'16','17:05':'17','18:10':'18','19:15':'19','20:20':'20'},TSR={'14':'14:55','16':'16:00','17':'17:05','18':'18:10','19':'19:15','20':'20:20'},BL=['①','②','③','④','⑤','⑥'];
 let OR={月:['石川T'],火:['石川T'],水:['西T'],木:['石川T'],金:['石川T'],土:['越智T']};
-let BP=[],R=null,PW=0,uploaded={},edited=false,dragData=null,calStudent=null;
+let BP=[],R=null,PW=0,uploaded={},edited=false,dragData=null,calStudent=null,teacherList=[];
 let ngMap={},ngStudentMap={};
 function buildNgMap(){ngMap={};ngStudentMap={};if(!R||!R.students)return;R.students.forEach(s=>{ngMap[s.name]=new Set(s.ng_teachers||[]);ngStudentMap[s.name]=new Set(s.ng_students||[])});}
 function isNg(n,t){return ngMap[n]&&ngMap[n].has(t);}
@@ -172,14 +180,19 @@ function isAdjacentNg(wi,day,ts,bi,sn){const bs=R.schedule[wi]?.[day]?.[ts];if(!
 
 async function onF(inp,key){const f=inp.files[0];if(!f)return;const row=inp.closest('.upload-row');row.querySelector('.desc').textContent='アップロード中...';const fd=new FormData();fd.append(key,f);
 try{const res=await fetch('/api/upload',{method:'POST',body:fd});const d=await res.json();if(d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;uploaded[key]=true;}}catch(e){row.querySelector('.desc').textContent='Error: '+e.message;}
-document.getElementById('toS').disabled=!(uploaded.src&&uploaded.booth);}
+const ready=uploaded.src&&uploaded.booth;document.getElementById('toS').disabled=!ready;
+if(ready){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;}catch(e){}}}
 
 function go(step){document.getElementById('pUpload').style.display=step==='upload'?'':'none';document.getElementById('pSettings').style.display=step==='settings'?'':'none';document.getElementById('pResult').style.display=step==='result'?'':'none';
 for(const[k,id]of[['upload','sb1'],['settings','sb2'],['result','sb3']])document.getElementById(id).className='step-btn'+(step===k?' active':'');if(step==='settings')buildSettingsUI();}
-function buildSettingsUI(){const g=document.getElementById('oGrid');g.innerHTML='';for(const d of D){const div=document.createElement('div');div.className='si';
+function buildSettingsUI(){const g=document.getElementById('oGrid');g.innerHTML='';
+const opts=teacherList.length?teacherList:['石川T','西T','越智T','寒河江T','若林T','隆斗T','瑠璃T','田村T','粉川T','平畑T','後藤T','渡邉T','橋本T','小山T','井上T','藤原T','飯村T'];
+for(const d of D){const div=document.createElement('div');div.className='si';
 if(!Array.isArray(OR[d]))OR[d]=[OR[d]||'石川T'];
 let html='<label>'+d+'曜</label>';
-OR[d].forEach((c,i)=>{html+='<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center"><span style="font-size:11px;color:var(--ink3);min-width:16px">'+(i+1)+'.</span><input style="flex:1" value="'+c+'" onchange="OR[\''+d+'\']['+i+']=this.value">'+(OR[d].length>1?'<button type="button" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px" onclick="OR[\''+d+'\'].splice('+i+',1);buildSettingsUI()">✕</button>':'')+'</div>';});
+OR[d].forEach((c,i)=>{
+const selHtml=opts.map(t=>'<option value="'+t+'"'+(t===c?' selected':'')+'>'+t+'</option>').join('');
+html+='<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center"><span style="font-size:11px;color:var(--ink3);min-width:16px">'+(i+1)+'.</span><select style="flex:1" onchange="OR[\''+d+'\']['+i+']=this.value"><option value="">-- 選択 --</option>'+selHtml+'</select>'+(OR[d].length>1?'<button type="button" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px" onclick="OR[\''+d+'\'].splice('+i+',1);buildSettingsUI()">✕</button>':'')+'</div>';});
 html+='<button type="button" style="background:#7c3aed;color:#fff;font-size:11px;padding:3px 8px;border:none;border-radius:4px;cursor:pointer;margin-top:2px" onclick="OR[\''+d+'\'].push(\'\');buildSettingsUI()">＋ 追加</button>';
 div.innerHTML=html;g.appendChild(div);}renderBP();}
 function renderBP(){const g=document.getElementById('bpGrid');g.innerHTML='';BP.forEach((bp,i)=>{const div=document.createElement('div');div.className='bp-item';
@@ -188,13 +201,23 @@ div.innerHTML='<input style="min-width:80px;max-width:100px;padding:5px 8px;bord
 +'<button style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--red)" onclick="BP.splice('+i+',1);renderBP()">✕</button>';g.appendChild(div);});}
 function addBP(){BP.push({teacher:'',booth:0});renderBP();}
 
-async function gen(){const st=document.getElementById('stTxt'),btn=document.getElementById('genBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>生成中...';st.textContent='処理中...';st.className='status';
+function showProgress(msg){const root=document.getElementById('modalRoot');
+root.innerHTML='<div class="progress-bg"><div class="progress-box"><div class="progress-spinner"></div><div class="progress-title">スケジュール生成中</div><div class="progress-msg" id="progMsg">'+msg+'<span class="progress-dots"></span></div></div></div>';}
+function updateProgress(msg){const el=document.getElementById('progMsg');if(el)el.innerHTML=msg+'<span class="progress-dots"></span>';}
+function hideProgress(){document.getElementById('modalRoot').innerHTML='';}
+
+async function gen(){const st=document.getElementById('stTxt'),btn=document.getElementById('genBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>生成中...';st.textContent='';st.className='status';
+showProgress('データを読み込んでいます');
 const bpObj={};BP.forEach(bp=>{if(bp.teacher&&bp.booth)bpObj[bp.teacher]=bp.booth;});
-try{const res=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({officeRule:OR,boothPref:bpObj})});const d=await res.json();
-if(d.error){st.textContent='エラー: '+d.error;st.className='status err';return;}R=d;PW=0;edited=false;calStudent=null;buildNgMap();
+try{
+updateProgress('配置を計算しています（数秒かかります）');
+const res=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({officeRule:OR,boothPref:bpObj})});const d=await res.json();
+if(d.error){hideProgress();st.textContent='エラー: '+d.error;st.className='status err';return;}
+updateProgress('結果を表示しています');
+R=d;PW=0;edited=false;calStudent=null;buildNgMap();
 if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));
-go('result');rR();
-}catch(e){st.textContent='エラー: '+e.message;st.className='status err';}finally{btn.disabled=false;btn.innerHTML='🚀 スケジュール生成';}}
+hideProgress();go('result');rR();
+}catch(e){hideProgress();st.textContent='エラー: '+e.message;st.className='status err';}finally{btn.disabled=false;btn.innerHTML='🚀 スケジュール生成';}}
 
 async function dlExcel(){if(edited){await fetch('/api/update_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedule:R.schedule,unplaced:R.unplaced})});}window.location.href='/api/download';}
 

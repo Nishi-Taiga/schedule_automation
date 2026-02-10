@@ -737,6 +737,21 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
 def index():
     return render_template('index.html')
 
+@app.route('/api/teachers')
+@login_required
+def get_teachers():
+    """アップロード済みブース表から講師名一覧を返す"""
+    sd = get_session_data()
+    files = sd.get('files', {})
+    if 'booth' not in files:
+        return jsonify({'error': 'ブース表がアップロードされていません'}), 400
+    try:
+        wb = openpyxl.load_workbook(files['booth'])
+        skills = load_teacher_skills(wb)
+        return jsonify({'teachers': sorted(skills.keys())})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/upload', methods=['POST'])
 @login_required
 def upload():
