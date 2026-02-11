@@ -733,6 +733,12 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
 
     wb.save(output_path)
 
+# ========== Error Handlers ==========
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    print(f"[error] 413 Request Entity Too Large", flush=True)
+    return jsonify({'error': 'ファイルサイズが上限(10MB)を超えています。ファイルを確認してください。'}), 413
+
 # ========== API ==========
 @app.route('/')
 @login_required
