@@ -71,10 +71,10 @@ tr.er{background:#f5f7fa}
 .slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32;cursor:pointer;text-decoration:underline dotted transparent;transition:text-decoration .2s}.slot-chip .s:hover{text-decoration-color:#2e7d32}
 .slot-chip .j{color:#558b2f;font-size:9px}
 .slot-chip.ng{background:#ffebee;border-color:#e57373}.slot-chip.ng .s{color:#c62828}
-.booth-cell{min-height:34px;position:relative;transition:background .12s;display:flex;flex-direction:column;align-items:stretch;padding:2px 3px;border-left:1px solid #d8dfe8;border-bottom:1px solid #d8dfe8}
+.booth-cell{min-height:34px;position:relative;transition:background .12s;padding:2px 3px;border-left:1px solid #d8dfe8;border-bottom:1px solid #d8dfe8}
 .booth-cell.drag-over{background:#e3f2fd !important;outline:2px dashed var(--accent);outline-offset:-2px}
 .booth-cell.full{background:#fff3e0}
-.booth-cell.empty-booth{background:#fafbfc}.booth-cell.empty-booth .tn{opacity:.3;font-size:9px;border:1px dashed #ccc}
+.booth-cell.empty-booth{background:#fafbfc}.booth-cell.empty-booth .tn{opacity:.5;font-size:10px;color:#8899aa;border:1px dashed #ccc}
 .unplaced-zone{min-height:60px;border:2px dashed var(--border);border-radius:8px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:4px;transition:all .12s;margin-top:6px}
 .unplaced-zone.drag-over{border-color:var(--red);background:#fef2f2}
 .unplaced-zone .slot-chip{background:#ffebee;border-color:#ef9a9a}.unplaced-zone .slot-chip .s{color:#c62828}
@@ -358,7 +358,7 @@ td.className='booth-cell';const bs=ws[d]?.[ts]||[],b=bs[bi];
 if(b&&b.teacher){if(b.slots.length===0)td.classList.add('empty-booth');
 td.appendChild(mkTeacher(b.teacher,wi,d,ts,bi));
 b.slots.forEach((sl,si)=>{td.appendChild(mkChip(sl,wi,d,ts,bi,si,b.teacher));});if(b.slots.length>=2)td.classList.add('full');}
-else{td.classList.add('empty-booth');td.style.cssText='color:#ccc;text-align:center;font-size:10px;border:1px solid #d0d8e2';td.textContent='-';}
+else{td.className='cd';td.textContent='-';}
 td.addEventListener('dragover',e=>{e.preventDefault();if(!dragData)return;const bth=bs[bi];if(!bth||!bth.teacher)return;
 if(dragData.type==='teacher')return;
 if(dragData.type==='booth'&&(dragData.wi!==wi||dragData.ts!==ts))return;
