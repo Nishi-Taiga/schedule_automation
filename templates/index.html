@@ -334,7 +334,7 @@ targetBooth.slots[targetSi]=dragData.slot;}
 edited=true;dragData=null;rR();}
 
 function rW(wrap,wi){const ws=R.schedule[wi];const tbl=document.createElement('table');tbl.className='sch';
-let hd='<thead><tr><th style="width:50px">時間</th><th style="width:28px">B</th>';for(const d of D)hd+='<th style="width:calc((100% - 78px)/6)'+(d==='土'?';background:#edf2f7':'')+'>'+d+'</th>';
+let hd='<thead><tr><th style="width:50px">時間</th><th style="width:28px">B</th>';for(const d of D)hd+='<th style="width:calc((100% - 78px)/6)'+(d==='土'?';background:#edf2f7':'')+'">'+d+'</th>';
 hd+='</tr><tr class="or"><td colspan="2">教室業務</td>';for(const d of D)hd+='<td>'+((R.officeTeachers[wi]||{})[d]||'')+'</td>';hd+='</tr></thead>';tbl.innerHTML=hd;
 const tbody=document.createElement('tbody');
 for(const tl of TL){const ts=TS[tl],mx=Math.max(...D.map(d=>(ws[d]?.[ts]||[]).length),1);if(mx<1)continue;
