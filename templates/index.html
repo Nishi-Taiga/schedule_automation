@@ -54,11 +54,11 @@ body{font-family:'Zen Kaku Gothic New','Hiragino Kaku Gothic ProN',sans-serif;ba
 .wt button.warn{background:#fee2e2;color:var(--red)}.wt button.warn.active{background:var(--red);color:#fff}
 .wt button.cal{background:#e0f2fe;color:#0369a1}.wt button.cal.active{background:#0284c7;color:#fff}
 .tw{overflow-x:auto}
-table.sch{width:100%;border-collapse:collapse;font-size:11px;min-width:900px;table-layout:fixed}
+table.sch{width:100%;border-collapse:collapse;font-size:11px;min-width:920px;table-layout:fixed}
 table.sch th{padding:7px 5px;border-bottom:2px solid var(--border);text-align:left;font-size:11.5px;font-weight:700;background:#f7f9fb;position:sticky;top:0}
 table.sch td{padding:2px 4px;border-bottom:1px solid #eef1f5;vertical-align:top;overflow:hidden}
 .tc{font-weight:700;font-size:11.5px;background:#f0f3f7;text-align:center;vertical-align:middle}
-.bc{text-align:center;font-size:10px;color:var(--ink3);font-weight:600;width:28px;background:#f7f9fb}
+.bc{text-align:center;font-size:12px;color:var(--accent2);font-weight:700;width:32px;background:#eef3fb;border-right:2px solid #c5d5e8}
 .or td{font-weight:700;background:#ebf1ff;text-align:center;font-size:12px;color:var(--accent)}
 .cd{background:#f0f0f0}
 tr.er{background:#f5f7fa}
@@ -73,6 +73,7 @@ tr.er{background:#f5f7fa}
 .booth-cell{min-height:34px;position:relative;transition:background .12s;display:flex;flex-direction:column;align-items:stretch;padding:2px 3px;border-left:1px solid #d8dfe8;border-bottom:1px solid #d8dfe8}
 .booth-cell.drag-over{background:#e3f2fd !important;outline:2px dashed var(--accent);outline-offset:-2px}
 .booth-cell.full{background:#fff3e0}
+.booth-cell.empty-booth{background:#fafbfc}.booth-cell.empty-booth .tn{opacity:.3;font-size:9px;border:1px dashed #ccc}
 .unplaced-zone{min-height:60px;border:2px dashed var(--border);border-radius:8px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:4px;transition:all .12s;margin-top:6px}
 .unplaced-zone.drag-over{border-color:var(--red);background:#fef2f2}
 .unplaced-zone .slot-chip{background:#ffebee;border-color:#ef9a9a}.unplaced-zone .slot-chip .s{color:#c62828}
@@ -333,7 +334,7 @@ targetBooth.slots[targetSi]=dragData.slot;}
 edited=true;dragData=null;rR();}
 
 function rW(wrap,wi){const ws=R.schedule[wi];const tbl=document.createElement('table');tbl.className='sch';
-let hd='<thead><tr><th style="width:50px">時間</th><th style="width:28px">B</th>';for(const d of D)hd+='<th style="width:calc((100% - 78px)/6)'+(d==='土'?';background:#edf2f7':'')+'">'+d+'</th>';
+let hd='<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>';for(const d of D)hd+='<th style="width:calc((100% - 82px)/6)'+(d==='土'?';background:#edf2f7':'')+'">'+d+'</th>';
 hd+='</tr><tr class="or"><td colspan="2">教室業務</td>';for(const d of D)hd+='<td>'+((R.officeTeachers[wi]||{})[d]||'')+'</td>';hd+='</tr></thead>';tbl.innerHTML=hd;
 const tbody=document.createElement('tbody');
 for(const tl of TL){const ts=TS[tl],mx=Math.max(...D.map(d=>(ws[d]?.[ts]||[]).length),1);if(mx<1)continue;
@@ -343,7 +344,8 @@ const btd=document.createElement('td');btd.className='bc';btd.textContent=BL[bi]
 for(const d of D){const dt=d==='土'?ST:WT;const td=document.createElement('td');
 if(!dt.includes(tl)){td.className='cd';tr.appendChild(td);continue;}
 td.className='booth-cell';const bs=ws[d]?.[ts]||[],b=bs[bi];
-if(b&&b.teacher){td.appendChild(mkTeacher(b.teacher,wi,d,ts,bi));
+if(b&&b.teacher){if(b.slots.length===0)td.classList.add('empty-booth');
+td.appendChild(mkTeacher(b.teacher,wi,d,ts,bi));
 b.slots.forEach((sl,si)=>{td.appendChild(mkChip(sl,wi,d,ts,bi,si,b.teacher));});if(b.slots.length>=2)td.classList.add('full');}
 td.addEventListener('dragover',e=>{e.preventDefault();if(!dragData)return;const bth=bs[bi];if(!bth||!bth.teacher)return;
 if(dragData.type==='teacher')return;
