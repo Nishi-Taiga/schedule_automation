@@ -1,0 +1,24 @@
+name: Auto Merge PR
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull_requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              merge_method: 'merge'
+            });

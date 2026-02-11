@@ -6,7 +6,7 @@
 
 1. フィーチャーブランチにコミット＆プッシュ
 2. `gh pr create` で PR を作成
-3. `gh pr merge --merge` で main にマージ
+3. GitHub Actions が自動でマージする（手動マージ不要）
 
 ## セットアップ
 
