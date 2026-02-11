@@ -58,10 +58,10 @@ table.sch{width:100%;border-collapse:collapse;font-size:11px;min-width:900px;tab
 table.sch th{padding:7px 5px;border-bottom:2px solid var(--border);text-align:left;font-size:11.5px;font-weight:700;background:#f7f9fb;position:sticky;top:0}
 table.sch td{padding:2px 4px;border-bottom:1px solid #eef1f5;vertical-align:top;overflow:hidden}
 .tc{font-weight:700;font-size:11.5px;background:#f0f3f7;text-align:center;vertical-align:middle}
-.bc{text-align:center;font-size:10px;color:var(--ink3);font-weight:600;width:28px}
+.bc{text-align:center;font-size:10px;color:var(--ink3);font-weight:600;width:28px;background:#f7f9fb}
 .or td{font-weight:700;background:#ebf1ff;text-align:center;font-size:12px;color:var(--accent)}
 .cd{background:#f0f0f0}
-tr.er{background:#fafbfc}
+tr.er{background:#f5f7fa}
 .tn{display:block;font-weight:600;color:var(--accent2);font-size:11px;margin-bottom:2px;cursor:grab;padding:1px 4px;border-radius:3px;border:1px solid transparent;transition:all .12s;user-select:none;width:100%;text-align:center}
 .tn:hover{background:#e0e7ff;border-color:#93c5fd}.tn:active{cursor:grabbing}
 .tn.drag-over-t{background:#dbeafe;border-color:var(--accent)}
@@ -70,7 +70,7 @@ tr.er{background:#fafbfc}
 .slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32;cursor:pointer;text-decoration:underline dotted transparent;transition:text-decoration .2s}.slot-chip .s:hover{text-decoration-color:#2e7d32}
 .slot-chip .j{color:#558b2f;font-size:9px}
 .slot-chip.ng{background:#ffebee;border-color:#e57373}.slot-chip.ng .s{color:#c62828}
-.booth-cell{min-height:34px;position:relative;transition:background .12s;display:flex;flex-direction:column;align-items:stretch;padding:2px 3px;border-left:1px solid #eef1f5}
+.booth-cell{min-height:34px;position:relative;transition:background .12s;display:flex;flex-direction:column;align-items:stretch;padding:2px 3px;border-left:1px solid #d8dfe8;border-bottom:1px solid #d8dfe8}
 .booth-cell.drag-over{background:#e3f2fd !important;outline:2px dashed var(--accent);outline-offset:-2px}
 .booth-cell.full{background:#fff3e0}
 .unplaced-zone{min-height:60px;border:2px dashed var(--border);border-radius:8px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:4px;transition:all .12s;margin-top:6px}
@@ -118,8 +118,6 @@ table.up .ct{font-weight:700;color:var(--red)}
 .progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#60a5fa);border-radius:4px;transition:width .4s ease;width:0%}
 .progress-pct{font-family:'Outfit',sans-serif;font-size:28px;font-weight:700;color:var(--accent);margin-bottom:4px}
 .progress-msg{font-size:13px;color:var(--ink3);line-height:1.6}
-.progress-dots::after{content:'';animation:dots 1.5s steps(4,end) infinite}
-@keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
 </style>
 </head>
 <body>
@@ -207,11 +205,11 @@ function addBP(){BP.push({teacher:'',booth:0});renderBP();}
 
 let progTimer=null;
 function showProgress(pct,msg){const root=document.getElementById('modalRoot');
-root.innerHTML='<div class="progress-bg"><div class="progress-box"><div class="progress-spinner"></div><div class="progress-title">スケジュール生成中</div><div class="progress-pct" id="progPct">'+pct+'%</div><div class="progress-bar-wrap"><div class="progress-bar-fill" id="progBar" style="width:'+pct+'%"></div></div><div class="progress-msg" id="progMsg">'+msg+'<span class="progress-dots"></span></div></div></div>';}
+root.innerHTML='<div class="progress-bg"><div class="progress-box"><div class="progress-spinner"></div><div class="progress-title">スケジュール生成中</div><div class="progress-pct" id="progPct">'+pct+'%</div><div class="progress-bar-wrap"><div class="progress-bar-fill" id="progBar" style="width:'+pct+'%"></div></div><div class="progress-msg" id="progMsg">'+msg+'</div></div></div>';}
 function updateProgress(pct,msg){
 const bar=document.getElementById('progBar');if(bar)bar.style.width=pct+'%';
 const p=document.getElementById('progPct');if(p)p.textContent=pct+'%';
-const el=document.getElementById('progMsg');if(el)el.innerHTML=msg+'<span class="progress-dots"></span>';}
+const el=document.getElementById('progMsg');if(el)el.innerHTML=msg;}
 function hideProgress(){if(progTimer){clearInterval(progTimer);progTimer=null;}document.getElementById('modalRoot').innerHTML='';}
 function startProgressAnim(){
 let pct=10;
@@ -339,7 +337,7 @@ let hd='<thead><tr><th style="width:50px">時間</th><th style="width:28px">B</t
 hd+='</tr><tr class="or"><td colspan="2">教室業務</td>';for(const d of D)hd+='<td>'+((R.officeTeachers[wi]||{})[d]||'')+'</td>';hd+='</tr></thead>';tbl.innerHTML=hd;
 const tbody=document.createElement('tbody');
 for(const tl of TL){const ts=TS[tl],mx=Math.max(...D.map(d=>(ws[d]?.[ts]||[]).length),1);if(mx<1)continue;
-for(let bi=0;bi<mx;bi++){const tr=document.createElement('tr');if(!(bi%2))tr.className='er';
+for(let bi=0;bi<mx;bi++){const tr=document.createElement('tr');if(!(bi%2))tr.className='er';if(!bi)tr.style.borderTop='2px solid #b8c5d4';
 if(!bi){const td=document.createElement('td');td.className='tc';td.rowSpan=mx;td.textContent=tl;tr.appendChild(td);}
 const btd=document.createElement('td');btd.className='bc';btd.textContent=BL[bi]||'';tr.appendChild(btd);
 for(const d of D){const dt=d==='土'?ST:WT;const td=document.createElement('td');

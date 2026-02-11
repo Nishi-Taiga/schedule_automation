@@ -589,8 +589,13 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                 for bi,b in enumerate(ws[day][ts]):
                     if not check_booth(b, bi, s, day, subj, ws): continue
                     sc = 0
-                    # 同曜日に既に別科目が配置されている場合を最優先
-                    if day in any_placed_days: sc += 150
+                    # 同曜日に既に別科目が配置されている場合はやや優先（ただし集中しすぎを防止）
+                    day_count = sum(1 for d_,_ in existing if d_==day)
+                    if day in any_placed_days:
+                        if day_count < 2:
+                            sc += 50   # 2コマ目まではやや優先
+                        else:
+                            sc -= 80   # 3コマ目以降はペナルティ（分散を促す）
                     if b['teacher'] in s['wish_teachers']: sc += 100
                     t = b['teacher']
                     if t in booth_pref and booth_pref[t]==bi+1: sc += 10
