@@ -742,7 +742,7 @@ def index():
 @app.route('/api/teachers')
 @login_required
 def get_teachers():
-    """アップロード済みブース表から講師名一覧を返す"""
+    """アップロード済みブース表から講師名一覧とブース希望を返す"""
     sd = get_session_data()
     files = sd.get('files', {})
     if 'booth' not in files:
@@ -750,7 +750,13 @@ def get_teachers():
     try:
         wb = openpyxl.load_workbook(files['booth'])
         skills = load_teacher_skills(wb)
-        return jsonify({'teachers': sorted(skills.keys())})
+        booth_pref = load_booth_pref(wb)
+        if not booth_pref:
+            booth_pref = dict(DEFAULT_BOOTH_PREF)
+        return jsonify({
+            'teachers': sorted(skills.keys()),
+            'boothPref': booth_pref,
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
