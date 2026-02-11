@@ -499,7 +499,11 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
             for tl in times:
                 ts = TIME_SHORT[tl]
                 tlist = filtered.get(ts, [])
-                ds[ts] = [{'teacher':t, 'slots':[]} for t in tlist]
+                booths = [{'teacher':t, 'slots':[]} for t in tlist]
+                # 常にMAX_BOOTHS(6)ブース分のデータを確保
+                while len(booths) < MAX_BOOTHS:
+                    booths.append({'teacher':'', 'slots':[]})
+                ds[ts] = booths
             ws[day] = ds
         schedule.append(ws)
 
