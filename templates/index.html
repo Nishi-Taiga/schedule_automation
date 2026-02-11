@@ -181,8 +181,8 @@ function isNg(n,t){return ngMap[n]&&ngMap[n].has(t);}
 function isNgStudent(a,b){return(ngStudentMap[a]&&ngStudentMap[a].has(b))||(ngStudentMap[b]&&ngStudentMap[b].has(a));}
 function isAdjacentNg(wi,day,ts,bi,sn){const bs=R.schedule[wi]?.[day]?.[ts];if(!bs)return false;for(const a of[bi-1,bi+1]){if(a<0||a>=bs.length)continue;for(const sl of bs[a].slots){if(isNgStudent(sn,sl[1]))return true;}}return false;}
 
-async function onF(inp,key){const f=inp.files[0];if(!f)return;const row=inp.closest('.upload-row');row.querySelector('.desc').textContent='アップロード中...';const fd=new FormData();fd.append(key,f);
-try{const res=await fetch('/api/upload',{method:'POST',body:fd});const d=await res.json();if(d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;uploaded[key]=true;}}catch(e){row.querySelector('.desc').textContent='Error: '+e.message;}
+async function onF(inp,key){const f=inp.files[0];if(!f)return;const row=inp.closest('.upload-row');row.querySelector('.desc').textContent='アップロード中...';row.classList.remove('done');row.querySelector('.icon').textContent='📄';const fd=new FormData();fd.append(key,f);
+try{const res=await fetch('/api/upload',{method:'POST',body:fd});const d=await res.json();if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;uploaded[key]=true;}else{const msg=d.error||'不明なエラー (HTTP '+res.status+')';row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='失敗: '+msg;console.error('[upload]',key,res.status,msg);uploaded[key]=false;}}catch(e){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー: '+e.message;console.error('[upload]',key,e);uploaded[key]=false;}
 const ready=uploaded.src&&uploaded.booth;document.getElementById('toS').disabled=!ready;
 if(ready){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}}}
 

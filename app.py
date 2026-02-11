@@ -4,7 +4,7 @@
 Booth Schedule Generator – Cloud Edition (Render)
 Flask + gunicorn + openpyxl
 """
-import os, sys, json, random, threading, tempfile, shutil, time, secrets, atexit
+import os, sys, json, random, threading, tempfile, shutil, time, secrets, atexit, traceback
 from collections import defaultdict
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
@@ -771,11 +771,24 @@ def upload():
         if f:
             ok, err = validate_file(f)
             if not ok:
+                print(f"[upload] ERROR validation failed: key={key}, filename={f.filename}, error={err}", flush=True)
                 return jsonify({'error': err}), 400
             path = os.path.join(sd['dir'], key + '_' + f.filename)
-            f.save(path)
+            try:
+                f.save(path)
+            except Exception as e:
+                tb = traceback.format_exc()
+                print(f"[upload] ERROR saving file: key={key}, filename={f.filename}, path={path}, error={e}\n{tb}", flush=True)
+                return jsonify({'error': f'ファイル保存に失敗しました ({key}: {f.filename}): {e}'}), 500
+            if not os.path.exists(path):
+                print(f"[upload] ERROR file not found after save: key={key}, path={path}", flush=True)
+                return jsonify({'error': f'ファイル保存後にファイルが見つかりません ({key}: {f.filename})'}), 500
+            size = os.path.getsize(path)
             saved[key] = path
-            print(f"[upload] saved {key} -> {path} (exists={os.path.exists(path)})", flush=True)
+            print(f"[upload] saved {key} -> {path} (size={size}bytes)", flush=True)
+    if not saved:
+        print(f"[upload] WARNING no files received in request", flush=True)
+        return jsonify({'error': 'アップロードするファイルが含まれていません'}), 400
     sd['files'] = {**sd.get('files',{}), **saved}
     save_session_files(sd)
     return jsonify({'ok': True, 'files': {k: os.path.basename(v) for k,v in sd.get('files',{}).items()}})
