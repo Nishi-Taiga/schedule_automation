@@ -188,8 +188,9 @@ const maxSize=10*1024*1024;if(f.size>maxSize){row.querySelector('.icon').textCon
 const fd=new FormData();fd.append(key,f);
 try{const res=await fetch('/api/upload',{method:'POST',body:fd});let d;try{d=await res.json();}catch(pe){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='サーバーエラー (HTTP '+res.status+')';showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>HTTP '+res.status+' - レスポンス解析失敗');uploaded[key]=false;return;}
 if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;uploaded[key]=true;}else{const msg=d.error||'不明なエラー (HTTP '+res.status+')';row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='失敗: '+msg;showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>HTTP '+res.status+': '+msg);uploaded[key]=false;}}catch(e){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー';showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>通信エラー: '+e.message+'<br><small>サーバーに接続できませんでした。ネットワーク接続・ファイルサイズを確認してください。</small>');uploaded[key]=false;}
-const ready=uploaded.src&&uploaded.booth;document.getElementById('toS').disabled=!ready;
-if(ready){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}}}
+const ready=uploaded.src&&uploaded.booth;
+if(ready){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}}
+document.getElementById('toS').disabled=!ready;}
 
 function go(step){document.getElementById('pUpload').style.display=step==='upload'?'':'none';document.getElementById('pSettings').style.display=step==='settings'?'':'none';document.getElementById('pResult').style.display=step==='result'?'':'none';
 for(const[k,id]of[['upload','sb1'],['settings','sb2'],['result','sb3']])document.getElementById(id).className='step-btn'+(step===k?' active':'');if(step==='settings')buildSettingsUI();}

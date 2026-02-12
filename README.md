@@ -93,32 +93,8 @@
 4シート(各週1枚)で構成され、各シートに講師の出勤情報が入っています。
 曜日ごとの列と時間帯ごとの行に、出勤する講師の短縮名が記載されています。
 
-## デプロイ
-
-### Render.com へのデプロイ
-
-1. GitHubリポジトリにプッシュ
-2. [Render.com](https://render.com) で「New +」→「Web Service」
-3. リポジトリを選択し、以下を設定:
-   - **Runtime**: Python
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120`
-4. 環境変数を設定:
-   - `APP_PASSWORD`: ログインパスワード
-   - `SECRET_KEY`: 「Generate」で自動生成
-
-### ローカルで実行
-
-```bash
-pip install -r requirements.txt
-python app.py
-```
-
-`http://localhost:5000` にアクセス(デフォルトパスワード: `booth2026`)
-
 ## 注意事項
 
 - アップロード上限: 10MB
 - セッションは1時間で期限切れ
-- Render無料プラン: 15分間アクセスがないとスリープ(再アクセスで30秒程度で復帰)
 - ファイルは一時保存のため、サーバー再起動で消去されます
