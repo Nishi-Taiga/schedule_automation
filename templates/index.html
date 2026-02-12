@@ -123,7 +123,7 @@ table.up .ct{font-weight:700;color:var(--red)}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成</h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.2.0</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -253,7 +253,7 @@ function rR(){const p=countPlaced();document.getElementById('pNum').innerHTML=p+
 const ub=document.getElementById('uBadge'),uT=R.unplaced.reduce((s,u)=>s+u.count,0);if(uT>0){ub.style.display='';ub.textContent='⚠️ 未配置: '+uT+'コマ';}else ub.style.display='none';
 const mb=document.getElementById('mBadge');if(edited){mb.style.display='';mb.textContent='✏️ 手動編集あり';}else mb.style.display='none';
 const tabs=document.getElementById('wTabs');tabs.innerHTML='';
-for(let w=0;w<4;w++){const b=document.createElement('button');b.className=PW===w?'active':'';b.textContent='第'+(w+1)+'週';b.onclick=()=>{PW=w;rR();};tabs.appendChild(b);}
+const NW=R.schedule.length;for(let w=0;w<NW;w++){const b=document.createElement('button');b.className=PW===w?'active':'';b.textContent='第'+(w+1)+'週';b.onclick=()=>{PW=w;rR();};tabs.appendChild(b);}
 const ub2=document.createElement('button');ub2.className='warn'+(PW===-1?' active':'');ub2.textContent='未配置';ub2.onclick=()=>{PW=-1;rR();};tabs.appendChild(ub2);
 const cb=document.createElement('button');cb.className='cal'+(PW===-2?' active':'');cb.textContent='📅 生徒別';cb.onclick=()=>{PW=-2;rR();};tabs.appendChild(cb);
 const wrap=document.getElementById('pWrap');wrap.innerHTML='';if(PW>=0)rW(wrap,PW);else if(PW===-1)rU(wrap);else rCal(wrap);}
@@ -402,7 +402,7 @@ function rCal(wrap){
 
 function getStudentSlots(name){
   const slots=[];
-  for(let wi=0;wi<4;wi++){for(const day of D){for(const[ts,booths]of Object.entries(R.schedule[wi][day]||{})){
+  for(let wi=0;wi<R.schedule.length;wi++){for(const day of D){for(const[ts,booths]of Object.entries(R.schedule[wi][day]||{})){
     for(let bi=0;bi<booths.length;bi++){const b=booths[bi];for(let si=0;si<b.slots.length;si++){
       if(b.slots[si][1]===name)slots.push({wi,day,ts,bi,si,grade:b.slots[si][0],subj:b.slots[si][2],teacher:b.teacher});
     }}}}}
@@ -418,7 +418,7 @@ function renderStudentCal(){
   let hd='<thead><tr><th style="width:40px">週</th>';for(const d of D)hd+='<th>'+d+'</th>';hd+='</tr></thead>';
   tbl.innerHTML=hd;
   const tbody=document.createElement('tbody');
-  for(let wi=0;wi<4;wi++){
+  for(let wi=0;wi<R.schedule.length;wi++){
     const tr=document.createElement('tr');
     const wTd=document.createElement('td');wTd.style.cssText='text-align:center;font-weight:700';wTd.textContent='W'+(wi+1);tr.appendChild(wTd);
     for(const day of D){
