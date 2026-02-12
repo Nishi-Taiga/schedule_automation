@@ -370,7 +370,7 @@ def load_weekly_teachers(path):
     """元シートから各週・曜日・時間帯の出勤講師を読み取る（全講師、絞り込み前）"""
     wb = openpyxl.load_workbook(path)
     weeks = []
-    for wi in range(min(4, len(wb.sheetnames))):
+    for wi in range(len(wb.sheetnames)):
         ws = wb[wb.sheetnames[wi]]
         week = {}
         for day in DAYS:
@@ -475,13 +475,14 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
     smap = {s['name']: s for s in students}
     schedule = []
     office_teachers = []
+    num_weeks = len(weekly_teachers)
 
     # 全生徒の希望講師を集約
     wish_teachers_set = set()
     for s in students:
         wish_teachers_set.update(s['wish_teachers'])
 
-    for wi in range(4):
+    for wi in range(num_weeks):
         ot = {}
         for d in DAYS:
             candidates = office_rule.get(d, ['石川T'])
@@ -621,7 +622,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
     # Phase1: 固定授業
     for s in students:
         for day, ts_str, subj in s['fixed']:
-            for wi in range(4):
+            for wi in range(num_weeks):
                 if (wi, day) in s.get('ng_dates', set()): continue
                 if place_student(schedule[wi], s, day, ts_str, subj):
                     if remaining[s['name']].get(subj,0)>0:
@@ -635,8 +636,8 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
         for subj, total in s['needs'].items():
             still = remaining[s['name']].get(subj, 0)
             if still <= 0: continue
-            targets = distribute(still, 4)
-            for wi in range(4):
+            targets = distribute(still, num_weeks)
+            for wi in range(num_weeks):
                 for _ in range(targets[wi]):
                     if remaining[s['name']].get(subj,0) <= 0: break
                     pd = get_placed_days(schedule[wi], s['name'], subj)
@@ -659,8 +660,13 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
 # ========== Excel出力 ==========
 def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
     wb = openpyxl.load_workbook(booth_path)
-    for sn in wb.sheetnames[4:]:
-        del wb[sn]
+    num_weeks = len(schedule)
+    # 週シート以外（必要コマ数、一覧表、ブース希望等）を特定して保持
+    meta_keywords = ['必要コマ', '一覧', 'ブース希望']
+    meta_sheets = [sn for sn in wb.sheetnames if any(k in sn for k in meta_keywords)]
+    week_sheets = [sn for sn in wb.sheetnames if sn not in meta_sheets]
+    # 週シート数が足りない場合はそのまま使える分だけ使う
+    num_weeks = min(num_weeks, len(week_sheets))
 
     # 共通書式
     teacher_font = Font(name='MS PGothic', size=8)
@@ -668,8 +674,8 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
     data_font = Font(name='MS PGothic', size=11)
     data_align = Alignment(vertical='center', horizontal='center')
 
-    for wi in range(4):
-        ws = wb[wb.sheetnames[wi]]
+    for wi in range(num_weeks):
+        ws = wb[week_sheets[wi]]
         wsched = schedule[wi]
 
         # クリア（結合は解除しない）
