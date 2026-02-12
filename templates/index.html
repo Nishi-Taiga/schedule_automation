@@ -65,9 +65,9 @@ tr.er{background:#fafbfc}
 .tn{display:block;font-weight:600;color:var(--accent2);font-size:11px;margin-bottom:2px;cursor:grab;padding:1px 4px;border-radius:3px;border:1px solid transparent;transition:all .12s;user-select:none;width:100%;text-align:center}
 .tn:hover{background:#e0e7ff;border-color:#93c5fd}.tn:active{cursor:grabbing}
 .tn.drag-over-t{background:#dbeafe;border-color:var(--accent)}
-.slot-chip{display:flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;margin:1px 0;font-size:10px;cursor:grab;user-select:none;transition:all .12s;width:100%;background:#e8f5e9;border:1px solid #a5d6a7}
+.slot-chip{display:flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;margin:1px 0;font-size:10px;cursor:pointer;user-select:none;transition:all .12s;width:100%;background:#e8f5e9;border:1px solid #a5d6a7}
 .slot-chip:active{cursor:grabbing}.slot-chip:hover{background:#c8e6c9;border-color:#66bb6a}
-.slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32;cursor:pointer;text-decoration:underline dotted transparent;transition:text-decoration .2s}.slot-chip .s:hover{text-decoration-color:#2e7d32}
+.slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32}
 .slot-chip .j{color:#558b2f;font-size:9px}
 .slot-chip.ng{background:#ffebee;border-color:#e57373}.slot-chip.ng .s{color:#c62828}
 .booth-cell{min-height:34px;position:relative;transition:background .12s;display:flex;flex-direction:column;align-items:stretch;padding:2px 3px;border-left:1px solid #eef1f5}
@@ -276,17 +276,21 @@ const el=document.createElement('div');const ngT=isNg(slot[1],teacher);const ngS
 el.className='slot-chip'+(warn?' ng':'');el.draggable=true;
 let wt=ngT?'NG講師:'+teacher:'';if(ngS)wt+=(wt?' / ':'')+'NG生徒が隣接';
 const gSpan='<span class="g">'+slot[0]+'</span>';
-const sSpan='<span class="s" onclick="event.stopPropagation();goStudent(\''+slot[1].replace(/'/g,"\\'")+'\')">'+slot[1]+'</span>';
+const sSpan='<span class="s">'+slot[1]+'</span>';
 const jSpan='<span class="j">'+slot[2]+'</span>';
 el.innerHTML=gSpan+sSpan+jSpan+(warn?'<span style="color:var(--red);font-size:9px">⚠</span>':'');
 el.title=wt;
-el.addEventListener('dragstart',e=>{dragData={type:'booth',wi,day,ts,bi,si,slot};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
-el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});return el;}
+let dragged=false;
+el.addEventListener('dragstart',e=>{dragged=true;dragData={type:'booth',wi,day,ts,bi,si,slot};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
+el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
+el.addEventListener('click',e=>{if(!dragged){e.stopPropagation();goStudent(slot[1]);}dragged=false;});return el;}
 
 function mkUnChip(u,ui){const el=document.createElement('div');el.className='slot-chip';el.draggable=true;
-el.innerHTML='<span class="g">'+u.grade+'</span><span class="s" onclick="event.stopPropagation();goStudent(\''+u.name.replace(/'/g,"\\'")+'\')">'+u.name+'</span><span class="j">'+u.subject+'</span>';
-el.addEventListener('dragstart',e=>{dragData={type:'unplaced',ui,slot:[u.grade,u.name,u.subject]};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
-el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});return el;}
+el.innerHTML='<span class="g">'+u.grade+'</span><span class="s">'+u.name+'</span><span class="j">'+u.subject+'</span>';
+let dragged=false;
+el.addEventListener('dragstart',e=>{dragged=true;dragData={type:'unplaced',ui,slot:[u.grade,u.name,u.subject]};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
+el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
+el.addEventListener('click',e=>{if(!dragged){e.stopPropagation();goStudent(u.name);}dragged=false;});return el;}
 
 function doBooth(wi,day,ts,bi){if(!dragData)return;const ws=R.schedule[wi],booth=ws[day][ts][bi];
 if(booth.slots.length<2){
