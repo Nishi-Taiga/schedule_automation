@@ -95,11 +95,61 @@ def save_session_files(sd):
     _save_meta(sid, meta)
 
 def save_session_result(sd):
-    """resultをインメモリキャッシュに保存"""
+    """resultをインメモリキャッシュ + ディスクに保存"""
     sid = sd['_sid']
     if not hasattr(get_session_data, '_cache'):
         get_session_data._cache = {}
     get_session_data._cache[sid] = {'result': sd['result']}
+    # ディスクにもJSON保存（サーバー再起動後の復元用）
+    _save_result_to_disk(sid, sd['result'])
+
+def _result_json_path(sid):
+    return os.path.join(_session_dir(sid), '_result.json')
+
+def _save_result_to_disk(sid, result):
+    """スケジュール結果をディスクにJSON保存"""
+    rp = _result_json_path(sid)
+    try:
+        # schedule内のtupleをlistに変換して保存
+        saveable = {}
+        if 'schedule_json' in result:
+            saveable['schedule_json'] = result['schedule_json']
+        if 'unplaced' in result:
+            saveable['unplaced'] = result['unplaced']
+        if 'office_teachers' in result:
+            saveable['office_teachers'] = result['office_teachers']
+        if 'booth_pref' in result:
+            saveable['booth_pref'] = result['booth_pref']
+        if 'students' in result:
+            # studentsのsetをlistに変換
+            stu_save = []
+            for s in result['students']:
+                sc = dict(s)
+                if isinstance(sc.get('avail'), set):
+                    sc['avail'] = sorted([list(a) for a in sc['avail']])
+                if isinstance(sc.get('backup_avail'), set):
+                    sc['backup_avail'] = sorted([list(a) for a in sc['backup_avail']])
+                if isinstance(sc.get('ng_dates'), set):
+                    sc['ng_dates'] = [list(d) for d in sc['ng_dates']]
+                if 'fixed' in sc:
+                    sc['fixed'] = [list(f) for f in sc['fixed']]
+                stu_save.append(sc)
+            saveable['students'] = stu_save
+        with open(rp, 'w', encoding='utf-8') as f:
+            json.dump(saveable, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[save_result] WARNING: ディスク保存失敗: {e}", flush=True)
+
+def _load_result_from_disk(sid):
+    """ディスクからスケジュール結果を読み込む"""
+    rp = _result_json_path(sid)
+    if not os.path.exists(rp):
+        return None
+    try:
+        with open(rp, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 # ========== 認証 ==========
 def login_required(f):
@@ -339,6 +389,8 @@ def load_students_from_wb(wb, year=2026, month=2):
             'avail':parse_avail(ws.cell(r,26).value),
             'ng_dates':parse_ng_dates(ws.cell(r,27).value, year, month),
             'fixed':parse_regular(ws.cell(r,28).value),
+            'backup_avail':parse_avail(ws.cell(r,29).value),
+            'notes':str(ws.cell(r,30).value or '').strip(),
         })
     return students
 
@@ -878,11 +930,19 @@ def generate():
         }
         save_session_result(sd)
 
-        # 生徒データJSON化（NG情報含む）
+        # 生徒データJSON化（全情報含む）
         students_json = []
         for s in students:
+            avail_list = sorted([list(a) for a in s['avail']]) if s.get('avail') else None
+            backup_list = sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None
+            fixed_list = [[d, t, subj] for d, t, subj in s.get('fixed', [])]
             students_json.append({
                 'grade': s['grade'], 'name': s['name'],
+                'needs': s['needs'],
+                'avail': avail_list,
+                'backup_avail': backup_list,
+                'fixed': fixed_list,
+                'notes': s.get('notes', ''),
                 'ng_teachers': s['ng_teachers'],
                 'wish_teachers': s['wish_teachers'],
                 'ng_students': s['ng_students'],
@@ -956,6 +1016,93 @@ def update_schedule():
 
     placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     return jsonify({'ok': True, 'placed': placed})
+
+# ========== State persistence API ==========
+@app.route('/api/state')
+@login_required
+def get_state():
+    """保存済みスケジュール状態を返す（ページリロード時の復元用）"""
+    sd = get_session_data()
+    res = sd.get('result', {})
+
+    # インメモリキャッシュにあればそれを使う
+    if res and 'schedule_json' in res:
+        students_json = []
+        for s in res.get('students', []):
+            avail_list = sorted([list(a) for a in s['avail']]) if isinstance(s.get('avail'), set) else s.get('avail')
+            backup_list = sorted([list(a) for a in s['backup_avail']]) if isinstance(s.get('backup_avail'), set) else s.get('backup_avail')
+            fixed_list = [list(f) for f in s.get('fixed', [])] if s.get('fixed') else []
+            ng_dates_list = [list(d) for d in s.get('ng_dates', set())] if isinstance(s.get('ng_dates'), set) else s.get('ng_dates', [])
+            students_json.append({
+                'grade': s['grade'], 'name': s['name'],
+                'needs': s.get('needs', {}),
+                'avail': avail_list,
+                'backup_avail': backup_list,
+                'fixed': fixed_list,
+                'notes': s.get('notes', ''),
+                'ng_teachers': s.get('ng_teachers', []),
+                'wish_teachers': s.get('wish_teachers', []),
+                'ng_students': s.get('ng_students', []),
+                'ng_dates': ng_dates_list,
+            })
+        placed = sum(len(b['slots']) for w in res['schedule_json'] for d in w.values() for bs in d.values() for b in bs)
+        total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
+        return jsonify({
+            'has_state': True,
+            'placed': placed,
+            'total': total,
+            'schedule': res['schedule_json'],
+            'unplaced': res.get('unplaced', []),
+            'officeTeachers': res.get('office_teachers', []),
+            'boothPref': res.get('booth_pref', {}),
+            'students': students_json,
+        })
+
+    # ディスクから復元を試みる
+    sid = sd.get('_sid')
+    if sid:
+        disk_result = _load_result_from_disk(sid)
+        if disk_result and 'schedule_json' in disk_result:
+            students_json = []
+            for s in disk_result.get('students', []):
+                students_json.append({
+                    'grade': s.get('grade', ''), 'name': s.get('name', ''),
+                    'needs': s.get('needs', {}),
+                    'avail': s.get('avail'),
+                    'backup_avail': s.get('backup_avail'),
+                    'fixed': s.get('fixed', []),
+                    'notes': s.get('notes', ''),
+                    'ng_teachers': s.get('ng_teachers', []),
+                    'wish_teachers': s.get('wish_teachers', []),
+                    'ng_students': s.get('ng_students', []),
+                    'ng_dates': s.get('ng_dates', []),
+                })
+            placed = sum(len(b['slots']) for w in disk_result['schedule_json'] for d in w.values() for bs in d.values() for b in bs)
+            total = sum(sum(s.get('needs', {}).values()) for s in disk_result.get('students', []))
+
+            # インメモリキャッシュに復元
+            sd['result'] = {
+                'schedule_json': disk_result['schedule_json'],
+                'schedule': disk_result['schedule_json'],  # JSON形式で保持
+                'unplaced': disk_result.get('unplaced', []),
+                'office_teachers': disk_result.get('office_teachers', []),
+                'booth_pref': disk_result.get('booth_pref', {}),
+                'students': disk_result.get('students', []),
+            }
+            save_session_result(sd)
+
+            return jsonify({
+                'has_state': True,
+                'placed': placed,
+                'total': total,
+                'schedule': disk_result['schedule_json'],
+                'unplaced': disk_result.get('unplaced', []),
+                'officeTeachers': disk_result.get('office_teachers', []),
+                'boothPref': disk_result.get('booth_pref', {}),
+                'students': students_json,
+            })
+
+    return jsonify({'has_state': False})
 
 # ========== 起動 ==========
 if __name__ == '__main__':

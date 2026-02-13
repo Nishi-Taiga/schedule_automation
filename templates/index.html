@@ -102,6 +102,41 @@ table.up .ct{font-weight:700;color:var(--red)}
 .cal-drop{min-height:28px;transition:background .12s;border-radius:4px}
 .cal-drop.drag-over{background:#e3f2fd;outline:2px dashed var(--accent);outline-offset:-2px}
 .cal-empty{color:#ccc;font-size:10px}
+/* Student Info Tab */
+.stu-wrap{overflow-x:auto}
+table.stu{width:100%;border-collapse:collapse;font-size:12px;min-width:900px}
+table.stu th{padding:8px 6px;background:#f0f3f7;border:1px solid #d1dbe6;text-align:center;font-weight:700;font-size:11px;position:sticky;top:0;white-space:nowrap}
+table.stu td{padding:5px 6px;border:1px solid #e2e8f0;vertical-align:top;font-size:11.5px}
+table.stu tr:nth-child(even){background:#fafbfc}
+table.stu tr:hover{background:#f0f5ff}
+.stu-name{font-weight:700;white-space:nowrap}
+.stu-grade{color:var(--ink3);font-size:10px}
+.stu-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin:1px 2px;white-space:nowrap}
+.stu-tag.subj{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
+.stu-tag.time{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
+.stu-tag.fixed{background:#fff3e0;color:#e65100;border:1px solid #ffcc80}
+.stu-tag.wish{background:#f3e5f5;color:#7b1fa2;border:1px solid #ce93d8}
+.stu-tag.ng{background:#ffebee;color:#c62828;border:1px solid #ef9a9a}
+.stu-tag.ngs{background:#fce4ec;color:#ad1457;border:1px solid #f48fb1}
+.stu-needs-num{font-weight:700;color:var(--accent);font-size:12px}
+.stu-filter{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.stu-filter input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;min-width:200px}
+.stu-total{font-size:11px;color:var(--ink3);font-weight:600}
+/* Student Info Panel */
+.stu-info-panel{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:14px}
+.stu-info-panel h4{font-size:14px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.stu-info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 16px}
+.stu-info-item{font-size:12px;line-height:1.6}
+.stu-info-item .label{font-weight:700;color:var(--ink2);font-size:11px;display:block;margin-bottom:2px}
+.stu-info-item .value{color:var(--ink)}
+.stu-info-notes{grid-column:1/-1;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11.5px;color:#92400e;margin-top:4px}
+/* Save indicator */
+.save-indicator{position:fixed;bottom:20px;right:20px;background:var(--green);color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:500;transition:opacity .3s;opacity:0;pointer-events:none}
+.save-indicator.show{opacity:1}
+/* Restore banner */
+.restore-banner{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.restore-banner .msg{font-size:13px;color:var(--accent2);font-weight:600}
+.restore-banner .actions{display:flex;gap:8px}
 /* Modal */
 .modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center}
 .modal{background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.2)}
@@ -123,7 +158,7 @@ table.up .ct{font-weight:700;color:var(--red)}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.2.0</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.3.0</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -169,6 +204,7 @@ table.up .ct{font-weight:700;color:var(--red)}
 <div class="card"><div class="tw" id="pWrap"></div></div>
 </div>
 </div>
+<div id="saveIndicator" class="save-indicator">保存しました</div>
 <div id="modalRoot"></div>
 <script>
 const D=['月','火','水','木','金','土'],WT=['16:00','17:05','18:10','19:15','20:20'],ST=['14:55','16:00','17:05','18:10'];
@@ -180,6 +216,25 @@ function buildNgMap(){ngMap={};ngStudentMap={};if(!R||!R.students)return;R.stude
 function isNg(n,t){return ngMap[n]&&ngMap[n].has(t);}
 function isNgStudent(a,b){return(ngStudentMap[a]&&ngStudentMap[a].has(b))||(ngStudentMap[b]&&ngStudentMap[b].has(a));}
 function isAdjacentNg(wi,day,ts,bi,sn){const bs=R.schedule[wi]?.[day]?.[ts];if(!bs)return false;for(const a of[bi-1,bi+1]){if(a<0||a>=bs.length)continue;for(const sl of bs[a].slots){if(isNgStudent(sn,sl[1]))return true;}}return false;}
+
+// === Auto-save/restore ===
+function showSaveIndicator(msg){const el=document.getElementById('saveIndicator');el.textContent=msg||'保存しました';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2000);}
+async function autoSave(){if(!R||!edited)return;try{await fetch('/api/update_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedule:R.schedule,unplaced:R.unplaced})});showSaveIndicator('自動保存しました');}catch(e){}}
+let autoSaveTimer=null;
+function scheduleAutoSave(){if(autoSaveTimer)clearTimeout(autoSaveTimer);autoSaveTimer=setTimeout(autoSave,3000);}
+async function checkSavedState(){
+try{const res=await fetch('/api/state');const d=await res.json();
+if(d.has_state&&d.schedule){
+const wrap=document.getElementById('pUpload');
+const banner=document.createElement('div');banner.className='restore-banner';banner.id='restoreBanner';
+banner.innerHTML='<span class="msg">前回の作業データがあります（'+d.placed+'/'+d.total+'コマ配置済み）</span><div class="actions"><button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="restoreState()">復元する</button><button class="btn btn-o" style="padding:6px 14px;font-size:12px" onclick="dismissRestore()">新規作成</button></div>';
+wrap.insertBefore(banner,wrap.firstChild);
+window._savedState=d;}}catch(e){}}
+function restoreState(){if(!window._savedState)return;R=window._savedState;PW=0;edited=false;calStudent=null;buildNgMap();
+if(R.boothPref)BP=Object.entries(R.boothPref).map(([t,b])=>({teacher:t,booth:b}));
+const b=document.getElementById('restoreBanner');if(b)b.remove();go('result');rR();showSaveIndicator('復元しました');}
+function dismissRestore(){const b=document.getElementById('restoreBanner');if(b)b.remove();window._savedState=null;}
+window.addEventListener('DOMContentLoaded',()=>{checkSavedState();});
 
 function fmtSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
 function showUpErr(detail){const st=document.getElementById('upSt');st.className='status err';st.innerHTML=detail;}
@@ -249,7 +304,7 @@ function countPlaced(){let c=0;for(const w of R.schedule)for(const d of Object.v
 // Navigate to student calendar
 function goStudent(name){const idx=R.students.findIndex(s=>s.name===name);if(idx<0)return;calStudent=idx;PW=-2;rR();}
 
-function rR(){const p=countPlaced();document.getElementById('pNum').innerHTML=p+'<span>/'+R.total+'コマ</span>';document.getElementById('rTxt').textContent='配置率 '+(p/R.total*100).toFixed(1)+'%';
+function rR(){if(edited)scheduleAutoSave();const p=countPlaced();document.getElementById('pNum').innerHTML=p+'<span>/'+R.total+'コマ</span>';document.getElementById('rTxt').textContent='配置率 '+(p/R.total*100).toFixed(1)+'%';
 const ub=document.getElementById('uBadge'),uT=R.unplaced.reduce((s,u)=>s+u.count,0);if(uT>0){ub.style.display='';ub.textContent='⚠️ 未配置: '+uT+'コマ';}else ub.style.display='none';
 const mb=document.getElementById('mBadge');if(edited){mb.style.display='';mb.textContent='✏️ 手動編集あり';}else mb.style.display='none';
 const tabs=document.getElementById('wTabs');tabs.innerHTML='';
@@ -409,11 +464,57 @@ function getStudentSlots(name){
   return slots;
 }
 
+function fmtAvail(avail){
+  if(!avail||!avail.length)return '-';
+  const dayMap={};
+  avail.forEach(a=>{const d=a[0],t=a[1];if(!dayMap[d])dayMap[d]=[];dayMap[d].push(t);});
+  return Object.entries(dayMap).map(([d,ts])=>d+ts.sort().join(',')).join(' / ');
+}
+function fmtFixed(fixed){
+  if(!fixed||!fixed.length)return '-';
+  return fixed.map(f=>f[0]+f[1]+':'+f[2]).join(', ');
+}
+function renderStudentInfo(s,slots){
+  const panel=document.createElement('div');panel.className='stu-info-panel';
+  const totalNeeds=Object.values(s.needs||{}).reduce((a,b)=>a+b,0);
+  const placedCount=slots.length;
+  const unplacedForStudent=R.unplaced.filter(u=>u.name===s.name).reduce((a,u)=>a+u.count,0);
+  let needsHtml=Object.entries(s.needs||{}).map(([subj,cnt])=>'<span class="stu-tag subj">'+subj+' <b>'+cnt+'</b></span>').join('');
+  if(!needsHtml)needsHtml='<span style="color:var(--ink3)">-</span>';
+  let availHtml=fmtAvail(s.avail);
+  let backupHtml=fmtAvail(s.backup_avail);
+  let fixedHtml=fmtFixed(s.fixed);
+  let wishHtml=(s.wish_teachers||[]).map(t=>'<span class="stu-tag wish">'+t+'</span>').join('')||'<span style="color:var(--ink3)">-</span>';
+  let ngTHtml=(s.ng_teachers||[]).map(t=>'<span class="stu-tag ng">'+t+'</span>').join('')||'<span style="color:var(--ink3)">-</span>';
+  let ngSHtml=(s.ng_students||[]).map(t=>'<span class="stu-tag ngs">'+t+'</span>').join('')||'<span style="color:var(--ink3)">-</span>';
+
+  let html='<h4>'+s.grade+' '+s.name+' <span style="font-size:12px;font-weight:400;color:var(--ink3)">配置: '+placedCount+'/'+totalNeeds+'コマ';
+  if(unplacedForStudent>0)html+=' <span style="color:var(--red)">未配置:'+unplacedForStudent+'</span>';
+  html+='</span></h4>';
+  html+='<div class="stu-info-grid">';
+  html+='<div class="stu-info-item"><span class="label">必要コマ数</span><div class="value">'+needsHtml+'</div></div>';
+  html+='<div class="stu-info-item"><span class="label">希望時間</span><div class="value" style="font-size:11px">'+availHtml+'</div></div>';
+  html+='<div class="stu-info-item"><span class="label">通常授業</span><div class="value"><span class="stu-tag fixed" style="font-size:11px">'+fixedHtml+'</span></div></div>';
+  html+='<div class="stu-info-item"><span class="label">予備時間</span><div class="value" style="font-size:11px">'+backupHtml+'</div></div>';
+  html+='<div class="stu-info-item"><span class="label">希望講師</span><div class="value">'+wishHtml+'</div></div>';
+  html+='<div class="stu-info-item"><span class="label">NG講師</span><div class="value">'+ngTHtml+'</div></div>';
+  html+='<div class="stu-info-item"><span class="label">NG生徒</span><div class="value">'+ngSHtml+'</div></div>';
+  if(s.notes){html+='<div class="stu-info-notes">備考: '+s.notes+'</div>';}
+  html+='</div>';
+  panel.innerHTML=html;
+  return panel;
+}
+
 function renderStudentCal(){
   const s=R.students[calStudent];if(!s)return;
   const cw=document.getElementById('calWrap');if(!cw)return;
   const slots=getStudentSlots(s.name);
   const grid={};slots.forEach(sl=>{const k=sl.wi+'_'+sl.day;if(!grid[k])grid[k]=[];grid[k].push(sl);});
+
+  cw.innerHTML='';
+  // Student info panel
+  cw.appendChild(renderStudentInfo(s,slots));
+
   const tbl=document.createElement('table');tbl.className='cal-tbl';
   let hd='<thead><tr><th style="width:40px">週</th>';for(const d of D)hd+='<th>'+d+'</th>';hd+='</tr></thead>';
   tbl.innerHTML=hd;
@@ -450,7 +551,7 @@ function renderStudentCal(){
     tbody.appendChild(tr);
   }
   tbl.appendChild(tbody);
-  cw.innerHTML='';cw.appendChild(tbl);
+  cw.appendChild(tbl);
   const info=document.createElement('div');info.style.cssText='margin-top:8px;font-size:12px;color:var(--ink2)';
   info.innerHTML='合計: <b>'+slots.length+'コマ</b>　<span style="font-size:11px;color:var(--orange)">✋ クリックで講師/時間変更、ドラッグで別の日に移動</span>';
   cw.appendChild(info);
