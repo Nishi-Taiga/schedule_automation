@@ -1,0 +1,560 @@
+ブース表元シート作成マクロ
+Sub 結果集約()
+  Dim fold_path As String
+  Dim fold_path1 As String
+  Dim fold_path2 As String
+  Dim fold_path3 As String
+  
+  Dim file_path As String
+  Dim Fname As String
+  Dim file_name As String
+  Dim book_name As String
+  
+  Dim t_name As String
+  Dim moto_sheet_name As String
+  Dim moto_sheet_name2 As String
+  Dim ws As Worksheet
+  
+  Dim yyyymm As String
+  Dim i As Long
+  Dim j As Long
+  Dim k As Long
+  
+  Dim menuBook   As Workbook
+  Dim gyomuBook  As Workbook
+  
+  Dim last_line  As Long
+  Dim last_clmn  As Long
+  Dim kaishi_ichi As Integer
+  Dim mai_su As Integer
+  
+  Dim l As Long
+  Dim m As Long
+  Dim n As Long
+  Dim p As Long
+  Dim q As Long
+  Dim r As Long
+  Dim s As Long
+  Dim t As Long
+  Dim u As Long
+  Dim x As Long
+  Dim y As Long
+  Dim z As Long
+
+  Dim max_row As Long
+  Dim max_clm  As Long
+  Dim max_cnt As Variant
+  ReDim max_cnt(5)
+  Dim teacher_cnt_tbl(30) As String
+  Dim kari_teacher_name As String
+  
+  Dim sort_line_start As Integer
+  
+  
+  Dim num_cnt As Integer
+   
+  Dim koma_const As Variant
+  koma_const = Array("14:55", "16:00", "17:05", "18:10", "19:15", "20:20")
+  Dim booth_const As Variant
+  booth_const = Array("①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫", "⑬")
+  
+  Set menuBook = ActiveWorkbook
+  kaishi_ichi = 0
+  yyyymm = menuBook.Worksheets("Menu").Cells(5, 4)
+  file_name = yyyymm & "シート"
+  FilePath = ThisWorkbook.Path
+  fold_path = FilePath & "\時間割作成用フォルダ"
+  fold_path2 = fold_path & "\集約用フォルダ\" & yyyymm
+  fold_path3 = fold_path & "\ブース表元シート\" & yyyymm
+  menuBook.Worksheets(file_name).Unprotect
+  menuBook.Worksheets(file_name).Range("A16:AK500").ClearContents
+  
+'/  MsgBox fold_path2
+  
+  Fname = Dir(fold_path2 & "\" & "*.xlsx")
+  k = 16
+  u = 0
+'/  回答結果を集約してyyyymmシートに結果取りまとめ
+  Do While Fname <> ""
+    Workbooks.Open fold_path2 & "\" & Fname
+    Set gyomuBook = ActiveWorkbook
+    t_name = gyomuBook.Worksheets(file_name).Cells(2, 2)
+'/  特別対応
+    If t_name = "井上　玲也クリスチャン" Then
+      t_name = "井上　玲也"
+    End If
+    teacher_cnt_tbl(u) = t_name
+    u = u + 1
+    
+    i = 10
+    For i = 10 To 15
+      menuBook.Worksheets(file_name).Cells(k, 1) = t_name
+'/      MsgBox t_name
+ 
+     menuBook.Worksheets(file_name).Cells(k, 2) = Format(gyomuBook.Worksheets(file_name).Cells(i, 2), "hh:mm")
+     j = 3
+      Do While gyomuBook.Worksheets(file_name).Cells(6, j) <> ""
+        menuBook.Worksheets(file_name).Cells(k, j) = gyomuBook.Worksheets(file_name).Cells(i, j)
+        j = j + 1
+      Loop
+      k = k + 1
+    Next i
+    gyomuBook.Close
+    Fname = Dir()
+  Loop
+'/  出勤可能数をカウントする。
+  menuBook.Activate
+
+  max_row = menuBook.Worksheets(file_name).Cells(16, 2).End(xlDown).Row
+  max_clm = menuBook.Worksheets(file_name).Cells(6, 2).End(xlToRight).Column
+'/    MsgBox max_row
+'/    MsgBox max_clm
+'/  関数を使ってコマ数あたりの出勤希望者数を把握する。
+  i = 1
+  For i = 1 To 6
+    menuBook.Worksheets(file_name).Cells(max_row + i, 2) = Format(menuBook.Worksheets(file_name).Cells(9 + i, 2), "hh:mm")
+  Next i
+  j = 3
+  For j = 3 To max_clm
+  
+    i = 1
+    For i = 1 To 6
+      menuBook.Worksheets(file_name).Cells(max_row + i, j).FormulaR1C1 = "=SUMIF(R[" & 16 - i - max_row & "]C[" & 2 - j & "]:R[" & 0 - i & "]C[" & 2 - j & "]," _
+       & "RC[" & 2 - j & "],R[" & 16 - i - max_row & "]C:R[-" & i & "]C)"
+    Next i
+  
+  Next j
+  i = 1
+  For i = 1 To 6
+    menuBook.Worksheets(file_name).Cells(max_row + i, 1).FormulaR1C1 = "=MAX(RC[2]:RC[" & max_clm - 1 & "])"
+  Next i
+  i = 0
+  For i = 0 To 5
+    max_cnt(i) = menuBook.Worksheets(file_name).Cells(max_row + 1 + i, 1)
+  Next i
+'/  MsgBox max_cnt(0)
+'/  MsgBox max_cnt(1)
+'/  MsgBox max_cnt(2)
+'/  MsgBox max_cnt(3)
+'/  MsgBox max_cnt(4)
+'/  MsgBox max_cnt(5)
+'/ 　先生毎に対応可能なコマ数をカウントする。
+ i = 1
+ For i = 0 To u - 1
+   menuBook.Worksheets(file_name).Cells(max_row + 6 + 1 + i, 2) = teacher_cnt_tbl(i)
+   j = 3
+   For j = 3 To max_clm
+     menuBook.Worksheets(file_name).Cells(max_row + 6 + 1 + i, j).FormulaR1C1 = "=SUMIF(R[" & 16 - 6 - i - max_row & "]C[" & 1 - j & "]:R[" & -6 - i & "]C[" & 1 - j & "]," _
+       & "RC[" & 2 - j & "],R[" & 16 - 6 - i - max_row & "]C:R[" & -6 - i & "]C)"
+   Next j
+
+ Next i
+ 
+'/コマ数を名前の前に結合し、ソート順を定義する
+ l = max_row + 7
+ m = max_row + 7 + u - 1
+ x = max_row + 7 + u - 1
+ i = 0
+ 
+ For i = 0 To u - 1
+ 
+   j = 3
+   For j = 3 To max_clm
+     If menuBook.Worksheets(file_name).Cells(l + i, j) = 0 Then
+       menuBook.Worksheets(file_name).Cells(m + 1 + i, j) = ""
+     Else
+       menuBook.Worksheets(file_name).Cells(m + 1 + i, j) = menuBook.Worksheets(file_name).Cells(l + i, j) & menuBook.Worksheets(file_name).Cells(l + i, 2)
+     End If
+     
+   Next j
+ 
+ 
+ Next i
+'/  出勤数順にソートする かつ、同じ出勤日数の場合には連番を付与する。
+ Dim myrange As Range
+ j = 3
+ For j = 3 To max_clm
+   Set myrange = menuBook.Worksheets(file_name).Range(menuBook.Worksheets(file_name).Cells(m + 1, j), menuBook.Worksheets(file_name).Cells(m + u, j))
+   myrange.Sort key1:=menuBook.Worksheets(file_name).Range(menuBook.Worksheets(file_name).Cells(m + 1, j), menuBook.Worksheets(file_name).Cells(m + u, j)), Order1:=xlDescending
+
+   k = 1
+   n = 1
+   If menuBook.Worksheets(file_name).Cells(m + k, j) = "" Then
+   Else
+     num_cnt = Left(menuBook.Worksheets(file_name).Cells(m + k, j), 1)
+     Do While menuBook.Worksheets(file_name).Cells(m + k + 1, j) <> ""
+       If num_cnt = Left(menuBook.Worksheets(file_name).Cells(m + k + 1, j), 1) Then
+         menuBook.Worksheets(file_name).Cells(m + k, j) = Left(menuBook.Worksheets(file_name).Cells(m + k, j), 1) & n & Mid(menuBook.Worksheets(file_name).Cells(m + k, j), 2)
+         n = n + 1
+       Else
+         menuBook.Worksheets(file_name).Cells(m + k, j) = Left(menuBook.Worksheets(file_name).Cells(m + k, j), 1) & n & Mid(menuBook.Worksheets(file_name).Cells(m + k, j), 2)
+         n = 1
+         num_cnt = Left(menuBook.Worksheets(file_name).Cells(m + k + 1, j), 1)
+       End If
+       k = k + 1
+     Loop
+     menuBook.Worksheets(file_name).Cells(m + k, j) = Left(menuBook.Worksheets(file_name).Cells(m + k, j), 1) & n & Mid(menuBook.Worksheets(file_name).Cells(m + k, j), 2)
+   End If
+ Next j
+ 
+ 
+
+    
+'/　ブース表の元資料を作成する
+'/  左端列の作成
+
+  For Each ws In Worksheets
+    If ws.Name = yyyymm & "ブース表元シート" Or _
+      ws.Name = yyyymm & "ブース表元シート2" Then
+      Application.DisplayAlerts = False
+      ws.Delete
+      Application.DisplayAlerts = True
+    End If
+  Next ws
+  Set ws = Sheets.Add(After:=Sheets(Sheets.Count))
+  ws.Name = yyyymm & "ブース表元シート"
+  moto_sheet_name = yyyymm & "ブース表元シート"
+  Worksheets(moto_sheet_name).Cells(1, 1) = "日付"
+  Worksheets(moto_sheet_name).Cells(2, 1) = "曜日"
+  Worksheets(moto_sheet_name).Cells(3, 1) = "週数"
+  Worksheets(moto_sheet_name).Cells(4, 1) = "祝休日"
+  Worksheets(moto_sheet_name).Cells(4, 1) = "ブース表"
+
+  i = 0
+  j = 6
+  k = j
+'/  MsgBox "i1=" & i
+  For i = 0 To 5
+'/    MsgBox "i2=" & i
+    For j = k To k + max_cnt(i) * 2 - 1
+'/      MsgBox "i3=" & i
+      Worksheets(moto_sheet_name).Cells(j, 1) = Format(koma_const(i), "hh:mm")
+      If j = k Then
+      Else
+        Worksheets(moto_sheet_name).Cells(j, 1).Font.ColorIndex = 2
+      End If
+      
+    Next j
+    k = j
+  Next i
+'/ 　本体列の作成
+  m = 2
+  n = 1
+  p = 1
+  q = 1
+'/  MsgBox max_clm
+  For m = 2 To max_clm - 1
+'/    MsgBox m
+    For p = 1 To 5  '/ブース／講師／学年／生徒名／科目の列数でループ
+      If p = 1 Then
+'/   タイトル行ループ
+
+        Worksheets(moto_sheet_name).Cells(1, m + (q - 1)) = Format(Worksheets(file_name).Cells(6, m + 1), "yyyy/mm/dd")
+        Application.DisplayAlerts = False  '--- 確認メッセージを非表示
+        Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, m + (q - 1)), Worksheets(moto_sheet_name).Cells(1, m + (q - 1) + 4)).Merge
+        Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, m + (q - 1)), Worksheets(moto_sheet_name).Cells(1, m + (q - 1) + 4)).HorizontalAlignment = xlCenter
+        n = 2
+        For n = 2 To 4
+          Worksheets(moto_sheet_name).Cells(n, m + (q - 1)) = Worksheets(file_name).Cells(n + 5, m + 1)
+          Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(n, m + (q - 1)), Worksheets(moto_sheet_name).Cells(n, m + (q - 1) + 4)).Merge
+          Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(n, m + (q - 1)), Worksheets(moto_sheet_name).Cells(n, m + (q - 1) + 4)).HorizontalAlignment = xlCenter
+        Next n
+        Application.DisplayAlerts = True   '--- 確認メッセージを表示
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)) = "ブース"
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).Font.Size = 8
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).EntireColumn.ColumnWidth = 4.25
+        
+'/   出勤体制ループ
+        n = 1
+        r = 0
+        For n = 0 To 5
+          For j = 1 To max_cnt(n)
+            Worksheets(moto_sheet_name).Cells(6 + r, m + (q - 1)) = booth_const(j - 1)
+            Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(6 + r, m + (q - 1)), Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1))).Merge
+            r = r + 2
+'/            If j > 6 Then
+'/              Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(6 + r, m + (q - 1)), Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1))).Interior.Color = RGB(242, 158, 106)
+'/            End If
+          Next j
+        Next n
+      ElseIf p = 2 Then
+        n = 1
+        r = 0
+        s = 16
+        t = 0
+        sort_line_start = 0
+        
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)) = "講師"
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).HorizontalAlignment = xlCenter
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).EntireColumn.ColumnWidth = 10.5
+        For n = 0 To 5
+'/          MsgBox n
+          t = r + max_cnt(n) * 2
+          If Worksheets(file_name).Cells(10 + n, m + 1) = 1 Then
+            For s = 16 To max_row
+              If Worksheets(file_name).Cells(s, m + 1) = 1 Then
+                If Format(Worksheets(file_name).Cells(s, 2), "hh:mm") = koma_const(n) Then
+'/                  MsgBox koma_const(n)
+'/                  MsgBox Format(Worksheets(file_name).Cells(s, 2), "hh:mm")
+                  If sort_line_start = 0 Then
+                    sort_line_start = 6 + r
+                  Else
+                  End If
+                  y = 1
+                  kari_teacher_name = ""
+                  Do While menuBook.Worksheets(file_name).Cells(x + y, m + 1) <> ""
+                    If Worksheets(file_name).Cells(s, 1) = Mid(menuBook.Worksheets(file_name).Cells(x + y, m + 1), 3) Then
+                      kari_teacher_name = menuBook.Worksheets(file_name).Cells(x + y, m + 1)
+                    Else
+                    End If
+                    y = y + 1
+                  Loop
+                  Worksheets(moto_sheet_name).Cells(6 + r, m + (q - 1)) = kari_teacher_name
+                  Worksheets(moto_sheet_name).Cells(6 + r, m + (q - 1)).Font.Size = 10
+                  Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1)) = kari_teacher_name
+                  Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1)).Font.Size = 10
+                  If Worksheets(moto_sheet_name).Cells(6 + r, 1).Interior.Color = RGB(242, 158, 106) Then
+                    Worksheets(moto_sheet_name).Cells(6 + r, m + (q - 1)).Font.Color = RGB(242, 158, 106)
+                    Worksheets(moto_sheet_name).Cells(6 + r, m + (q - 1)).Font.Bold = True
+                  End If
+                  If Worksheets(moto_sheet_name).Cells(6 + r + 1, 1).Interior.Color = RGB(242, 158, 106) Then
+                    Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1)).Font.Color = RGB(242, 158, 106)
+                    Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1)).Font.Bold = True
+                  End If
+                  
+                  r = r + 2
+                End If
+
+                
+              End If
+               
+            Next s
+            If sort_line_start = 0 Then
+            Else
+'/ 出勤回数多い人順にソートする。
+              Set myrange = menuBook.Worksheets(moto_sheet_name).Range(menuBook.Worksheets(moto_sheet_name).Cells(sort_line_start, m + (q - 1)), menuBook.Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1)))
+              myrange.Sort key1:=menuBook.Worksheets(moto_sheet_name).Range(menuBook.Worksheets(moto_sheet_name).Cells(sort_line_start, m + (q - 1)), menuBook.Worksheets(moto_sheet_name).Cells(6 + r + 1, m + (q - 1))), Order1:=xlDescending
+              sort_line_start = 0
+            End If
+         
+            r = t
+          Else
+            r = r + max_cnt(n) * 2
+          End If
+'/          For j = 1 To max_cnt(n)
+'/            If Worksheets(file_name).Cells(11 + j, m + 1) = 3 Then
+'/            End If
+'/          Next j
+          
+        Next n
+        z = 6
+        For z = 6 To r + 6
+          If Worksheets(moto_sheet_name).Cells(z, m + (q - 1)) = "" Then
+          Else
+            Worksheets(moto_sheet_name).Cells(z, m + (q - 1)) = Mid(Worksheets(moto_sheet_name).Cells(z, m + (q - 1)), 3)
+          End If
+        Next z
+      ElseIf p = 3 Then
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)) = "学年"
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).HorizontalAlignment = xlCenter
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).EntireColumn.ColumnWidth = 4.5
+      ElseIf p = 4 Then
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)) = "生徒名"
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).HorizontalAlignment = xlCenter
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).EntireColumn.ColumnWidth = 10.5
+      ElseIf p = 5 Then
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)) = "科目"
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).HorizontalAlignment = xlCenter
+        Worksheets(moto_sheet_name).Cells(5, m + (q - 1)).EntireColumn.ColumnWidth = 4.5
+      End If
+    
+      q = q + 1
+    Next p
+'/   出勤体制ループ
+'/    q = q + 1
+      q = q - 1
+  Next m
+     
+ last_line = Worksheets(moto_sheet_name).Cells(Rows.Count, 1).End(xlUp).Row
+ last_clmn = Worksheets(moto_sheet_name).Cells(1, Columns.Count).End(xlToLeft).Column + 4
+ Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, 1), Worksheets(moto_sheet_name).Cells(2, last_clmn)).Interior.Color = RGB(198, 224, 180)
+ Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(5, 1), Worksheets(moto_sheet_name).Cells(5, last_clmn)).Interior.Color = RGB(198, 224, 180)
+ Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, 1), Worksheets(moto_sheet_name).Cells(5, last_clmn)).Borders.LineStyle = True
+ Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(6, 2), Worksheets(moto_sheet_name).Cells(last_line, last_clmn)).Borders.LineStyle = True
+ i = 0
+ j = 0
+ For i = 0 To 5
+'/   MsgBox 6 + j + (max_cnt(i) * 2) - 1
+   Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(6 + j, 1), Worksheets(moto_sheet_name).Cells(6 + j + (max_cnt(i) * 2) - 1, 1)).BorderAround Weight:=xlThin
+   j = j + max_cnt(i) * 2
+ Next i
+ i = 6
+ j = 0
+ For i = 6 To last_line
+   If Format(Worksheets(moto_sheet_name).Cells(i, 1), "hh:mm") = koma_const(1) Or _
+    Format(Worksheets(moto_sheet_name).Cells(i, 1), "hh:mm") = koma_const(3) Or _
+    Format(Worksheets(moto_sheet_name).Cells(i, 1), "hh:mm") = koma_const(5) Then
+     Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(i, 1), Worksheets(moto_sheet_name).Cells(i, last_clmn)).Interior.Color = RGB(226, 239, 218)
+   End If
+ Next i
+ i = 2
+ For i = 2 To last_clmn
+   If Worksheets(moto_sheet_name).Cells(4, i) = 1 Then
+     Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(4, i), Worksheets(moto_sheet_name).Cells(last_line, i + 4)).Interior.Color = RGB(166, 166, 166)
+   End If
+ Next i
+ Worksheets(moto_sheet_name).Rows(3).Copy
+ Worksheets(moto_sheet_name).Rows(last_line + 1).PasteSpecial (xlPasteAll)
+ Worksheets(moto_sheet_name).Rows(3).Copy
+ Worksheets(moto_sheet_name).Rows(last_line + 2).PasteSpecial (xlPasteAll)
+ Application.CutCopyMode = False
+ Worksheets(moto_sheet_name).Rows(last_line + 1).ClearContents
+ Worksheets(moto_sheet_name).Rows(last_line + 2).ClearContents
+
+'/　チューター行を挿入する。
+ 
+ Worksheets(moto_sheet_name).Cells(last_line + 1, 1) = "チューター"
+ Worksheets(moto_sheet_name).Cells(last_line + 2, 1) = Format("21:20", "hh:mm")
+ 
+ i = 5
+ j = 0
+ For i = 5 To 1 Step -1
+   j = j + max_cnt(i) * 2
+   Worksheets(moto_sheet_name).Rows(last_line - j + 1).Insert
+   Worksheets(moto_sheet_name).Rows(3).Copy
+   Worksheets(moto_sheet_name).Rows(last_line - j + 1).PasteSpecial (xlPasteAll)
+   Worksheets(moto_sheet_name).Rows(last_line - j + 1).ClearContents
+   Worksheets(moto_sheet_name).Cells(last_line - j + 1, 1) = "チューター"
+   Application.CutCopyMode = False
+ Next
+ last_line = Worksheets(moto_sheet_name).Cells(Rows.Count, 1).End(xlUp).Row
+'/　日祝を網掛けする。
+ i = 2
+ For i = 2 To last_clmn
+   If Worksheets(moto_sheet_name).Cells(4, i) = 1 Then
+     Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(4, i), Worksheets(moto_sheet_name).Cells(last_line, i + 4)).Interior.Color = RGB(166, 166, 166)
+   End If
+ Next i
+'/ブース表に分割する
+ Select Case Worksheets(moto_sheet_name).Cells(2, 2)
+   Case "日曜"
+     kaishi_ichi = 0
+   Case "月曜"
+     kaishi_ichi = 1
+   Case "火曜"
+     kaishi_ichi = 2
+   Case "水曜"
+     kaishi_ichi = 3
+   Case "木曜"
+     kaishi_ichi = 4
+   Case "金曜"
+     kaishi_ichi = 5
+   Case "土曜"
+     kaishi_ichi = 6
+ End Select
+ mai_su = Worksheets("Menu").Cells(4, 4)
+'/  l = 1
+'/  m = 1
+ Set ws = Sheets.Add(After:=Sheets(Sheets.Count))
+ ws.Name = yyyymm & "ブース表元シート2"
+ moto_sheet_name2 = yyyymm & "ブース表元シート2"
+ 
+ i = 1
+ j = 0
+ l = 1
+ m = 1 '/元のシートの横位置コントロールループ
+ Application.DisplayAlerts = False
+ For i = 1 To mai_su  '/貼り付け側のブック枚数ループ
+   Worksheets(moto_sheet_name).Columns(1).Copy
+   Worksheets(moto_sheet_name2).Columns(1).PasteSpecial (xlPasteAll)
+   Worksheets(moto_sheet_name2).Cells(1, 1) = Left(yyyymm, 4) & "/" & Right(yyyymm, 2)
+   If i = 1 Then
+     For j = 1 To 6   '/貼り付け側のループ回数（１週間分）
+       If kaishi_ichi = 0 Then
+         kaishi_ichi = 1
+         m = 2
+       End If
+       If j < kaishi_ichi Then
+         Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, 2), Worksheets(moto_sheet_name).Cells(last_line, 6)).Copy
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(1, 2 + (j - 1) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + j * 5 - 1)).PasteSpecial (xlPasteAll)
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(1, 2 + (j - 1) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + j * 5 - 1)).ClearContents
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(3, 2 + (j - 1) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + j * 5 - 1)).Interior.Color = RGB(166, 166, 166)
+       Else
+         Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, 2 + (m - 1) * 5), Worksheets(moto_sheet_name).Cells(last_line, 2 + m * 5 - 1)).Copy
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(1, 2 + (j - 1) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + j * 5 - 1)).PasteSpecial (xlPasteAll)
+         m = m + 1
+       End If
+     Next j
+   ElseIf i = mai_su Then
+     j = 1
+     For j = 1 To 7
+      
+       If Worksheets(moto_sheet_name).Cells(1, 2 + (m - 1) * 5) = "" Then
+         Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, 2), Worksheets(moto_sheet_name).Cells(last_line, 6)).Copy
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(1, 2 + (j - 2) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + (j - 1) * 5 - 1)).PasteSpecial (xlPasteAll)
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(1, 2 + (j - 2) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + (j - 1) * 5 - 1)).ClearContents
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(3, 2 + (j - 2) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + (j - 1) * 5 - 1)).Interior.Color = RGB(166, 166, 166)
+       Else
+         If Worksheets(moto_sheet_name).Cells(2, 2 + (m - 1) * 5) = "日曜" Then
+           m = m + 1
+         Else
+           Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, 2 + (m - 1) * 5), Worksheets(moto_sheet_name).Cells(last_line, 2 + m * 5 - 1)).Copy
+           Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(1, 2 + (j - 2) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + (j - 1) * 5 - 1)).PasteSpecial (xlPasteAll)
+           m = m + 1
+         End If
+       End If
+     Next j
+   Else
+'/     MsgBox "i=" & i
+     j = 1
+     For j = 1 To 7
+       If Worksheets(moto_sheet_name).Cells(2, 2 + (m - 1) * 5) = "日曜" Then
+         m = m + 1
+       Else
+'/         MsgBox "m= " & m
+         Worksheets(moto_sheet_name).Range(Worksheets(moto_sheet_name).Cells(1, 2 + (m - 1) * 5), Worksheets(moto_sheet_name).Cells(last_line, 2 + m * 5 - 1)).Copy
+         Worksheets(moto_sheet_name2).Range(Worksheets(moto_sheet_name2).Cells(1, 2 + (j - 2) * 5), Worksheets(moto_sheet_name2).Cells(last_line, 2 + (j - 1) * 5 - 1)).PasteSpecial (xlPasteAll)
+         m = m + 1
+       End If
+     Next j
+   End If
+   j = 1
+   For j = 1 To 6
+     Worksheets(moto_sheet_name2).Columns(2 + (j - 1) * 5).EntireColumn.ColumnWidth = 4
+     Worksheets(moto_sheet_name2).Columns(3 + (j - 1) * 5).EntireColumn.ColumnWidth = 10
+     Worksheets(moto_sheet_name2).Columns(4 + (j - 1) * 5).EntireColumn.ColumnWidth = 4.5
+     Worksheets(moto_sheet_name2).Columns(5 + (j - 1) * 5).EntireColumn.ColumnWidth = 10
+     Worksheets(moto_sheet_name2).Columns(6 + (j - 1) * 5).EntireColumn.ColumnWidth = 5.5
+   Next j
+
+   Worksheets(moto_sheet_name2).PageSetup.TopMargin = 1
+   Worksheets(moto_sheet_name2).PageSetup.BottomMargin = 1
+   Worksheets(moto_sheet_name2).PageSetup.LeftMargin = 1
+   Worksheets(moto_sheet_name2).PageSetup.RightMargin = 1
+   Worksheets(moto_sheet_name2).PageSetup.HeaderMargin = 1
+   Worksheets(moto_sheet_name2).PageSetup.FooterMargin = 1
+   Worksheets(moto_sheet_name2).PageSetup.Orientation = xlPortrait
+   Worksheets(moto_sheet_name2).PageSetup.PaperSize = xlPaperA3
+   Worksheets(moto_sheet_name2).PageSetup.Zoom = False
+   Worksheets(moto_sheet_name2).PageSetup.FitToPagesTall = 1
+   Worksheets(moto_sheet_name2).PageSetup.FitToPagesWide = 1
+   book_name = yyyymm & "_ブース表元シート_" & i & ".xlsx"
+   menuBook.Worksheets(moto_sheet_name2).Copy
+   
+
+   ActiveWorkbook.SaveAs fold_path3 & "\" & book_name
+
+   ActiveWorkbook.Close
+   menuBook.Worksheets("Menu").Activate
+ Next i
+
+'/ menuBook.Worksheets(moto_sheet_name).Copy
+'/ ActiveWorkbook.SaveAs fold_path3 & "\" & book_name
+'/ ActiveWorkbook.Close
+ menuBook.Worksheets(moto_sheet_name).Delete
+ menuBook.Worksheets(moto_sheet_name2).Delete
+ menuBook.Worksheets(file_name).Delete
+ Application.DisplayAlerts = True
+ menuBook.Worksheets("Menu").Activate
+ 
+End Sub
