@@ -5,6 +5,7 @@ Booth Schedule Generator – Cloud Edition (Render)
 Flask + gunicorn + openpyxl
 """
 import os, sys, json, random, threading, tempfile, shutil, time, secrets, atexit, traceback
+from copy import copy
 from collections import defaultdict
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
@@ -1062,6 +1063,127 @@ def upload_surveys():
         'teachers': teacher_names,
         'teacherCount': len(teacher_names),
         'weeks': len(weekly_teachers),
+        'errors': errors,
+        'files': {k: os.path.basename(v) for k, v in sd.get('files', {}).items()},
+    })
+
+@app.route('/api/consolidate_booth', methods=['POST'])
+@login_required
+def consolidate_booth():
+    """週別ブース表ファイルとメタデータファイル(必要コマ数等)を1つのブックに統合"""
+    sd = get_session_data()
+    meta_file = request.files.get('meta')
+    week_files = request.files.getlist('weeks')
+
+    if not meta_file or not meta_file.filename:
+        return jsonify({'error': 'メタデータファイル（必要コマ数等）を選択してください'}), 400
+    if not week_files or all(not f.filename for f in week_files):
+        return jsonify({'error': '週別ブース表ファイルを選択してください'}), 400
+
+    # メタデータファイルを保存・読み込み
+    ok, err = validate_file(meta_file)
+    if not ok:
+        return jsonify({'error': f'メタデータファイル: {err}'}), 400
+    meta_path = os.path.join(sd['dir'], 'meta_' + meta_file.filename)
+    meta_file.save(meta_path)
+
+    try:
+        meta_wb = openpyxl.load_workbook(meta_path)
+    except Exception as e:
+        return jsonify({'error': f'メタデータファイルの読み込みに失敗: {e}'}), 400
+
+    # メタシートを特定（必要コマ数、一覧表、ブース希望）
+    meta_keywords = ['必要コマ', '一覧', 'ブース希望']
+    meta_sheet_names = [sn for sn in meta_wb.sheetnames if any(k in sn for k in meta_keywords)]
+
+    # 古い週シートを削除（メタシート以外）
+    old_week_sheets = [sn for sn in meta_wb.sheetnames if sn not in meta_sheet_names]
+    for sn in old_week_sheets:
+        del meta_wb[sn]
+    print(f"[consolidate] メタシート: {meta_sheet_names}, 削除した古い週シート: {old_week_sheets}", flush=True)
+
+    # 週別ファイルを処理
+    errors = []
+    week_count = 0
+    for f in sorted(week_files, key=lambda x: x.filename):
+        ok, err = validate_file(f)
+        if not ok:
+            errors.append(f'{f.filename}: {err}')
+            continue
+
+        week_path = os.path.join(sd['dir'], 'week_' + f.filename)
+        try:
+            f.save(week_path)
+            week_wb = openpyxl.load_workbook(week_path)
+
+            for sn in week_wb.sheetnames:
+                # 週ファイル内のメタシートはスキップ
+                if any(k in sn for k in meta_keywords):
+                    continue
+
+                src_ws = week_wb[sn]
+                week_count += 1
+
+                # シート名の重複を回避
+                new_name = sn
+                if new_name in meta_wb.sheetnames:
+                    new_name = f'第{week_count}週'
+                while new_name in meta_wb.sheetnames:
+                    new_name = f'週{week_count}_{week_count}'
+
+                dst_ws = meta_wb.create_sheet(new_name)
+
+                # セルのコピー（値 + スタイル）
+                for row in src_ws.iter_rows():
+                    for cell in row:
+                        dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
+                        dst_cell.value = cell.value
+                        if cell.has_style:
+                            dst_cell.font = copy(cell.font)
+                            dst_cell.border = copy(cell.border)
+                            dst_cell.fill = copy(cell.fill)
+                            dst_cell.number_format = cell.number_format
+                            dst_cell.protection = copy(cell.protection)
+                            dst_cell.alignment = copy(cell.alignment)
+
+                # 結合セルのコピー
+                for merged_range in src_ws.merged_cells.ranges:
+                    dst_ws.merge_cells(str(merged_range))
+
+                # 列幅のコピー
+                for col_letter, dim in src_ws.column_dimensions.items():
+                    dst_ws.column_dimensions[col_letter].width = dim.width
+
+                # 行高さのコピー
+                for row_num, dim in src_ws.row_dimensions.items():
+                    dst_ws.row_dimensions[row_num].height = dim.height
+
+                print(f"[consolidate] {f.filename} -> シート '{new_name}' を追加", flush=True)
+
+        except Exception as e:
+            errors.append(f'{f.filename}: {str(e)}')
+            traceback.print_exc()
+
+    if week_count == 0:
+        return jsonify({'error': '有効な週シートがありません', 'details': errors}), 400
+
+    # 統合ブックを保存
+    output_path = os.path.join(sd['dir'], 'consolidated_booth.xlsx')
+    meta_wb.save(output_path)
+
+    # boothファイルとして登録
+    sd['files'] = {**sd.get('files', {}), 'booth': output_path}
+    save_session_files(sd)
+
+    # 統合結果のシート一覧
+    final_sheets = meta_wb.sheetnames
+
+    return jsonify({
+        'ok': True,
+        'weekCount': week_count,
+        'metaSheets': meta_sheet_names,
+        'removedSheets': old_week_sheets,
+        'finalSheets': final_sheets,
         'errors': errors,
         'files': {k: os.path.basename(v) for k, v in sd.get('files', {}).items()},
     })
