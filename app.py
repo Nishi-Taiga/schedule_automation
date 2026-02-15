@@ -5,6 +5,7 @@ Booth Schedule Generator – Cloud Edition (Render)
 Flask + gunicorn + openpyxl
 """
 import os, sys, json, random, threading, tempfile, shutil, time, secrets, atexit, traceback
+from copy import copy
 from collections import defaultdict
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
@@ -95,11 +96,61 @@ def save_session_files(sd):
     _save_meta(sid, meta)
 
 def save_session_result(sd):
-    """resultをインメモリキャッシュに保存"""
+    """resultをインメモリキャッシュ + ディスクに保存"""
     sid = sd['_sid']
     if not hasattr(get_session_data, '_cache'):
         get_session_data._cache = {}
     get_session_data._cache[sid] = {'result': sd['result']}
+    # ディスクにもJSON保存（サーバー再起動後の復元用）
+    _save_result_to_disk(sid, sd['result'])
+
+def _result_json_path(sid):
+    return os.path.join(_session_dir(sid), '_result.json')
+
+def _save_result_to_disk(sid, result):
+    """スケジュール結果をディスクにJSON保存"""
+    rp = _result_json_path(sid)
+    try:
+        # schedule内のtupleをlistに変換して保存
+        saveable = {}
+        if 'schedule_json' in result:
+            saveable['schedule_json'] = result['schedule_json']
+        if 'unplaced' in result:
+            saveable['unplaced'] = result['unplaced']
+        if 'office_teachers' in result:
+            saveable['office_teachers'] = result['office_teachers']
+        if 'booth_pref' in result:
+            saveable['booth_pref'] = result['booth_pref']
+        if 'students' in result:
+            # studentsのsetをlistに変換
+            stu_save = []
+            for s in result['students']:
+                sc = dict(s)
+                if isinstance(sc.get('avail'), set):
+                    sc['avail'] = sorted([list(a) for a in sc['avail']])
+                if isinstance(sc.get('backup_avail'), set):
+                    sc['backup_avail'] = sorted([list(a) for a in sc['backup_avail']])
+                if isinstance(sc.get('ng_dates'), set):
+                    sc['ng_dates'] = [list(d) for d in sc['ng_dates']]
+                if 'fixed' in sc:
+                    sc['fixed'] = [list(f) for f in sc['fixed']]
+                stu_save.append(sc)
+            saveable['students'] = stu_save
+        with open(rp, 'w', encoding='utf-8') as f:
+            json.dump(saveable, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[save_result] WARNING: ディスク保存失敗: {e}", flush=True)
+
+def _load_result_from_disk(sid):
+    """ディスクからスケジュール結果を読み込む"""
+    rp = _result_json_path(sid)
+    if not os.path.exists(rp):
+        return None
+    try:
+        with open(rp, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 # ========== 認証 ==========
 def login_required(f):
@@ -339,6 +390,8 @@ def load_students_from_wb(wb, year=2026, month=2):
             'avail':parse_avail(ws.cell(r,26).value),
             'ng_dates':parse_ng_dates(ws.cell(r,27).value, year, month),
             'fixed':parse_regular(ws.cell(r,28).value),
+            'backup_avail':parse_avail(ws.cell(r,29).value),
+            'notes':str(ws.cell(r,30).value or '').strip(),
         })
     return students
 
@@ -387,6 +440,148 @@ def load_weekly_teachers(path):
             week[day] = dt
         weeks.append(week)
     return weeks
+
+# ========== 元シート集約（講師回答ファイル → 週別出勤データ） ==========
+SURVEY_TIME_ROWS = {10: '14:55', 11: '16:00', 12: '17:05', 13: '18:10', 14: '19:15', 15: '20:20'}
+WEEKDAY_NORMALIZE = {
+    '月曜日':'月','月曜':'月','月':'月','Mon':'月',
+    '火曜日':'火','火曜':'火','火':'火','Tue':'火',
+    '水曜日':'水','水曜':'水','水':'水','Wed':'水',
+    '木曜日':'木','木曜':'木','木':'木','Thu':'木',
+    '金曜日':'金','金曜':'金','金':'金','Fri':'金',
+    '土曜日':'土','土曜':'土','土':'土','Sat':'土',
+    '日曜日':'日','日曜':'日','日':'日','Sun':'日',
+}
+
+def parse_survey_file(file_path):
+    """講師回答xlsxファイルを解析して講師名と出勤可能日時を返す"""
+    import datetime as _dt
+    wb = openpyxl.load_workbook(file_path, data_only=True)
+
+    # データシートを探す（「シート」を含むシート名、なければ先頭シート）
+    data_sheet = None
+    for sn in wb.sheetnames:
+        if 'シート' in sn:
+            data_sheet = sn
+            break
+    if not data_sheet:
+        data_sheet = wb.sheetnames[0]
+
+    ws = wb[data_sheet]
+
+    # 講師名（row2, col2）
+    raw_name = ws.cell(2, 2).value
+    teacher_name = to_short(raw_name) if raw_name else None
+    if not teacher_name:
+        return None
+
+    # 列ヘッダー（日付・曜日・週番号・祝日フラグ）を読み取る
+    columns = []
+    j = 3
+    while True:
+        # row 6: 日付, row 7: 曜日, row 8: 週番号, row 9: 祝休日フラグ
+        date_val = ws.cell(6, j).value
+        if date_val is None or str(date_val).strip() == '':
+            break
+
+        weekday_raw = str(ws.cell(7, j).value or '').strip()
+        weekday = WEEKDAY_NORMALIZE.get(weekday_raw, weekday_raw)
+
+        # 曜日が取れなかった場合はdateオブジェクトから推測
+        if weekday not in DAYS and isinstance(date_val, _dt.datetime):
+            wd_names = ['月','火','水','木','金','土','日']
+            weekday = wd_names[date_val.weekday()]
+
+        week_num = ws.cell(8, j).value
+        try:
+            week_num = int(week_num)
+        except (TypeError, ValueError):
+            week_num = None
+
+        holiday = ws.cell(9, j).value
+
+        columns.append({
+            'col': j,
+            'weekday': weekday,
+            'week_num': week_num,
+            'holiday': (holiday == 1 or str(holiday).strip() == '1'),
+        })
+        j += 1
+
+    # 出勤可能時間帯を読み取る
+    availability = []  # list of {weekday, week_num, time_str}
+    for row, time_str in SURVEY_TIME_ROWS.items():
+        for col_info in columns:
+            if col_info['holiday']:
+                continue
+            if col_info['weekday'] == '日':
+                continue
+            val = ws.cell(row, col_info['col']).value
+            if val == 1 or str(val).strip() == '1':
+                availability.append({
+                    'weekday': col_info['weekday'],
+                    'week_num': col_info['week_num'],
+                    'time': time_str,
+                })
+
+    return {
+        'name': teacher_name,
+        'full_name': str(raw_name).strip(),
+        'availability': availability,
+    }
+
+def aggregate_surveys_to_weekly(survey_results):
+    """複数の講師回答データを集約して週別出勤講師データを生成する
+    Returns: load_weekly_teachers と同じ形式 — weeks[wi][day][ts] = [teacher, ...]
+    """
+    # 週数を特定
+    max_week = 0
+    for sr in survey_results:
+        for a in sr['availability']:
+            wn = a.get('week_num')
+            if wn and wn > max_week:
+                max_week = wn
+    if max_week == 0:
+        max_week = 4  # fallback
+
+    weeks = []
+    for wi in range(max_week):
+        week = {}
+        for day in DAYS:
+            dt = {}
+            for time_str in ALL_TIMES:
+                ts = TIME_SHORT[time_str]
+                teachers = []
+                for sr in survey_results:
+                    for a in sr['availability']:
+                        if (a.get('week_num') == wi + 1 and
+                            a['weekday'] == day and
+                            a['time'] == time_str):
+                            if sr['name'] not in teachers:
+                                teachers.append(sr['name'])
+                            break
+                dt[ts] = teachers
+            week[day] = dt
+        weeks.append(week)
+
+    return weeks
+
+def generate_src_excel(weekly_teachers, output_path):
+    """週別出勤講師データからブース表元シートExcel（1ブック・週別シート）を生成"""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    for wi, week_data in enumerate(weekly_teachers):
+        ws = wb.create_sheet(f'第{wi+1}週')
+
+        for start_row, time_str, num_booths in SRC_TIME_SLOTS:
+            ts = TIME_SHORT[time_str]
+            for day, col in SRC_DAY_COLS.items():
+                teachers = week_data.get(day, {}).get(ts, [])
+                for bi in range(min(len(teachers), num_booths)):
+                    ws.cell(start_row + bi * 2, col, teachers[bi])
+
+    wb.save(output_path)
 
 def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office_teacher=None):
     """
@@ -814,6 +1009,185 @@ def upload():
     save_session_files(sd)
     return jsonify({'ok': True, 'files': {k: os.path.basename(v) for k,v in sd.get('files',{}).items()}})
 
+@app.route('/api/upload_surveys', methods=['POST'])
+@login_required
+def upload_surveys():
+    """講師回答ファイル（複数）をアップロード → 集約 → 元シートを自動生成"""
+    sd = get_session_data()
+    files = request.files.getlist('surveys')
+    if not files or all(not f.filename for f in files):
+        return jsonify({'error': '講師回答ファイルが含まれていません'}), 400
+
+    survey_results = []
+    errors = []
+
+    for f in files:
+        ok, err = validate_file(f)
+        if not ok:
+            errors.append(f'{f.filename}: {err}')
+            continue
+
+        path = os.path.join(sd['dir'], 'survey_' + f.filename)
+        try:
+            f.save(path)
+        except Exception as e:
+            errors.append(f'{f.filename}: 保存失敗 - {e}')
+            continue
+
+        try:
+            result = parse_survey_file(path)
+            if result:
+                survey_results.append(result)
+                print(f"[survey] {f.filename} -> {result['name']} ({len(result['availability'])}コマ)", flush=True)
+            else:
+                errors.append(f'{f.filename}: 講師情報を読み取れません')
+        except Exception as e:
+            errors.append(f'{f.filename}: {str(e)}')
+            traceback.print_exc()
+
+    if not survey_results:
+        return jsonify({'error': '有効な講師回答ファイルがありません', 'details': errors}), 400
+
+    # 集約して元シートExcelを生成
+    weekly_teachers = aggregate_surveys_to_weekly(survey_results)
+    src_path = os.path.join(sd['dir'], 'generated_src.xlsx')
+    generate_src_excel(weekly_teachers, src_path)
+
+    # srcファイルとして登録
+    sd['files'] = {**sd.get('files', {}), 'src': src_path}
+    save_session_files(sd)
+
+    teacher_names = sorted(set(sr['name'] for sr in survey_results))
+    return jsonify({
+        'ok': True,
+        'teachers': teacher_names,
+        'teacherCount': len(teacher_names),
+        'weeks': len(weekly_teachers),
+        'errors': errors,
+        'files': {k: os.path.basename(v) for k, v in sd.get('files', {}).items()},
+    })
+
+@app.route('/api/consolidate_booth', methods=['POST'])
+@login_required
+def consolidate_booth():
+    """週別ブース表ファイルとメタデータファイル(必要コマ数等)を1つのブックに統合"""
+    sd = get_session_data()
+    meta_file = request.files.get('meta')
+    week_files = request.files.getlist('weeks')
+
+    if not meta_file or not meta_file.filename:
+        return jsonify({'error': 'メタデータファイル（必要コマ数等）を選択してください'}), 400
+    if not week_files or all(not f.filename for f in week_files):
+        return jsonify({'error': '週別ブース表ファイルを選択してください'}), 400
+
+    # メタデータファイルを保存・読み込み
+    ok, err = validate_file(meta_file)
+    if not ok:
+        return jsonify({'error': f'メタデータファイル: {err}'}), 400
+    meta_path = os.path.join(sd['dir'], 'meta_' + meta_file.filename)
+    meta_file.save(meta_path)
+
+    try:
+        meta_wb = openpyxl.load_workbook(meta_path)
+    except Exception as e:
+        return jsonify({'error': f'メタデータファイルの読み込みに失敗: {e}'}), 400
+
+    # メタシートを特定（必要コマ数、一覧表、ブース希望）
+    meta_keywords = ['必要コマ', '一覧', 'ブース希望']
+    meta_sheet_names = [sn for sn in meta_wb.sheetnames if any(k in sn for k in meta_keywords)]
+
+    # 古い週シートを削除（メタシート以外）
+    old_week_sheets = [sn for sn in meta_wb.sheetnames if sn not in meta_sheet_names]
+    for sn in old_week_sheets:
+        del meta_wb[sn]
+    print(f"[consolidate] メタシート: {meta_sheet_names}, 削除した古い週シート: {old_week_sheets}", flush=True)
+
+    # 週別ファイルを処理
+    errors = []
+    week_count = 0
+    for f in sorted(week_files, key=lambda x: x.filename):
+        ok, err = validate_file(f)
+        if not ok:
+            errors.append(f'{f.filename}: {err}')
+            continue
+
+        week_path = os.path.join(sd['dir'], 'week_' + f.filename)
+        try:
+            f.save(week_path)
+            week_wb = openpyxl.load_workbook(week_path)
+
+            for sn in week_wb.sheetnames:
+                # 週ファイル内のメタシートはスキップ
+                if any(k in sn for k in meta_keywords):
+                    continue
+
+                src_ws = week_wb[sn]
+                week_count += 1
+
+                # シート名の重複を回避
+                new_name = sn
+                if new_name in meta_wb.sheetnames:
+                    new_name = f'第{week_count}週'
+                while new_name in meta_wb.sheetnames:
+                    new_name = f'週{week_count}_{week_count}'
+
+                dst_ws = meta_wb.create_sheet(new_name)
+
+                # セルのコピー（値 + スタイル）
+                for row in src_ws.iter_rows():
+                    for cell in row:
+                        dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
+                        dst_cell.value = cell.value
+                        if cell.has_style:
+                            dst_cell.font = copy(cell.font)
+                            dst_cell.border = copy(cell.border)
+                            dst_cell.fill = copy(cell.fill)
+                            dst_cell.number_format = cell.number_format
+                            dst_cell.protection = copy(cell.protection)
+                            dst_cell.alignment = copy(cell.alignment)
+
+                # 結合セルのコピー
+                for merged_range in src_ws.merged_cells.ranges:
+                    dst_ws.merge_cells(str(merged_range))
+
+                # 列幅のコピー
+                for col_letter, dim in src_ws.column_dimensions.items():
+                    dst_ws.column_dimensions[col_letter].width = dim.width
+
+                # 行高さのコピー
+                for row_num, dim in src_ws.row_dimensions.items():
+                    dst_ws.row_dimensions[row_num].height = dim.height
+
+                print(f"[consolidate] {f.filename} -> シート '{new_name}' を追加", flush=True)
+
+        except Exception as e:
+            errors.append(f'{f.filename}: {str(e)}')
+            traceback.print_exc()
+
+    if week_count == 0:
+        return jsonify({'error': '有効な週シートがありません', 'details': errors}), 400
+
+    # 統合ブックを保存
+    output_path = os.path.join(sd['dir'], 'consolidated_booth.xlsx')
+    meta_wb.save(output_path)
+
+    # boothファイルとして登録
+    sd['files'] = {**sd.get('files', {}), 'booth': output_path}
+    save_session_files(sd)
+
+    # 統合結果のシート一覧
+    final_sheets = meta_wb.sheetnames
+
+    return jsonify({
+        'ok': True,
+        'weekCount': week_count,
+        'metaSheets': meta_sheet_names,
+        'removedSheets': old_week_sheets,
+        'finalSheets': final_sheets,
+        'errors': errors,
+        'files': {k: os.path.basename(v) for k, v in sd.get('files', {}).items()},
+    })
+
 @app.route('/api/generate', methods=['POST'])
 @login_required
 def generate():
@@ -878,11 +1252,19 @@ def generate():
         }
         save_session_result(sd)
 
-        # 生徒データJSON化（NG情報含む）
+        # 生徒データJSON化（全情報含む）
         students_json = []
         for s in students:
+            avail_list = sorted([list(a) for a in s['avail']]) if s.get('avail') else None
+            backup_list = sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None
+            fixed_list = [[d, t, subj] for d, t, subj in s.get('fixed', [])]
             students_json.append({
                 'grade': s['grade'], 'name': s['name'],
+                'needs': s['needs'],
+                'avail': avail_list,
+                'backup_avail': backup_list,
+                'fixed': fixed_list,
+                'notes': s.get('notes', ''),
                 'ng_teachers': s['ng_teachers'],
                 'wish_teachers': s['wish_teachers'],
                 'ng_students': s['ng_students'],
@@ -956,6 +1338,93 @@ def update_schedule():
 
     placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     return jsonify({'ok': True, 'placed': placed})
+
+# ========== State persistence API ==========
+@app.route('/api/state')
+@login_required
+def get_state():
+    """保存済みスケジュール状態を返す（ページリロード時の復元用）"""
+    sd = get_session_data()
+    res = sd.get('result', {})
+
+    # インメモリキャッシュにあればそれを使う
+    if res and 'schedule_json' in res:
+        students_json = []
+        for s in res.get('students', []):
+            avail_list = sorted([list(a) for a in s['avail']]) if isinstance(s.get('avail'), set) else s.get('avail')
+            backup_list = sorted([list(a) for a in s['backup_avail']]) if isinstance(s.get('backup_avail'), set) else s.get('backup_avail')
+            fixed_list = [list(f) for f in s.get('fixed', [])] if s.get('fixed') else []
+            ng_dates_list = [list(d) for d in s.get('ng_dates', set())] if isinstance(s.get('ng_dates'), set) else s.get('ng_dates', [])
+            students_json.append({
+                'grade': s['grade'], 'name': s['name'],
+                'needs': s.get('needs', {}),
+                'avail': avail_list,
+                'backup_avail': backup_list,
+                'fixed': fixed_list,
+                'notes': s.get('notes', ''),
+                'ng_teachers': s.get('ng_teachers', []),
+                'wish_teachers': s.get('wish_teachers', []),
+                'ng_students': s.get('ng_students', []),
+                'ng_dates': ng_dates_list,
+            })
+        placed = sum(len(b['slots']) for w in res['schedule_json'] for d in w.values() for bs in d.values() for b in bs)
+        total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
+        return jsonify({
+            'has_state': True,
+            'placed': placed,
+            'total': total,
+            'schedule': res['schedule_json'],
+            'unplaced': res.get('unplaced', []),
+            'officeTeachers': res.get('office_teachers', []),
+            'boothPref': res.get('booth_pref', {}),
+            'students': students_json,
+        })
+
+    # ディスクから復元を試みる
+    sid = sd.get('_sid')
+    if sid:
+        disk_result = _load_result_from_disk(sid)
+        if disk_result and 'schedule_json' in disk_result:
+            students_json = []
+            for s in disk_result.get('students', []):
+                students_json.append({
+                    'grade': s.get('grade', ''), 'name': s.get('name', ''),
+                    'needs': s.get('needs', {}),
+                    'avail': s.get('avail'),
+                    'backup_avail': s.get('backup_avail'),
+                    'fixed': s.get('fixed', []),
+                    'notes': s.get('notes', ''),
+                    'ng_teachers': s.get('ng_teachers', []),
+                    'wish_teachers': s.get('wish_teachers', []),
+                    'ng_students': s.get('ng_students', []),
+                    'ng_dates': s.get('ng_dates', []),
+                })
+            placed = sum(len(b['slots']) for w in disk_result['schedule_json'] for d in w.values() for bs in d.values() for b in bs)
+            total = sum(sum(s.get('needs', {}).values()) for s in disk_result.get('students', []))
+
+            # インメモリキャッシュに復元
+            sd['result'] = {
+                'schedule_json': disk_result['schedule_json'],
+                'schedule': disk_result['schedule_json'],  # JSON形式で保持
+                'unplaced': disk_result.get('unplaced', []),
+                'office_teachers': disk_result.get('office_teachers', []),
+                'booth_pref': disk_result.get('booth_pref', {}),
+                'students': disk_result.get('students', []),
+            }
+            save_session_result(sd)
+
+            return jsonify({
+                'has_state': True,
+                'placed': placed,
+                'total': total,
+                'schedule': disk_result['schedule_json'],
+                'unplaced': disk_result.get('unplaced', []),
+                'officeTeachers': disk_result.get('office_teachers', []),
+                'boothPref': disk_result.get('booth_pref', {}),
+                'students': students_json,
+            })
+
+    return jsonify({'has_state': False})
 
 # ========== 起動 ==========
 if __name__ == '__main__':
