@@ -440,6 +440,148 @@ def load_weekly_teachers(path):
         weeks.append(week)
     return weeks
 
+# ========== 元シート集約（講師回答ファイル → 週別出勤データ） ==========
+SURVEY_TIME_ROWS = {10: '14:55', 11: '16:00', 12: '17:05', 13: '18:10', 14: '19:15', 15: '20:20'}
+WEEKDAY_NORMALIZE = {
+    '月曜日':'月','月曜':'月','月':'月','Mon':'月',
+    '火曜日':'火','火曜':'火','火':'火','Tue':'火',
+    '水曜日':'水','水曜':'水','水':'水','Wed':'水',
+    '木曜日':'木','木曜':'木','木':'木','Thu':'木',
+    '金曜日':'金','金曜':'金','金':'金','Fri':'金',
+    '土曜日':'土','土曜':'土','土':'土','Sat':'土',
+    '日曜日':'日','日曜':'日','日':'日','Sun':'日',
+}
+
+def parse_survey_file(file_path):
+    """講師回答xlsxファイルを解析して講師名と出勤可能日時を返す"""
+    import datetime as _dt
+    wb = openpyxl.load_workbook(file_path, data_only=True)
+
+    # データシートを探す（「シート」を含むシート名、なければ先頭シート）
+    data_sheet = None
+    for sn in wb.sheetnames:
+        if 'シート' in sn:
+            data_sheet = sn
+            break
+    if not data_sheet:
+        data_sheet = wb.sheetnames[0]
+
+    ws = wb[data_sheet]
+
+    # 講師名（row2, col2）
+    raw_name = ws.cell(2, 2).value
+    teacher_name = to_short(raw_name) if raw_name else None
+    if not teacher_name:
+        return None
+
+    # 列ヘッダー（日付・曜日・週番号・祝日フラグ）を読み取る
+    columns = []
+    j = 3
+    while True:
+        # row 6: 日付, row 7: 曜日, row 8: 週番号, row 9: 祝休日フラグ
+        date_val = ws.cell(6, j).value
+        if date_val is None or str(date_val).strip() == '':
+            break
+
+        weekday_raw = str(ws.cell(7, j).value or '').strip()
+        weekday = WEEKDAY_NORMALIZE.get(weekday_raw, weekday_raw)
+
+        # 曜日が取れなかった場合はdateオブジェクトから推測
+        if weekday not in DAYS and isinstance(date_val, _dt.datetime):
+            wd_names = ['月','火','水','木','金','土','日']
+            weekday = wd_names[date_val.weekday()]
+
+        week_num = ws.cell(8, j).value
+        try:
+            week_num = int(week_num)
+        except (TypeError, ValueError):
+            week_num = None
+
+        holiday = ws.cell(9, j).value
+
+        columns.append({
+            'col': j,
+            'weekday': weekday,
+            'week_num': week_num,
+            'holiday': (holiday == 1 or str(holiday).strip() == '1'),
+        })
+        j += 1
+
+    # 出勤可能時間帯を読み取る
+    availability = []  # list of {weekday, week_num, time_str}
+    for row, time_str in SURVEY_TIME_ROWS.items():
+        for col_info in columns:
+            if col_info['holiday']:
+                continue
+            if col_info['weekday'] == '日':
+                continue
+            val = ws.cell(row, col_info['col']).value
+            if val == 1 or str(val).strip() == '1':
+                availability.append({
+                    'weekday': col_info['weekday'],
+                    'week_num': col_info['week_num'],
+                    'time': time_str,
+                })
+
+    return {
+        'name': teacher_name,
+        'full_name': str(raw_name).strip(),
+        'availability': availability,
+    }
+
+def aggregate_surveys_to_weekly(survey_results):
+    """複数の講師回答データを集約して週別出勤講師データを生成する
+    Returns: load_weekly_teachers と同じ形式 — weeks[wi][day][ts] = [teacher, ...]
+    """
+    # 週数を特定
+    max_week = 0
+    for sr in survey_results:
+        for a in sr['availability']:
+            wn = a.get('week_num')
+            if wn and wn > max_week:
+                max_week = wn
+    if max_week == 0:
+        max_week = 4  # fallback
+
+    weeks = []
+    for wi in range(max_week):
+        week = {}
+        for day in DAYS:
+            dt = {}
+            for time_str in ALL_TIMES:
+                ts = TIME_SHORT[time_str]
+                teachers = []
+                for sr in survey_results:
+                    for a in sr['availability']:
+                        if (a.get('week_num') == wi + 1 and
+                            a['weekday'] == day and
+                            a['time'] == time_str):
+                            if sr['name'] not in teachers:
+                                teachers.append(sr['name'])
+                            break
+                dt[ts] = teachers
+            week[day] = dt
+        weeks.append(week)
+
+    return weeks
+
+def generate_src_excel(weekly_teachers, output_path):
+    """週別出勤講師データからブース表元シートExcel（1ブック・週別シート）を生成"""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    for wi, week_data in enumerate(weekly_teachers):
+        ws = wb.create_sheet(f'第{wi+1}週')
+
+        for start_row, time_str, num_booths in SRC_TIME_SLOTS:
+            ts = TIME_SHORT[time_str]
+            for day, col in SRC_DAY_COLS.items():
+                teachers = week_data.get(day, {}).get(ts, [])
+                for bi in range(min(len(teachers), num_booths)):
+                    ws.cell(start_row + bi * 2, col, teachers[bi])
+
+    wb.save(output_path)
+
 def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office_teacher=None):
     """
     1日分の全時間帯データから、ブース⑥まで（最大6名）に講師を絞り込む。
@@ -865,6 +1007,64 @@ def upload():
     sd['files'] = {**sd.get('files',{}), **saved}
     save_session_files(sd)
     return jsonify({'ok': True, 'files': {k: os.path.basename(v) for k,v in sd.get('files',{}).items()}})
+
+@app.route('/api/upload_surveys', methods=['POST'])
+@login_required
+def upload_surveys():
+    """講師回答ファイル（複数）をアップロード → 集約 → 元シートを自動生成"""
+    sd = get_session_data()
+    files = request.files.getlist('surveys')
+    if not files or all(not f.filename for f in files):
+        return jsonify({'error': '講師回答ファイルが含まれていません'}), 400
+
+    survey_results = []
+    errors = []
+
+    for f in files:
+        ok, err = validate_file(f)
+        if not ok:
+            errors.append(f'{f.filename}: {err}')
+            continue
+
+        path = os.path.join(sd['dir'], 'survey_' + f.filename)
+        try:
+            f.save(path)
+        except Exception as e:
+            errors.append(f'{f.filename}: 保存失敗 - {e}')
+            continue
+
+        try:
+            result = parse_survey_file(path)
+            if result:
+                survey_results.append(result)
+                print(f"[survey] {f.filename} -> {result['name']} ({len(result['availability'])}コマ)", flush=True)
+            else:
+                errors.append(f'{f.filename}: 講師情報を読み取れません')
+        except Exception as e:
+            errors.append(f'{f.filename}: {str(e)}')
+            traceback.print_exc()
+
+    if not survey_results:
+        return jsonify({'error': '有効な講師回答ファイルがありません', 'details': errors}), 400
+
+    # 集約して元シートExcelを生成
+    weekly_teachers = aggregate_surveys_to_weekly(survey_results)
+    src_path = os.path.join(sd['dir'], 'generated_src.xlsx')
+    generate_src_excel(weekly_teachers, src_path)
+
+    # srcファイルとして登録
+    sd['files'] = {**sd.get('files', {}), 'src': src_path}
+    save_session_files(sd)
+
+    teacher_names = sorted(set(sr['name'] for sr in survey_results))
+    return jsonify({
+        'ok': True,
+        'teachers': teacher_names,
+        'teacherCount': len(teacher_names),
+        'weeks': len(weekly_teachers),
+        'errors': errors,
+        'files': {k: os.path.basename(v) for k, v in sd.get('files', {}).items()},
+    })
 
 @app.route('/api/generate', methods=['POST'])
 @login_required

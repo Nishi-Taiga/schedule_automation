@@ -137,6 +137,18 @@ table.stu tr:hover{background:#f0f5ff}
 .restore-banner{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .restore-banner .msg{font-size:13px;color:var(--accent2);font-weight:600}
 .restore-banner .actions{display:flex;gap:8px}
+/* Survey upload toggle */
+.src-toggle{display:flex;gap:4px;margin-bottom:10px}
+.src-toggle button{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all .12s;color:var(--ink2)}
+.src-toggle button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.survey-zone{border:2px dashed var(--border);border-radius:10px;padding:14px 18px;background:#fafbfc;transition:all .15s;cursor:pointer;position:relative}
+.survey-zone:hover{border-color:var(--accent);background:#f0f5ff}
+.survey-zone.done{border-color:var(--green);background:#f0fdf4}
+.survey-zone .survey-label{font-weight:600;font-size:13.5px;margin-bottom:4px}
+.survey-zone .survey-desc{font-size:11.5px;color:var(--ink3)}
+.survey-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.survey-files{margin-top:8px;font-size:11px;color:var(--ink2)}
+.survey-files .sf-item{display:inline-block;padding:2px 8px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:4px;margin:2px;font-size:10px}
 /* Modal */
 .modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center}
 .modal{background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.2)}
@@ -158,7 +170,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.3.0</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.4.0</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -167,7 +179,17 @@ table.stu tr:hover{background:#f0f5ff}
 </div>
 <div id="pUpload" class="card">
 <h2>ファイルアップロード</h2>
+<h3 style="font-size:13px;margin-bottom:6px">元シートの取得方法</h3>
+<div class="src-toggle">
+<button id="srcMode1" class="active" onclick="setSrcMode('file')">元シートをアップロード</button>
+<button id="srcMode2" onclick="setSrcMode('survey')">講師回答ファイルから集約</button>
+</div>
+<div id="srcFileMode">
 <label class="upload-row" id="uSrc"><div class="icon">📁</div><div><div class="label">ブース表元シート (.xlsx)</div><div class="desc" id="nSrc">出勤可能講師の一覧</div></div><input type="file" accept=".xlsx" onchange="onF(this,'src')"></label>
+</div>
+<div id="srcSurveyMode" style="display:none">
+<div class="survey-zone" id="surveyZone"><div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div><div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx" multiple onchange="onSurveyFiles(this)"><div class="survey-files" id="surveyFileList"></div></div>
+</div>
 <label class="upload-row" id="uBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsx)</div><div class="desc" id="nBooth">生徒情報・講師指導可能科目・テンプレート</div></div><input type="file" accept=".xlsx" onchange="onF(this,'booth')"></label>
 <div class="file-note">※ ブース表に「必要コマ数」「一覧表」「講師ブース希望」シートが含まれている必要があります</div>
 <div class="bg"><button class="btn btn-p" id="toS" disabled onclick="go('settings')">次へ: 設定 →</button></div>
@@ -235,6 +257,31 @@ if(R.boothPref)BP=Object.entries(R.boothPref).map(([t,b])=>({teacher:t,booth:b})
 const b=document.getElementById('restoreBanner');if(b)b.remove();go('result');rR();showSaveIndicator('復元しました');}
 function dismissRestore(){const b=document.getElementById('restoreBanner');if(b)b.remove();window._savedState=null;}
 window.addEventListener('DOMContentLoaded',()=>{checkSavedState();});
+
+// === Survey upload ===
+let srcMode='file';
+function setSrcMode(mode){srcMode=mode;
+document.getElementById('srcMode1').className=mode==='file'?'active':'';
+document.getElementById('srcMode2').className=mode==='survey'?'active':'';
+document.getElementById('srcFileMode').style.display=mode==='file'?'':'none';
+document.getElementById('srcSurveyMode').style.display=mode==='survey'?'':'none';
+checkReady();}
+function checkReady(){const ready=uploaded.src&&uploaded.booth;document.getElementById('toS').disabled=!ready;}
+async function onSurveyFiles(inp){const files=inp.files;if(!files||!files.length)return;
+const zone=document.getElementById('surveyZone');const desc=document.getElementById('surveyDesc');const flist=document.getElementById('surveyFileList');
+desc.textContent=files.length+'件のファイルをアップロード中...';zone.classList.remove('done');
+document.getElementById('upSt').textContent='';document.getElementById('upSt').className='status';
+const fd=new FormData();for(let i=0;i<files.length;i++)fd.append('surveys',files[i]);
+try{const res=await fetch('/api/upload_surveys',{method:'POST',body:fd});const d=await res.json();
+if(res.ok&&d.ok){zone.classList.add('done');desc.textContent=d.teacherCount+'名の講師データを集約（'+d.weeks+'週分）';
+flist.innerHTML=d.teachers.map(t=>'<span class="sf-item">'+t+'</span>').join('');
+uploaded.src=true;
+if(d.errors&&d.errors.length){document.getElementById('upSt').textContent='一部エラー: '+d.errors.join(', ');document.getElementById('upSt').className='status err';}
+}else{desc.textContent='エラー: '+(d.error||'不明');uploaded.src=false;
+if(d.details)document.getElementById('upSt').innerHTML=d.details.map(e=>'<div>'+e+'</div>').join('');document.getElementById('upSt').className='status err';}
+}catch(e){desc.textContent='通信エラー: '+e.message;uploaded.src=false;}
+checkReady();
+if(uploaded.src&&uploaded.booth){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}}}
 
 function fmtSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
 function showUpErr(detail){const st=document.getElementById('upSt');st.className='status err';st.innerHTML=detail;}
