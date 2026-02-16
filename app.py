@@ -469,6 +469,26 @@ WEEKDAY_NORMALIZE = {
     '日曜日':'日','日曜':'日','日':'日','Sun':'日',
 }
 
+def _compute_month_week_map(year, month):
+    """月の各日を週インデックス（1始まり）にマッピング。月〜土を1週とする。"""
+    import datetime as _dt, calendar
+    last_day = calendar.monthrange(year, month)[1]
+    week_map = {}
+    current_week = 0
+    first_monday_seen = False
+    for d in range(1, last_day + 1):
+        dt = _dt.date(year, month, d)
+        dow = dt.weekday()
+        if dow == 6:  # 日曜はスキップ
+            continue
+        if dow == 0:  # 月曜で新しい週を開始
+            current_week += 1
+            first_monday_seen = True
+        elif not first_monday_seen and current_week == 0:
+            current_week = 1  # 月初が月曜以外の場合も第1週
+        week_map[d] = current_week
+    return week_map
+
 def parse_survey_file(file_path):
     """講師回答xlsxファイルを解析して講師名と出勤可能日時を返す"""
     import datetime as _dt
@@ -491,11 +511,22 @@ def parse_survey_file(file_path):
     if not teacher_name:
         return None
 
-    # 列ヘッダー（日付・曜日・週番号・祝日フラグ）を読み取る
+    # 日付から年月を取得し、週マップを構築
+    year, month = None, None
+    for c in range(3, ws.max_column + 1):
+        v = ws.cell(6, c).value
+        if isinstance(v, (_dt.datetime, _dt.date)):
+            dt = v if isinstance(v, _dt.date) else v.date()
+            year, month = dt.year, dt.month
+            break
+
+    week_map = _compute_month_week_map(year, month) if year and month else {}
+
+    # 列ヘッダー（日付・曜日・祝日フラグ）を読み取る
     columns = []
     j = 3
     while True:
-        # row 6: 日付, row 7: 曜日, row 8: 週番号, row 9: 祝休日フラグ
+        # row 6: 日付, row 7: 曜日, row 9: 祝休日フラグ
         date_val = ws.cell(6, j).value
         if date_val is None or str(date_val).strip() == '':
             break
@@ -504,15 +535,18 @@ def parse_survey_file(file_path):
         weekday = WEEKDAY_NORMALIZE.get(weekday_raw, weekday_raw)
 
         # 曜日が取れなかった場合はdateオブジェクトから推測
-        if weekday not in DAYS and isinstance(date_val, _dt.datetime):
+        if weekday not in DAYS and isinstance(date_val, (_dt.datetime, _dt.date)):
+            dt = date_val if isinstance(date_val, _dt.date) else date_val.date()
             wd_names = ['月','火','水','木','金','土','日']
-            weekday = wd_names[date_val.weekday()]
+            weekday = wd_names[dt.weekday()]
 
-        week_num = ws.cell(8, j).value
-        try:
-            week_num = int(week_num)
-        except (TypeError, ValueError):
-            week_num = None
+        # 日付から週番号を算出（row 8 は曜日出現回数なので使わない）
+        day_of_month = None
+        if isinstance(date_val, _dt.datetime):
+            day_of_month = date_val.day
+        elif isinstance(date_val, _dt.date):
+            day_of_month = date_val.day
+        week_num = week_map.get(day_of_month)
 
         holiday = ws.cell(9, j).value
 
@@ -573,8 +607,9 @@ def aggregate_surveys_to_weekly(survey_results):
                         if (a.get('week_num') == wi + 1 and
                             a['weekday'] == day and
                             a['time'] == time_str):
-                            if sr['name'] not in teachers:
-                                teachers.append(sr['name'])
+                            fn = sr.get('full_name') or sr['name']
+                            if fn not in teachers:
+                                teachers.append(fn)
                             break
                 dt[ts] = teachers
             week[day] = dt
