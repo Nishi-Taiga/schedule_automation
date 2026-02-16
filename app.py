@@ -238,9 +238,9 @@ SRC_DAY_COLS = {'月':3,'火':8,'水':13,'木':18,'金':23,'土':28}
 
 SKILL_COL_MAP = {
     3:'小国',4:'小算',5:'小英',6:'小理',7:'小社',
-    8:'受国',9:'受算',10:'受英',11:'受理',12:'受社',
-    13:'中国',14:'中数',15:'中英',16:'中理',17:'中社',
-    18:'高現',19:'高古',
+    8:'受国',9:'受算',10:'受理',11:'受社',
+    12:'中国',13:'中数',14:'中英',15:'中理',16:'中社',
+    17:'高現',18:'高古',
 }
 
 LAYOUT = {
@@ -264,19 +264,33 @@ def to_short(name):
 def get_skill_keys(grade, subject):
     g = str(grade).upper()
     s = str(subject)
+    # 英検は英語スキルでチェック
+    if s == '英検':
+        s = '英'
     if g.startswith('S'):
         yr = int(g[1:]) if len(g)>1 else 0
-        if yr >= 4: return ['受算'] if s=='数' else ['受'+s]
+        if s == '数': s = '算'  # 小学/受験は「算」
+        if yr >= 4:
+            # 中学受験には英語がないので小学英語で代替
+            if s == '英': return ['小英']
+            return ['受'+s]
         return ['小'+s]
-    elif g.startswith('C'): return ['中'+s]
+    elif g.startswith('C'):
+        if s == '算': s = '数'  # 中学は「数」
+        return ['中'+s]
     elif g.startswith('K'):
-        if s=='数': return ['高ⅠA','高ⅡB','高Ⅲ','高C']
+        if s == '算': s = '数'
+        if s == '数': return ['高ⅠA','高ⅡB','高Ⅲ','高C']
         return ['高'+s]
+    if s == '算': s = '数'
     return ['中'+s]
 
 def can_teach(teacher, grade, subject, skills):
     keys = get_skill_keys(grade, subject)
-    if teacher not in skills: return True
+    if not skills:
+        return True  # スキルデータ自体がない場合は全員可
+    if teacher not in skills:
+        return False  # スキルシートに未登録の講師は配置不可
     return any(k in skills[teacher] for k in keys)
 
 def load_teacher_skills(wb):
@@ -299,7 +313,7 @@ def load_teacher_skills(wb):
         s = set()
         for c, k in SKILL_COL_MAP.items():
             if ws.cell(r,c).value == '◯': s.add(k)
-        for c in range(20, ws.max_column+1):
+        for c in range(19, ws.max_column+1):
             v, h = ws.cell(r,c).value, ws.cell(3,c).value
             if v == '◯' and h: s.add('高'+str(h))
         skills[t] = s
@@ -785,12 +799,16 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
             times = SATURDAY_TIMES if day=='土' else WEEKDAY_TIMES
             for tl in times:
                 ts = TIME_SHORT[tl]
-                if s['avail'] is not None and (day,ts) not in s['avail']: continue
+                is_primary = s['avail'] is None or (day,ts) in s['avail']
+                is_backup = (not is_primary) and s.get('backup_avail') and (day,ts) in s['backup_avail']
+                if not is_primary and not is_backup: continue
                 if (day,ts) in existing: continue
                 if ts not in ws.get(day,{}): continue
                 for bi,b in enumerate(ws[day][ts]):
                     if not check_booth(b, bi, s, day, subj, ws): continue
                     sc = 0
+                    # 予備時間はペナルティ（希望時間を優先）
+                    if is_backup: sc -= 150
                     # 同曜日に既に別科目が配置されている場合はやや優先（ただし集中しすぎを防止）
                     day_count = sum(1 for d_,_ in existing if d_==day)
                     if day in any_placed_days:
@@ -798,7 +816,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                             sc += 50   # 2コマ目まではやや優先
                         else:
                             sc -= 80   # 3コマ目以降はペナルティ（分散を促す）
-                    if b['teacher'] in s['wish_teachers']: sc += 100
+                    if b['teacher'] in s['wish_teachers']: sc += 200
                     t = b['teacher']
                     if t in booth_pref and booth_pref[t]==bi+1: sc += 10
                     if len(b['slots'])==0: sc += 20
