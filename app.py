@@ -136,6 +136,8 @@ def _save_result_to_disk(sid, result):
                     sc['fixed'] = [list(f) for f in sc['fixed']]
                 stu_save.append(sc)
             saveable['students'] = stu_save
+        if 'week_dates' in result:
+            saveable['week_dates'] = result['week_dates']
         with open(rp, 'w', encoding='utf-8') as f:
             json.dump(saveable, f, ensure_ascii=False)
     except Exception as e:
@@ -372,7 +374,7 @@ def load_students_from_wb(wb, year=2026, month=2):
     ws = wb['必要コマ数']
     subj_cols = [(5,'英'),(6,'英検'),(7,'数'),(8,'算'),(9,'国'),(10,'理'),
                  (11,'社'),(12,'現'),(13,'古'),(14,'物'),(15,'化'),(16,'生'),
-                 (17,'日'),(18,'地'),(19,'政'),(20,'世'),(21,'作')]
+                 (17,'日'),(18,'地'),(19,'政'),(20,'世')]
     students = []
     for r in range(3, 60):
         grade, name = ws.cell(r,2).value, ws.cell(r,4).value
@@ -384,14 +386,14 @@ def load_students_from_wb(wb, year=2026, month=2):
         parse_list = lambda v: [t.strip() for t in str(v or '').split(',') if t.strip()]
         students.append({
             'grade':str(grade),'name':str(name),'needs':needs,
-            'wish_teachers':parse_list(ws.cell(r,23).value),
-            'ng_teachers':parse_list(ws.cell(r,24).value),
-            'ng_students':parse_list(ws.cell(r,25).value),
-            'avail':parse_avail(ws.cell(r,26).value),
+            'wish_teachers':parse_list(ws.cell(r,22).value),
+            'ng_teachers':parse_list(ws.cell(r,23).value),
+            'ng_students':parse_list(ws.cell(r,24).value),
+            'avail':parse_avail(ws.cell(r,25).value),
+            'backup_avail':parse_avail(ws.cell(r,26).value),
             'ng_dates':parse_ng_dates(ws.cell(r,27).value, year, month),
             'fixed':parse_regular(ws.cell(r,28).value),
-            'backup_avail':parse_avail(ws.cell(r,29).value),
-            'notes':str(ws.cell(r,30).value or '').strip(),
+            'notes':str(ws.cell(r,29).value or '').strip(),
         })
     return students
 
@@ -852,6 +854,42 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
 
     return schedule, unplaced, office_teachers
 
+def extract_week_dates(booth_wb, num_weeks):
+    """ブース表シート名から各週・各曜日の日付を算出する。
+    シート名例: 'ブース表　2026.02.01-07' → 年=2026, 月=2, 開始日=1
+    Returns: {'year':int, 'month':int, 'weeks':[ {day_name: day_number, ...}, ... ]}
+    """
+    import datetime as _dt, re
+    meta_keywords = ['必要コマ', '一覧', 'ブース希望']
+    week_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in meta_keywords)]
+
+    year, month = None, None
+    for sn in week_sheets:
+        m = re.search(r'(\d{4})[./](\d{1,2})[./](\d{1,2})', sn)
+        if m:
+            year, month = int(m.group(1)), int(m.group(2))
+            break
+    if not year:
+        return None
+
+    day_names = ['月','火','水','木','金','土']
+    last_day = (_dt.date(year, month % 12 + 1, 1) - _dt.timedelta(days=1)).day if month < 12 else 31
+    weeks = []
+    for wi in range(num_weeks):
+        start = wi * 7 + 1
+        end = min((wi + 1) * 7, last_day)
+        day_map = {}
+        for d in range(start, end + 1):
+            try:
+                dt = _dt.date(year, month, d)
+            except ValueError:
+                continue
+            wd = dt.weekday()  # 0=Mon ... 5=Sat, 6=Sun
+            if wd < 6:
+                day_map[day_names[wd]] = d
+        weeks.append(day_map)
+    return {'year': year, 'month': month, 'weeks': weeks}
+
 # ========== Excel出力 ==========
 def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
     wb = openpyxl.load_workbook(booth_path)
@@ -1242,6 +1280,9 @@ def generate():
                 wj[day] = dj
             schedule_json.append(wj)
 
+        # 週ごとの日付情報を取得
+        week_dates = extract_week_dates(booth_wb, len(schedule))
+
         sd['result'] = {
             'schedule': schedule,
             'schedule_json': schedule_json,
@@ -1249,6 +1290,7 @@ def generate():
             'office_teachers': office_teachers,
             'booth_pref': booth_pref,
             'students': students,
+            'week_dates': week_dates,
         }
         save_session_result(sd)
 
@@ -1279,6 +1321,7 @@ def generate():
             'officeTeachers': office_teachers,
             'boothPref': booth_pref,
             'students': students_json,
+            'weekDates': week_dates,
         })
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -1378,6 +1421,7 @@ def get_state():
             'officeTeachers': res.get('office_teachers', []),
             'boothPref': res.get('booth_pref', {}),
             'students': students_json,
+            'weekDates': res.get('week_dates'),
         })
 
     # ディスクから復元を試みる
@@ -1410,6 +1454,7 @@ def get_state():
                 'office_teachers': disk_result.get('office_teachers', []),
                 'booth_pref': disk_result.get('booth_pref', {}),
                 'students': disk_result.get('students', []),
+                'week_dates': disk_result.get('week_dates'),
             }
             save_session_result(sd)
 
@@ -1422,6 +1467,7 @@ def get_state():
                 'officeTeachers': disk_result.get('office_teachers', []),
                 'boothPref': disk_result.get('booth_pref', {}),
                 'students': students_json,
+                'weekDates': disk_result.get('week_dates'),
             })
 
     return jsonify({'has_state': False})
