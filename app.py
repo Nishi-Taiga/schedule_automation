@@ -768,16 +768,35 @@ def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office
 
         return [t for t in slots if t is not None]
 
+    # 各講師の出勤範囲（最初〜最後の出勤コマ）を計算
+    # 元シートの読み込み制限(nb=6)で中間コマが欠落する場合を補間する
+    ts_order = {'14':0, '16':1, '17':2, '18':3, '19':4, '20':5}
+    teacher_range = {}  # {teacher: (first_ord, last_ord)}
+    for ts in ts_list:
+        for t in day_data.get(ts, []):
+            if t not in selected or t == office_teacher:
+                continue
+            o = ts_order.get(ts, 99)
+            if t not in teacher_range:
+                teacher_range[t] = (o, o)
+            else:
+                teacher_range[t] = (teacher_range[t][0], max(teacher_range[t][1], o))
+
     # 1日分のブース配置を1回だけ決定し、全時間帯で同じブース番号を維持する
     # （途中で別講師がそのブースに入らないようにする）
     all_day_teachers = [t for t in selected if t != office_teacher]
     day_booth_order = assign_booth_order(all_day_teachers)
-    # 講師→ブース位置のマッピング
-    teacher_bi = {t: i for i, t in enumerate(day_booth_order)}
 
     result = {}
     for ts in ts_list:
-        available = set(t for t in day_data.get(ts, []) if t in selected and t != office_teacher)
+        cur_ord = ts_order.get(ts, 99)
+        # day_dataに直接含まれる講師 OR 出勤範囲内（first〜last）の講師
+        available = set()
+        for t in day_booth_order:
+            if t in teacher_range:
+                first, last = teacher_range[t]
+                if first <= cur_ord <= last:
+                    available.add(t)
         # 固定ブース位置に基づいてリスト生成（出勤していないコマは空文字）
         booths = []
         for i, t in enumerate(day_booth_order):
