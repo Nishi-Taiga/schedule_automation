@@ -988,6 +988,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
 
     # Phase2: 通常配置
     order = sorted(students, key=lambda s: (
+        0 if s['wish_teachers'] else 1,
         len(s['avail']) if s['avail'] else 999, sum(s['needs'].values())
     ))
     unplaced_reasons = {}  # (name, subj) -> reason
