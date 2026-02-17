@@ -190,7 +190,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.14</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.15</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -479,12 +479,11 @@ const close=e=>{if(!picker.contains(e.target)){picker.remove();document.removeEv
 setTimeout(()=>document.addEventListener('click',close),0);}
 function replaceTeacher(wi,day,bi,newT){
 const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
-// 新講師の最早出勤時間帯を取得
-const wt=R.weeklyTeachers;let earliest=null;
-if(wt&&wt[wi]&&wt[wi][day]){for(const t of times){if((wt[wi][day][t]||[]).includes(newT)){earliest=t;break;}}}
+const wt=R.weeklyTeachers;
 for(const t of times){const bs=ws[day]?.[t];if(!bs||!bs[bi])continue;
-const tsOrd={'14':0,'16':1,'17':2,'18':3,'19':4,'20':5};
-if(earliest&&tsOrd[t]>=tsOrd[earliest]){bs[bi].teacher=newT;}else{bs[bi].teacher='';}}
+// 出勤しているコマのみ講師を配置（出勤していないコマは空にする）
+const isAvail=wt&&wt[wi]&&wt[wi][day]&&(wt[wi][day][t]||[]).includes(newT);
+bs[bi].teacher=isAvail?newT:'';}
 edited=true;rR();}
 function swapTeacherFull(wi,day,bi,targetT){
 const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];

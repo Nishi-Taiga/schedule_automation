@@ -768,20 +768,24 @@ def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office
 
         return [t for t in slots if t is not None]
 
-    # 各時間帯のブースリストを生成
-    # 選ばれた講師は最早出勤時間帯から最終時間帯まで連続でブースに配置する
-    ts_order = {'14':0, '16':1, '17':2, '18':3, '19':4, '20':5}
+    # 1日分のブース配置を1回だけ決定し、全時間帯で同じブース番号を維持する
+    # （途中で別講師がそのブースに入らないようにする）
+    all_day_teachers = [t for t in selected if t != office_teacher]
+    day_booth_order = assign_booth_order(all_day_teachers)
+    # 講師→ブース位置のマッピング
+    teacher_bi = {t: i for i, t in enumerate(day_booth_order)}
+
     result = {}
     for ts in ts_list:
-        # 元データにいる講師 + 最早出勤以降の選ばれた講師を含める
-        available_set = set(t for t in day_data.get(ts, []) if t in selected and t != office_teacher)
-        for t in selected:
-            if t == office_teacher:
-                continue
-            earliest = teacher_earliest.get(t)
-            if earliest and ts_order.get(ts, 99) >= ts_order.get(earliest, 99):
-                available_set.add(t)
-        result[ts] = assign_booth_order(list(available_set))
+        available = set(t for t in day_data.get(ts, []) if t in selected and t != office_teacher)
+        # 固定ブース位置に基づいてリスト生成（出勤していないコマは空文字）
+        booths = []
+        for i, t in enumerate(day_booth_order):
+            if t in available:
+                booths.append(t)
+            else:
+                booths.append('')  # そのコマは不在だがブース位置を確保
+        result[ts] = booths
     return result
 
 def resolve_office_teacher(day, candidates, day_data):
