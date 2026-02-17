@@ -206,6 +206,9 @@ SATURDAY_TIMES = ['14:55','16:00','17:05','18:10']
 ALL_TIMES = ['14:55','16:00','17:05','18:10','19:15','20:20']
 TIME_SHORT = {'14:55':'14','16:00':'16','17:05':'17','18:10':'18','19:15':'19','20:20':'20'}
 MAX_BOOTHS = 6
+# メタシート判定キーワード（週シートと区別するため）
+# load_teacher_skills の検出キーワードと一致させること
+META_KEYWORDS = ['必要コマ', '一覧', 'ブース希望', '指導可能', 'スキル']
 
 NAME_MAP = {}
 for full, short in [
@@ -1040,8 +1043,7 @@ def extract_week_dates(booth_wb, num_weeks):
     Returns: {'year':int, 'month':int, 'weeks':[ {day_name: day_number, ...}, ... ]}
     """
     import datetime as _dt, re
-    meta_keywords = ['必要コマ', '一覧', 'ブース希望']
-    week_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in meta_keywords)]
+    week_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
 
     year, month = None, None
     for sn in week_sheets:
@@ -1076,8 +1078,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
     wb = openpyxl.load_workbook(booth_path)
     num_weeks = len(schedule)
     # 週シート以外（必要コマ数、一覧表、ブース希望等）を特定して保持
-    meta_keywords = ['必要コマ', '一覧', 'ブース希望']
-    meta_sheets = [sn for sn in wb.sheetnames if any(k in sn for k in meta_keywords)]
+    meta_sheets = [sn for sn in wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
     week_sheets = [sn for sn in wb.sheetnames if sn not in meta_sheets]
     # 週シート数が足りない場合はそのまま使える分だけ使う
     num_weeks = min(num_weeks, len(week_sheets))
@@ -1311,9 +1312,8 @@ def consolidate_booth():
     except Exception as e:
         return jsonify({'error': f'メタデータファイルの読み込みに失敗: {e}'}), 400
 
-    # メタシートを特定（必要コマ数、一覧表、ブース希望）
-    meta_keywords = ['必要コマ', '一覧', 'ブース希望']
-    meta_sheet_names = [sn for sn in meta_wb.sheetnames if any(k in sn for k in meta_keywords)]
+    # メタシートを特定（必要コマ数、一覧表、ブース希望、指導可能科目等）
+    meta_sheet_names = [sn for sn in meta_wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
 
     # 古い週シートを削除（メタシート以外）
     old_week_sheets = [sn for sn in meta_wb.sheetnames if sn not in meta_sheet_names]
@@ -1337,7 +1337,7 @@ def consolidate_booth():
 
             for sn in week_wb.sheetnames:
                 # 週ファイル内のメタシートはスキップ
-                if any(k in sn for k in meta_keywords):
+                if any(k in sn for k in META_KEYWORDS):
                     continue
 
                 src_ws = week_wb[sn]
