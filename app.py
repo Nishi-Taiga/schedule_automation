@@ -896,7 +896,13 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
 
     def place_student(ws, s, day, ts, subj):
         if day not in ws or ts not in ws[day]: return False
-        for bi,b in enumerate(ws[day][ts]):
+        booths = list(enumerate(ws[day][ts]))
+        wish = s.get('wish_teachers', [])
+        if wish:
+            # 希望講師のブースを先に試す
+            wish_first = sorted(booths, key=lambda x: (0 if x[1]['teacher'] in wish else 1))
+            booths = wish_first
+        for bi,b in booths:
             if check_booth(b, bi, s, day, subj, ws):
                 b['slots'].append((s['grade'],s['name'],subj))
                 return True
@@ -947,7 +953,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                             sc += 50   # 2コマ目まではやや優先
                         else:
                             sc -= 80   # 3コマ目以降はペナルティ（分散を促す）
-                    if b['teacher'] in s['wish_teachers']: sc += 200
+                    if b['teacher'] in s['wish_teachers']: sc += 500
                     if t in booth_pref and booth_pref[t]==bi+1: sc += 10
                     if len(b['slots'])==0: sc += 20
                     cands.append((sc, day, ts, bi))
