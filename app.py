@@ -768,11 +768,24 @@ def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office
 
         return [t for t in slots if t is not None]
 
-    # 各時間帯のブースリストを生成
+    # 1日分のブース配置を1回だけ決定し、全時間帯で同じブース番号を維持する
+    # （途中で別講師がそのブースに入らないようにする）
+    all_day_teachers = [t for t in selected if t != office_teacher]
+    day_booth_order = assign_booth_order(all_day_teachers)
+    # 講師→ブース位置のマッピング
+    teacher_bi = {t: i for i, t in enumerate(day_booth_order)}
+
     result = {}
     for ts in ts_list:
-        available = [t for t in day_data.get(ts, []) if t in selected and t != office_teacher]
-        result[ts] = assign_booth_order(available)
+        available = set(t for t in day_data.get(ts, []) if t in selected and t != office_teacher)
+        # 固定ブース位置に基づいてリスト生成（出勤していないコマは空文字）
+        booths = []
+        for i, t in enumerate(day_booth_order):
+            if t in available:
+                booths.append(t)
+            else:
+                booths.append('')  # そのコマは不在だがブース位置を確保
+        result[ts] = booths
     return result
 
 def resolve_office_teacher(day, candidates, day_data):
@@ -1510,6 +1523,7 @@ def generate():
             'boothPref': booth_pref,
             'students': students_json,
             'weekDates': week_dates,
+            'weeklyTeachers': wt,
         })
     except Exception as e:
         import traceback; traceback.print_exc()
