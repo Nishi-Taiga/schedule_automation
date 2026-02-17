@@ -1223,11 +1223,12 @@ def get_teachers():
     if 'booth' not in files:
         return jsonify({'error': 'ブース表がアップロードされていません'}), 400
     try:
-        wb = openpyxl.load_workbook(files['booth'])
+        wb = openpyxl.load_workbook(files['booth'], data_only=True)
         skills = load_teacher_skills(wb)
         booth_pref = load_booth_pref(wb)
         if not booth_pref:
             booth_pref = dict(DEFAULT_BOOTH_PREF)
+        wb.close()
         return jsonify({
             'teachers': sorted(skills.keys()),
             'boothPref': booth_pref,
