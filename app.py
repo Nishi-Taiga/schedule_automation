@@ -1113,7 +1113,7 @@ def extract_week_dates(booth_wb, num_weeks):
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== Excel出力 ==========
-def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
+def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None):
     wb = openpyxl.load_workbook(booth_path)
     num_weeks = len(schedule)
     # 週シート以外（必要コマ数、一覧表、ブース希望等）を特定して保持
@@ -1199,6 +1199,16 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path):
     ws_up.column_dimensions['B'].width = 12
     ws_up.column_dimensions['C'].width = 6
     ws_up.column_dimensions['D'].width = 10
+
+    # スケジュール状態を隠しシートに保存（再読み込み用）
+    if state_json:
+        ws_state = wb.create_sheet('_schedule_data')
+        ws_state.sheet_state = 'hidden'
+        data_str = json.dumps(state_json, ensure_ascii=False)
+        # Excelセルの文字数上限(32767)を考慮して分割
+        CHUNK = 30000
+        for i in range(0, len(data_str), CHUNK):
+            ws_state.cell(i // CHUNK + 1, 1, data_str[i:i+CHUNK])
 
     wb.save(output_path)
 
@@ -1559,14 +1569,95 @@ def download():
 
     output_path = os.path.join(sd['dir'], 'output.xlsx')
     try:
+        # スケジュール全状態をJSON化してExcelに埋め込む（再読み込み用）
+        state_json = {
+            'schedule': res.get('schedule_json', []),
+            'unplaced': res.get('unplaced', []),
+            'officeTeachers': res.get('office_teachers', []),
+            'boothPref': res.get('booth_pref', {}),
+            'weekDates': res.get('week_dates'),
+            'total': sum(sum(s['needs'].values()) for s in res.get('students', [])),
+        }
+        # students JSON化
+        students_json = []
+        for s in res.get('students', []):
+            students_json.append({
+                'grade': s['grade'], 'name': s['name'],
+                'needs': s['needs'],
+                'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
+                'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
+                'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
+                'notes': s.get('notes', ''),
+                'ng_teachers': s['ng_teachers'],
+                'wish_teachers': s['wish_teachers'],
+                'ng_students': s['ng_students'],
+                'ng_dates': [list(d) for d in s.get('ng_dates', set())],
+            })
+        state_json['students'] = students_json
+        # weeklyTeachers
+        wt = None
+        if 'src' in sd.get('files', {}):
+            try:
+                wt = load_weekly_teachers(sd['files']['src'])
+            except Exception:
+                pass
+        if wt:
+            state_json['weeklyTeachers'] = wt
+        # placed count
+        placed = 0
+        for w in res.get('schedule', []):
+            for d_data in w.values():
+                for bs in d_data.values():
+                    for b in bs:
+                        placed += len(b['slots'])
+        state_json['placed'] = placed
+
         write_excel(
             res['schedule'],
             res['unplaced'],
             res['office_teachers'],
             sd['files']['booth'],
-            output_path
+            output_path,
+            state_json=state_json
         )
         return send_file(output_path, as_attachment=True, download_name='時間割_出力.xlsx')
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/load_saved', methods=['POST'])
+@login_required
+def load_saved():
+    """保存済みExcelからスケジュール状態を読み込む"""
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'ファイルが選択されていません'}), 400
+    ok, err = validate_file(f)
+    if not ok:
+        return jsonify({'error': err}), 400
+    sd = get_session_data()
+    path = os.path.join(sd['dir'], 'saved_' + f.filename)
+    f.save(path)
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True)
+        if '_schedule_data' not in wb.sheetnames:
+            wb.close()
+            return jsonify({'error': 'このファイルには保存済みスケジュールが含まれていません。\nブース表DLしたファイルを選択してください。'}), 400
+        ws = wb['_schedule_data']
+        # チャンク化されたJSONを結合
+        chunks = []
+        for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
+            if row[0] is not None:
+                chunks.append(str(row[0]))
+        wb.close()
+        data_str = ''.join(chunks)
+        state = json.loads(data_str)
+        # ブース表として保存（再ダウンロード用）
+        sd['files'] = {**sd.get('files', {}), 'booth': path}
+        save_session_files(sd)
+        return jsonify({'ok': True, **state})
+    except json.JSONDecodeError as e:
+        return jsonify({'error': f'スケジュールデータの解析に失敗: {e}'}), 500
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
