@@ -190,7 +190,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.15</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.16</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -477,13 +477,35 @@ clr.onclick=e=>{e.stopPropagation();removeTeacher(wi,day,bi);picker.remove();};p
 anchor.parentElement.style.position='relative';anchor.parentElement.appendChild(picker);
 const close=e=>{if(!picker.contains(e.target)){picker.remove();document.removeEventListener('click',close);}};
 setTimeout(()=>document.addEventListener('click',close),0);}
+function showEmptyBoothPicker(cell,wi,day,ts,bi){
+document.querySelectorAll('.teacher-picker').forEach(p=>p.remove());
+const assigned=getAssignedTeachers(wi,day);
+const available=getAvailableTeachers(wi,day);
+const unassigned=available.filter(t=>!assigned.has(t));
+const picker=document.createElement('div');picker.className='teacher-picker';
+if(unassigned.length){
+const hdr=document.createElement('div');hdr.className='tp-hdr';hdr.textContent='出勤中（未配置）';picker.appendChild(hdr);
+unassigned.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-new';opt.textContent=t;
+opt.onclick=e=>{e.stopPropagation();replaceTeacher(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
+const others=available.filter(t=>assigned.has(t));
+if(others.length){
+const hdr2=document.createElement('div');hdr2.className='tp-hdr';hdr2.textContent='配置済み（入替）';picker.appendChild(hdr2);
+others.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-swap';opt.textContent=t;
+opt.onclick=e=>{e.stopPropagation();swapTeacherFull(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
+if(!unassigned.length&&!others.length){picker.remove();return;}
+cell.style.position='relative';cell.appendChild(picker);
+const close=e=>{if(!picker.contains(e.target)){picker.remove();document.removeEventListener('click',close);}};
+setTimeout(()=>document.addEventListener('click',close),0);}
 function replaceTeacher(wi,day,bi,newT){
 const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
 const wt=R.weeklyTeachers;
+// 出勤範囲（最初〜最後の出勤コマ）を計算して補間する
+let first=99,last=-1;
+if(wt&&wt[wi]&&wt[wi][day]){const tsOrd={'14':0,'16':1,'17':2,'18':3,'19':4,'20':5};
+for(const t of times){if((wt[wi][day][t]||[]).includes(newT)){const o=tsOrd[t];if(o<first)first=o;if(o>last)last=o;}}}
+const tsOrd={'14':0,'16':1,'17':2,'18':3,'19':4,'20':5};
 for(const t of times){const bs=ws[day]?.[t];if(!bs||!bs[bi])continue;
-// 出勤しているコマのみ講師を配置（出勤していないコマは空にする）
-const isAvail=wt&&wt[wi]&&wt[wi][day]&&(wt[wi][day][t]||[]).includes(newT);
-bs[bi].teacher=isAvail?newT:'';}
+const o=tsOrd[t];bs[bi].teacher=(first<=o&&o<=last)?newT:'';}
 edited=true;rR();}
 function swapTeacherFull(wi,day,bi,targetT){
 const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
@@ -599,14 +621,20 @@ td.className='booth-cell';const bs=ws[d]?.[ts]||[],b=bs[bi];
 if(b&&b.teacher){if(b.slots.length===0)td.classList.add('empty-booth');
 td.appendChild(mkTeacher(b.teacher,wi,d,ts,bi));
 b.slots.forEach((sl,si)=>{td.appendChild(mkChip(sl,wi,d,ts,bi,si,b.teacher));});if(b.slots.length>=2)td.classList.add('full');}
-else{td.className='cd';td.textContent='-';}
-td.addEventListener('dragover',e=>{e.preventDefault();if(!dragData)return;const bth=bs[bi];if(!bth||!bth.teacher)return;
-if(dragData.type==='teacher')return;
+else{td.classList.add('empty-booth');td.style.cursor='pointer';
+const dash=document.createElement('span');dash.className='tn';dash.textContent='-';dash.style.opacity='.4';dash.style.cursor='pointer';
+td.appendChild(dash);
+td.addEventListener('click',e=>{e.stopPropagation();showEmptyBoothPicker(td,wi,d,ts,bi);});}
+td.addEventListener('dragover',e=>{e.preventDefault();if(!dragData)return;const bth=bs[bi];
+if(dragData.type==='teacher'){if(dragData.wi===wi&&dragData.day===d&&dragData.ts===ts&&dragData.bi!==bi){td.classList.add('drag-over');}return;}
+if(!bth||!bth.teacher)return;
 if(dragData.type==='booth'&&(dragData.wi!==wi||dragData.ts!==ts))return;
 if(dragData.type==='unplaced'&&bth.slots.length>=2)return;
 td.classList.add('drag-over');});
 td.addEventListener('dragleave',()=>{td.classList.remove('drag-over');});
-td.addEventListener('drop',e=>{e.preventDefault();td.classList.remove('drag-over');if(dragData&&dragData.type!=='teacher')doBooth(wi,d,ts,bi);});
+td.addEventListener('drop',e=>{e.preventDefault();td.classList.remove('drag-over');
+if(dragData&&dragData.type==='teacher'){doTeacherSwap(wi,d,ts,bi);return;}
+if(dragData&&dragData.type!=='teacher')doBooth(wi,d,ts,bi);});
 tr.appendChild(td);}tbody.appendChild(tr);}}
 tbl.appendChild(tbody);wrap.appendChild(tbl);
 const lbl=document.createElement('div');lbl.className='unplaced-label';lbl.textContent='📦 未配置コマ';wrap.appendChild(lbl);
