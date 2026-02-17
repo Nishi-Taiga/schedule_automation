@@ -769,10 +769,19 @@ def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office
         return [t for t in slots if t is not None]
 
     # 各時間帯のブースリストを生成
+    # 選ばれた講師は最早出勤時間帯から最終時間帯まで連続でブースに配置する
+    ts_order = {'14':0, '16':1, '17':2, '18':3, '19':4, '20':5}
     result = {}
     for ts in ts_list:
-        available = [t for t in day_data.get(ts, []) if t in selected and t != office_teacher]
-        result[ts] = assign_booth_order(available)
+        # 元データにいる講師 + 最早出勤以降の選ばれた講師を含める
+        available_set = set(t for t in day_data.get(ts, []) if t in selected and t != office_teacher)
+        for t in selected:
+            if t == office_teacher:
+                continue
+            earliest = teacher_earliest.get(t)
+            if earliest and ts_order.get(ts, 99) >= ts_order.get(earliest, 99):
+                available_set.add(t)
+        result[ts] = assign_booth_order(list(available_set))
     return result
 
 def resolve_office_teacher(day, candidates, day_data):
@@ -1510,6 +1519,7 @@ def generate():
             'boothPref': booth_pref,
             'students': students_json,
             'weekDates': week_dates,
+            'weeklyTeachers': wt,
         })
     except Exception as e:
         import traceback; traceback.print_exc()

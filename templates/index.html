@@ -63,9 +63,16 @@ table.sch tr{border-bottom:1px solid #d0d8e2}
 .or td{font-weight:700;background:#ebf1ff;text-align:center;font-size:12px;color:var(--accent)}
 .cd{background:#f0f0f0}
 tr.er{background:#f5f7fa}
-.tn{display:block;font-weight:600;color:var(--accent2);font-size:11px;margin-bottom:2px;cursor:grab;padding:1px 4px;border-radius:3px;border:1px solid transparent;transition:all .12s;user-select:none;width:100%;text-align:center}
+.tn{display:block;font-weight:600;color:var(--accent2);font-size:11px;margin-bottom:2px;cursor:pointer;padding:1px 4px;border-radius:3px;border:1px solid transparent;transition:all .12s;user-select:none;width:100%;text-align:center}
 .tn:hover{background:#e0e7ff;border-color:#93c5fd}.tn:active{cursor:grabbing}
 .tn.drag-over-t{background:#dbeafe;border-color:var(--accent)}
+.teacher-picker{position:absolute;top:100%;left:0;z-index:100;background:#fff;border:1px solid #c5d5e8;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:120px;max-height:240px;overflow-y:auto;font-size:11px}
+.tp-hdr{padding:4px 8px;font-weight:700;color:var(--ink3);background:#f0f3f7;font-size:10px;border-bottom:1px solid #e0e5ec}
+.tp-opt{padding:5px 10px;cursor:pointer;transition:background .1s;white-space:nowrap}
+.tp-opt:hover{background:#e8f0fe}
+.tp-new{color:#1565c0;font-weight:600}
+.tp-swap{color:#6a1b9a}
+.tp-clear{color:var(--red);border-top:1px solid #eee;font-size:10px}
 .slot-chip{display:flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;margin:1px 0;font-size:10px;cursor:pointer;user-select:none;transition:all .12s;width:100%;background:#e8f5e9;border:1px solid #a5d6a7}
 .slot-chip:active{cursor:grabbing}.slot-chip:hover{background:#c8e6c9;border-color:#66bb6a}
 .slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32}
@@ -183,7 +190,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.13</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.14</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -427,7 +434,74 @@ el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
 el.addEventListener('dragover',e=>{if(dragData&&dragData.type==='teacher'&&dragData.wi===wi&&dragData.day===day&&dragData.ts===ts){e.preventDefault();el.classList.add('drag-over-t');}});
 el.addEventListener('dragleave',()=>{el.classList.remove('drag-over-t');});
 el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('drag-over-t');doTeacherSwap(wi,day,ts,bi);});
+let wasDragged=false;
+el.addEventListener('mousedown',()=>{wasDragged=false;});
+el.addEventListener('mousemove',()=>{wasDragged=true;});
+el.addEventListener('click',e=>{if(!wasDragged){e.stopPropagation();showTeacherPicker(el,wi,day,ts,bi);}});
 return el;}
+function getAvailableTeachers(wi,day){
+// weekly_teachers から出勤可能な講師を取得（教室業務担当を除く）
+const wt=R.weeklyTeachers;if(!wt||!wt[wi]||!wt[wi][day])return[];
+const dayData=wt[wi][day];const all=new Set();
+for(const ts of Object.keys(dayData)){(dayData[ts]||[]).forEach(t=>all.add(t));}
+const ot=(R.officeTeachers[wi]||{})[day];if(ot)all.delete(ot);
+return [...all].sort();}
+function getAssignedTeachers(wi,day){
+const ws=R.schedule[wi];if(!ws||!ws[day])return new Set();
+const assigned=new Set();
+for(const ts of Object.keys(ws[day])){(ws[day][ts]||[]).forEach(b=>{if(b.teacher)assigned.add(b.teacher);});}
+return assigned;}
+function showTeacherPicker(anchor,wi,day,ts,bi){
+// 既存のピッカーを閉じる
+document.querySelectorAll('.teacher-picker').forEach(p=>p.remove());
+const assigned=getAssignedTeachers(wi,day);
+const available=getAvailableTeachers(wi,day);
+const unassigned=available.filter(t=>!assigned.has(t));
+if(!unassigned.length&&available.length<=1)return;
+const picker=document.createElement('div');picker.className='teacher-picker';
+// 未配置の出勤講師
+if(unassigned.length){
+const hdr=document.createElement('div');hdr.className='tp-hdr';hdr.textContent='出勤中（未配置）';picker.appendChild(hdr);
+unassigned.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-new';opt.textContent=t;
+opt.onclick=e=>{e.stopPropagation();replaceTeacher(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
+// 配置済み講師との入替（自分自身を除く）
+const currentT=R.schedule[wi][day][ts][bi].teacher;
+const others=available.filter(t=>assigned.has(t)&&t!==currentT);
+if(others.length){
+const hdr2=document.createElement('div');hdr2.className='tp-hdr';hdr2.textContent='配置済み（入替）';picker.appendChild(hdr2);
+others.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-swap';opt.textContent=t;
+opt.onclick=e=>{e.stopPropagation();swapTeacherFull(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
+// 空欄にする
+const clr=document.createElement('div');clr.className='tp-opt tp-clear';clr.textContent='× 講師を外す';
+clr.onclick=e=>{e.stopPropagation();removeTeacher(wi,day,bi);picker.remove();};picker.appendChild(clr);
+anchor.parentElement.style.position='relative';anchor.parentElement.appendChild(picker);
+const close=e=>{if(!picker.contains(e.target)){picker.remove();document.removeEventListener('click',close);}};
+setTimeout(()=>document.addEventListener('click',close),0);}
+function replaceTeacher(wi,day,bi,newT){
+const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
+// 新講師の最早出勤時間帯を取得
+const wt=R.weeklyTeachers;let earliest=null;
+if(wt&&wt[wi]&&wt[wi][day]){for(const t of times){if((wt[wi][day][t]||[]).includes(newT)){earliest=t;break;}}}
+for(const t of times){const bs=ws[day]?.[t];if(!bs||!bs[bi])continue;
+const tsOrd={'14':0,'16':1,'17':2,'18':3,'19':4,'20':5};
+if(earliest&&tsOrd[t]>=tsOrd[earliest]){bs[bi].teacher=newT;}else{bs[bi].teacher='';}}
+edited=true;rR();}
+function swapTeacherFull(wi,day,bi,targetT){
+const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
+// targetTのブースインデックスを探す
+let tbi=null;for(const t of times){const bs=ws[day]?.[t];if(!bs)continue;for(let i=0;i<bs.length;i++){if(bs[i].teacher===targetT){tbi=i;break;}}if(tbi!==null)break;}
+if(tbi===null||tbi===bi)return;
+for(const t of times){const bs=ws[day]?.[t];if(!bs)continue;const s=bs[bi],g=bs[tbi];if(s&&g){const tmp=s.teacher;s.teacher=g.teacher;g.teacher=tmp;}}
+edited=true;rR();}
+function removeTeacher(wi,day,bi){
+const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
+for(const t of times){const bs=ws[day]?.[t];if(!bs||!bs[bi])continue;
+// 生徒が配置されている場合は未配置に戻す
+bs[bi].slots.forEach(sl=>{
+const existing=R.unplaced.find(u=>u.name===sl[1]&&u.subject===sl[2]);
+if(existing)existing.count++;else R.unplaced.push({grade:sl[0],name:sl[1],subject:sl[2],count:1,reason:'講師削除'});});
+bs[bi].slots=[];bs[bi].teacher='';}
+edited=true;rR();}
 function doTeacherSwap(wi,day,ts,tbi){if(!dragData||dragData.type!=='teacher'||dragData.wi!==wi||dragData.day!==day||dragData.ts!==ts||dragData.bi===tbi)return;
 const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
 for(const t of times){const bs=ws[day]?.[t];if(!bs)continue;const s=bs[dragData.bi],g=bs[tbi];if(s&&g){const tmp=s.teacher;s.teacher=g.teacher;g.teacher=tmp;}}
