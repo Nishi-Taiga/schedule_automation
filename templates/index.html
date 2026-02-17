@@ -95,6 +95,7 @@ table.up .ct{font-weight:700;color:var(--red)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .note{font-size:11.5px;color:var(--ink3);margin-top:6px;padding:8px 12px;background:#f7f9fb;border-radius:6px;border-left:3px solid var(--accent)}
 .file-note{font-size:11px;color:var(--ink3);margin-top:4px;padding-left:54px}
+.folder-btn{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 10px;background:#f0f4ff;color:var(--accent);border:1px solid #c7d2fe;border-radius:6px;cursor:pointer;margin-left:8px;white-space:nowrap;transition:background .15s}.folder-btn:hover{background:#e0e7ff}
 .edit-hint{font-size:11px;color:var(--orange);font-weight:600}
 /* Calendar */
 .cal-sel{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
@@ -190,7 +191,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.16</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.17</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -206,9 +207,10 @@ table.stu tr:hover{background:#f0f5ff}
 </div>
 <div id="srcFileMode">
 <label class="upload-row" id="uSrc"><div class="icon">📁</div><div><div class="label">ブース表元シート (.xlsx)</div><div class="desc" id="nSrc">出勤可能講師の一覧</div></div><input type="file" accept=".xlsx" onchange="onF(this,'src')"></label>
+<div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'src')"></div>
 </div>
 <div id="srcSurveyMode" style="display:none">
-<div class="survey-zone" id="surveyZone"><div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div><div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx" multiple onchange="onSurveyFiles(this)"><div class="survey-files" id="surveyFileList"></div></div>
+<div class="survey-zone" id="surveyZone"><div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div><div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx" multiple onchange="onSurveyFiles(this)"><div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSurvey(this)"></div><div class="survey-files" id="surveyFileList"></div></div>
 </div>
 <h3 style="font-size:13px;margin-bottom:6px;margin-top:16px">ブース表の取得方法</h3>
 <div class="booth-toggle">
@@ -217,11 +219,12 @@ table.stu tr:hover{background:#f0f5ff}
 </div>
 <div id="boothFileMode">
 <label class="upload-row" id="uBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsx)</div><div class="desc" id="nBooth">生徒情報・講師指導可能科目・テンプレート</div></div><input type="file" accept=".xlsx" onchange="onF(this,'booth')"></label>
+<div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'booth')"></div>
 <div class="file-note">※ ブース表に「必要コマ数」「一覧表」「講師ブース希望」シートが含まれている必要があります</div>
 </div>
 <div id="boothConsolMode" style="display:none">
 <div class="consol-zone" id="consolMetaZone"><div class="consol-label">📋 メタデータファイル (.xlsx)</div><div class="consol-desc" id="consolMetaDesc">必要コマ数・一覧表(指導科目)・ブース希望シートを含むファイル</div><input type="file" accept=".xlsx" onchange="onConsolMeta(this)"></div>
-<div class="consol-zone" id="consolWeekZone"><div class="consol-label">📁 週別ブース表ファイル (.xlsx 複数選択可)</div><div class="consol-desc" id="consolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx" multiple onchange="onConsolWeeks(this)"><div class="consol-files" id="consolWeekList"></div></div>
+<div class="consol-zone" id="consolWeekZone"><div class="consol-label">📁 週別ブース表ファイル (.xlsx 複数選択可)</div><div class="consol-desc" id="consolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx" multiple onchange="onConsolWeeks(this)"><div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderWeeks(this)"></div><div class="consol-files" id="consolWeekList"></div></div>
 <div class="bg" style="margin-top:8px"><button class="btn btn-s" id="consolBtn" disabled onclick="doConsolidate()">集約して統合</button></div>
 <div id="consolResult"></div>
 <div class="file-note">※ メタデータファイルの古い週シートは自動削除されます</div>
@@ -292,6 +295,18 @@ const b=document.getElementById('restoreBanner');if(b)b.remove();go('result');rR
 function dismissRestore(){const b=document.getElementById('restoreBanner');if(b)b.remove();window._savedState=null;}
 window.addEventListener('DOMContentLoaded',()=>{checkSavedState();});
 
+// === Folder upload helper ===
+function filterXlsx(fileList){return Array.from(fileList).filter(f=>f.name.endsWith('.xlsx')&&!f.name.startsWith('~$'));}
+function onFolderSingle(inp,key){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
+const dt=new DataTransfer();dt.items.add(files[0]);
+const target=document.querySelector('#'+(key==='src'?'uSrc':'uBooth')+' input[type=file]:not([webkitdirectory])');target.files=dt.files;onF(target,key);}
+function onFolderSurvey(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
+const dt=new DataTransfer();files.forEach(f=>dt.items.add(f));
+const target=document.querySelector('#srcSurveyMode input[type=file]:not([webkitdirectory])');target.files=dt.files;onSurveyFiles(target);}
+function onFolderWeeks(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
+const dt=new DataTransfer();files.forEach(f=>dt.items.add(f));
+const target=document.querySelector('#consolWeekZone input[type=file]:not([webkitdirectory])');target.files=dt.files;onConsolWeeks(target);}
+
 // === Survey upload ===
 let srcMode='file';
 function setSrcMode(mode){srcMode=mode;
@@ -305,6 +320,7 @@ async function onSurveyFiles(inp){const files=inp.files;if(!files||!files.length
 const zone=document.getElementById('surveyZone');const desc=document.getElementById('surveyDesc');const flist=document.getElementById('surveyFileList');
 desc.textContent=files.length+'件のファイルをアップロード中...';zone.classList.remove('done');
 document.getElementById('upSt').textContent='';document.getElementById('upSt').className='status';
+showProgress(10,'講師回答ファイルを集約しています...');
 const fd=new FormData();for(let i=0;i<files.length;i++)fd.append('surveys',files[i]);
 try{const res=await fetch('/api/upload_surveys',{method:'POST',body:fd});const d=await res.json();
 if(res.ok&&d.ok){zone.classList.add('done');desc.textContent=d.teacherCount+'名の講師データを集約（'+d.weeks+'週分）';
@@ -314,8 +330,13 @@ if(d.errors&&d.errors.length){document.getElementById('upSt').textContent='一�
 }else{desc.textContent='エラー: '+(d.error||'不明');uploaded.src=false;
 if(d.details)document.getElementById('upSt').innerHTML=d.details.map(e=>'<div>'+e+'</div>').join('');document.getElementById('upSt').className='status err';}
 }catch(e){desc.textContent='通信エラー: '+e.message;uploaded.src=false;}
-checkReady();
-if(uploaded.src&&uploaded.booth){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}}}
+hideProgress();
+document.getElementById('toS').disabled=true;
+if(uploaded.src&&uploaded.booth){const btn=document.getElementById('toS');btn.textContent='読み込み中...';
+showProgress(30,'講師データを読み込んでいます...');
+try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
+hideProgress();btn.textContent='次へ: 設定 →';}
+document.getElementById('toS').disabled=!(uploaded.src&&uploaded.booth);}
 
 // === Booth consolidation ===
 let boothMode='file',consolMeta=null,consolWeeks=null;
@@ -338,6 +359,7 @@ document.getElementById('consolBtn').disabled=!(consolMeta&&consolWeeks);}
 async function doConsolidate(){if(!consolMeta||!consolWeeks)return;
 const btn=document.getElementById('consolBtn');btn.disabled=true;btn.textContent='集約中...';
 document.getElementById('consolResult').innerHTML='';document.getElementById('upSt').textContent='';document.getElementById('upSt').className='status';
+showProgress(20,'ブース表を集約しています...');
 const fd=new FormData();fd.append('meta',consolMeta);
 for(let i=0;i<consolWeeks.length;i++)fd.append('weeks',consolWeeks[i]);
 try{const res=await fetch('/api/consolidate_booth',{method:'POST',body:fd});const d=await res.json();
@@ -347,8 +369,14 @@ uploaded.booth=true;
 if(d.errors&&d.errors.length){document.getElementById('upSt').textContent='一部エラー: '+d.errors.join(', ');document.getElementById('upSt').className='status err';}
 }else{document.getElementById('upSt').textContent='エラー: '+(d.error||'不明');document.getElementById('upSt').className='status err';uploaded.booth=false;}
 }catch(e){document.getElementById('upSt').textContent='通信エラー: '+e.message;document.getElementById('upSt').className='status err';uploaded.booth=false;}
-btn.disabled=false;btn.textContent='集約して統合';checkReady();
-if(uploaded.src&&uploaded.booth){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}}}
+hideProgress();
+btn.disabled=false;btn.textContent='集約して統合';
+document.getElementById('toS').disabled=true;
+if(uploaded.src&&uploaded.booth){const toS=document.getElementById('toS');toS.textContent='読み込み中...';
+showProgress(30,'講師データを読み込んでいます...');
+try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
+hideProgress();toS.textContent='次へ: 設定 →';}
+document.getElementById('toS').disabled=!(uploaded.src&&uploaded.booth);}
 
 function fmtSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
 function showUpErr(detail){const st=document.getElementById('upSt');st.className='status err';st.innerHTML=detail;}
@@ -358,7 +386,11 @@ const fd=new FormData();fd.append(key,f);
 try{const res=await fetch('/api/upload',{method:'POST',body:fd});let d;try{d=await res.json();}catch(pe){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='サーバーエラー (HTTP '+res.status+')';showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>HTTP '+res.status+' - レスポンス解析失敗');uploaded[key]=false;return;}
 if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;uploaded[key]=true;}else{const msg=d.error||'不明なエラー (HTTP '+res.status+')';row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='失敗: '+msg;showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>HTTP '+res.status+': '+msg);uploaded[key]=false;}}catch(e){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー';showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>通信エラー: '+e.message+'<br><small>サーバーに接続できませんでした。ネットワーク接続・ファイルサイズを確認してください。</small>');uploaded[key]=false;}
 const ready=uploaded.src&&uploaded.booth;
-if(ready){try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}}
+document.getElementById('toS').disabled=true;
+if(ready){const btn=document.getElementById('toS');btn.textContent='読み込み中...';
+showProgress(30,'講師データを読み込んでいます...');
+try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
+hideProgress();btn.textContent='次へ: 設定 →';}
 document.getElementById('toS').disabled=!ready;}
 
 function go(step){document.getElementById('pUpload').style.display=step==='upload'?'':'none';document.getElementById('pSettings').style.display=step==='settings'?'':'none';document.getElementById('pResult').style.display=step==='result'?'':'none';
@@ -422,7 +454,7 @@ function rR(){if(edited)scheduleAutoSave();const p=countPlaced();document.getEle
 const ub=document.getElementById('uBadge'),uT=R.unplaced.reduce((s,u)=>s+u.count,0);if(uT>0){ub.style.display='';ub.textContent='⚠️ 未配置: '+uT+'コマ';}else ub.style.display='none';
 const mb=document.getElementById('mBadge');if(edited){mb.style.display='';mb.textContent='✏️ 手動編集あり';}else mb.style.display='none';
 const tabs=document.getElementById('wTabs');tabs.innerHTML='';
-const NW=R.schedule.length;for(let w=0;w<NW;w++){const b=document.createElement('button');b.className=PW===w?'active':'';b.textContent='第'+(w+1)+'週';b.onclick=()=>{PW=w;rR();};tabs.appendChild(b);}
+const NW=R.schedule.length;for(let w=0;w<NW;w++){const b=document.createElement('button');b.className=PW===w?'active':'';const wr=getWeekRange(w);b.textContent='第'+(w+1)+'週'+(wr&&wr!=='W'+(w+1)?' '+wr:'');b.onclick=()=>{PW=w;rR();};tabs.appendChild(b);}
 const ub2=document.createElement('button');ub2.className='warn'+(PW===-1?' active':'');ub2.textContent='未配置';ub2.onclick=()=>{PW=-1;rR();};tabs.appendChild(ub2);
 const cb=document.createElement('button');cb.className='cal'+(PW===-2?' active':'');cb.textContent='📅 生徒別';cb.onclick=()=>{PW=-2;rR();};tabs.appendChild(cb);
 const wrap=document.getElementById('pWrap');wrap.innerHTML='';if(PW>=0)rW(wrap,PW);else if(PW===-1)rU(wrap);else rCal(wrap);}
@@ -607,7 +639,7 @@ function rW(wrap,wi){const ws=R.schedule[wi];
 console.log('=== 週'+wi+' スケジュールデータ ===');
 for(const d of D){const dayData=ws[d]||{};const summary={};for(const[t,bs]of Object.entries(dayData))summary[t]=bs.length+'ブース(生徒:'+bs.reduce((s,b)=>s+b.slots.length,0)+')';console.log(d+'曜:',summary);}
 const tbl=document.createElement('table');tbl.className='sch';
-let hd='<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>';for(const d of D)hd+='<th style="width:calc((100% - 82px)/6)'+(d==='土'?';background:#edf2f7':'')+'">'+d+'</th>';
+let hd='<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>';for(const d of D){const dl=getDateLabel(wi,d);hd+='<th style="width:calc((100% - 82px)/6)'+(d==='土'?';background:#edf2f7':'')+'">'+d+(dl?'<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">'+dl+'</span>':'')+'</th>';}
 hd+='</tr><tr class="or"><td colspan="2">教室業務</td>';for(const d of D)hd+='<td>'+((R.officeTeachers[wi]||{})[d]||'')+'</td>';hd+='</tr></thead>';tbl.innerHTML=hd;
 const tbody=document.createElement('tbody');
 const MX=6;// 常に6ブース行を表示
