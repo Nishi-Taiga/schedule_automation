@@ -489,9 +489,30 @@ def _compute_month_week_map(year, month):
         week_map[d] = current_week
     return week_map
 
+def _get_merged_cell_value(ws, row, col):
+    """結合セルの場合、左上セルの値を返す"""
+    val = ws.cell(row, col).value
+    if val is not None:
+        return val
+    from openpyxl.utils import get_column_letter
+    coord = f'{get_column_letter(col)}{row}'
+    for merge_range in ws.merged_cells.ranges:
+        if coord in merge_range:
+            return ws.cell(merge_range.min_row, merge_range.min_col).value
+    return None
+
+def _excel_serial_to_date(serial):
+    """Excel シリアル値を date に変換"""
+    import datetime as _dt
+    try:
+        return (_dt.datetime(1899, 12, 30) + _dt.timedelta(days=int(serial))).date()
+    except Exception:
+        return None
+
 def parse_survey_file(file_path):
     """講師回答xlsxファイルを解析して講師名と出勤可能日時を返す"""
     import datetime as _dt
+    import re as _re
     wb = openpyxl.load_workbook(file_path, data_only=True)
 
     # データシートを探す（「シート」を含むシート名、なければ先頭シート）
@@ -505,50 +526,101 @@ def parse_survey_file(file_path):
 
     ws = wb[data_sheet]
 
-    # 講師名（row2, col2）
-    raw_name = ws.cell(2, 2).value
+    # 講師名（row2, col2） — 結合セルにも対応
+    raw_name = _get_merged_cell_value(ws, 2, 2)
+    # 取得できなければ近傍セル (row1-3, col1-3) も探索
+    if not raw_name:
+        for r in range(1, 4):
+            for c in range(1, 4):
+                v = _get_merged_cell_value(ws, r, c)
+                if v and isinstance(v, str) and len(v.strip()) >= 2:
+                    # 数字だけ・記号だけのセルは除外
+                    stripped = v.strip()
+                    if not stripped.replace(' ', '').replace('\u3000', '').isdigit():
+                        raw_name = v
+                        break
+            if raw_name:
+                break
     teacher_name = to_short(raw_name) if raw_name else None
     if not teacher_name:
+        print(f"[survey] 講師名を検出できません: {file_path}", flush=True)
         return None
 
     # 日付から年月を取得し、週マップを構築
     year, month = None, None
     for c in range(3, ws.max_column + 1):
-        v = ws.cell(6, c).value
+        v = _get_merged_cell_value(ws, 6, c)
         if isinstance(v, (_dt.datetime, _dt.date)):
             dt = v if isinstance(v, _dt.date) else v.date()
             year, month = dt.year, dt.month
             break
+        elif isinstance(v, (int, float)) and v > 31:
+            # Excel シリアル値の可能性
+            dt = _excel_serial_to_date(v)
+            if dt:
+                year, month = dt.year, dt.month
+                break
+
+    # ヘッダー行から年月を推定（日付セルから取れなかった場合）
+    if year is None or month is None:
+        for r in range(1, 6):
+            for c in range(1, ws.max_column + 1):
+                v = _get_merged_cell_value(ws, r, c)
+                if v and isinstance(v, str):
+                    m = _re.search(r'(\d{4})\s*年\s*(\d{1,2})\s*月', v)
+                    if m:
+                        year, month = int(m.group(1)), int(m.group(2))
+                        break
+                    m2 = _re.search(r'(\d{1,2})\s*月', v)
+                    if m2 and year is None:
+                        month = int(m2.group(1))
+                        year = _dt.date.today().year
+                        break
+                elif isinstance(v, (_dt.datetime, _dt.date)):
+                    dt = v if isinstance(v, _dt.date) else v.date()
+                    year, month = dt.year, dt.month
+                    break
+            if year and month:
+                break
 
     week_map = _compute_month_week_map(year, month) if year and month else {}
 
     # 列ヘッダー（日付・曜日・祝日フラグ）を読み取る
     columns = []
     j = 3
-    while True:
+    consecutive_empty = 0
+    while consecutive_empty < 3:
         # row 6: 日付, row 7: 曜日, row 9: 祝休日フラグ
-        date_val = ws.cell(6, j).value
+        date_val = _get_merged_cell_value(ws, 6, j)
         if date_val is None or str(date_val).strip() == '':
-            break
+            consecutive_empty += 1
+            j += 1
+            continue
+        consecutive_empty = 0
 
-        weekday_raw = str(ws.cell(7, j).value or '').strip()
+        weekday_raw = str(_get_merged_cell_value(ws, 7, j) or '').strip()
         weekday = WEEKDAY_NORMALIZE.get(weekday_raw, weekday_raw)
 
         # 曜日が取れなかった場合はdateオブジェクトから推測
-        if weekday not in DAYS and isinstance(date_val, (_dt.datetime, _dt.date)):
-            dt = date_val if isinstance(date_val, _dt.date) else date_val.date()
+        resolved_date = None
+        if isinstance(date_val, (_dt.datetime, _dt.date)):
+            resolved_date = date_val if isinstance(date_val, _dt.date) else date_val.date()
+        elif isinstance(date_val, (int, float)) and date_val > 31:
+            resolved_date = _excel_serial_to_date(date_val)
+
+        if weekday not in DAYS and resolved_date:
             wd_names = ['月','火','水','木','金','土','日']
-            weekday = wd_names[dt.weekday()]
+            weekday = wd_names[resolved_date.weekday()]
 
         # 日付から週番号を算出（row 8 は曜日出現回数なので使わない）
         day_of_month = None
-        if isinstance(date_val, _dt.datetime):
-            day_of_month = date_val.day
-        elif isinstance(date_val, _dt.date):
-            day_of_month = date_val.day
+        if resolved_date:
+            day_of_month = resolved_date.day
+        elif isinstance(date_val, (int, float)) and 1 <= date_val <= 31:
+            day_of_month = int(date_val)
         week_num = week_map.get(day_of_month)
 
-        holiday = ws.cell(9, j).value
+        holiday = _get_merged_cell_value(ws, 9, j)
 
         columns.append({
             'col': j,
@@ -573,6 +645,8 @@ def parse_survey_file(file_path):
                     'week_num': col_info['week_num'],
                     'time': time_str,
                 })
+
+    print(f"[survey] parsed: {teacher_name} (full: {raw_name}) — {len(availability)}コマ, year={year}, month={month}, cols={len(columns)}", flush=True)
 
     return {
         'name': teacher_name,
@@ -827,6 +901,11 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
 
     def find_slot(ws, s, subj, placed_days, existing, wi, any_placed_days):
         cands = []
+        checked_avail = False
+        reject_full = 0
+        reject_ng = 0
+        reject_skill = 0
+        reject_other = 0
         for day in DAYS:
             if day in placed_days: continue  # 同一科目の同曜日配置を防止
             # NG日程チェック
@@ -837,10 +916,24 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                 is_primary = s['avail'] is None or (day,ts) in s['avail']
                 is_backup = (not is_primary) and s.get('backup_avail') and (day,ts) in s['backup_avail']
                 if not is_primary and not is_backup: continue
+                checked_avail = True
                 if (day,ts) in existing: continue
                 if ts not in ws.get(day,{}): continue
                 for bi,b in enumerate(ws[day][ts]):
-                    if not check_booth(b, bi, s, day, subj, ws): continue
+                    t = b['teacher']
+                    if not t: continue
+                    if len(b['slots'])>=2:
+                        reject_full += 1
+                        continue
+                    if t in s['ng_teachers']:
+                        reject_ng += 1
+                        continue
+                    if not can_teach(t, s['grade'], subj, skills):
+                        reject_skill += 1
+                        continue
+                    if not check_booth(b, bi, s, day, subj, ws):
+                        reject_other += 1
+                        continue
                     sc = 0
                     # 予備時間はペナルティ（希望時間を優先）
                     if is_backup: sc -= 150
@@ -852,16 +945,28 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                         else:
                             sc -= 80   # 3コマ目以降はペナルティ（分散を促す）
                     if b['teacher'] in s['wish_teachers']: sc += 200
-                    t = b['teacher']
                     if t in booth_pref and booth_pref[t]==bi+1: sc += 10
                     if len(b['slots'])==0: sc += 20
                     cands.append((sc, day, ts, bi))
-        if not cands: return None
+        if not cands:
+            if not checked_avail:
+                reason = '希望時間帯なし'
+            elif reject_skill:
+                reason = '指導可能な講師不在'
+            elif reject_ng:
+                reason = 'NG講師'
+            elif reject_other:
+                reason = 'NG生徒/ブース制約'
+            elif reject_full:
+                reason = 'ブース満席'
+            else:
+                reason = '空きコマなし'
+            return None, reason
         cands.sort(key=lambda x:-x[0])
         best_sc = cands[0][0]
         bests = [c for c in cands if c[0]==best_sc]
         ch = random.choice(bests)
-        return ch[1], ch[2], ch[3]
+        return (ch[1], ch[2], ch[3]), None
 
     def distribute(total, weeks):
         t = [total//weeks]*weeks
@@ -882,6 +987,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
     order = sorted(students, key=lambda s: (
         len(s['avail']) if s['avail'] else 999, sum(s['needs'].values())
     ))
+    unplaced_reasons = {}  # (name, subj) -> reason
     for s in order:
         for subj, total in s['needs'].items():
             still = remaining[s['name']].get(subj, 0)
@@ -893,23 +999,44 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
                     pd = get_placed_days(schedule[wi], s['name'], subj)
                     ex = get_student_slots(schedule[wi], s['name'])
                     apd = get_any_placed_days(schedule[wi], s['name'])
-                    best = find_slot(schedule[wi], s, subj, pd, ex, wi, apd)
+                    best, reason = find_slot(schedule[wi], s, subj, pd, ex, wi, apd)
                     if best:
                         day, ts, bi = best
                         schedule[wi][day][ts][bi]['slots'].append((s['grade'],s['name'],subj))
                         remaining[s['name']][subj] -= 1
+                    elif reason:
+                        unplaced_reasons[(s['name'], subj)] = reason
+
+    # Phase3: 未配置リトライ（distribute で割り当てられなかった週にも配置を試行）
+    for s in order:
+        for subj in s['needs']:
+            still = remaining[s['name']].get(subj, 0)
+            if still <= 0: continue
+            for wi in range(num_weeks):
+                if remaining[s['name']].get(subj, 0) <= 0: break
+                pd = get_placed_days(schedule[wi], s['name'], subj)
+                ex = get_student_slots(schedule[wi], s['name'])
+                apd = get_any_placed_days(schedule[wi], s['name'])
+                best, reason = find_slot(schedule[wi], s, subj, pd, ex, wi, apd)
+                if best:
+                    day, ts, bi = best
+                    schedule[wi][day][ts][bi]['slots'].append((s['grade'],s['name'],subj))
+                    remaining[s['name']][subj] -= 1
+                elif reason:
+                    unplaced_reasons[(s['name'], subj)] = reason
 
     unplaced = []
     for s in students:
         for subj, cnt in remaining[s['name']].items():
             if cnt > 0:
-                unplaced.append({'grade':s['grade'],'name':s['name'],'subject':subj,'count':cnt})
+                reason = unplaced_reasons.get((s['name'], subj), '')
+                unplaced.append({'grade':s['grade'],'name':s['name'],'subject':subj,'count':cnt,'reason':reason})
 
     return schedule, unplaced, office_teachers
 
 def extract_week_dates(booth_wb, num_weeks):
     """ブース表シート名から各週・各曜日の日付を算出する。
-    シート名例: 'ブース表　2026.02.01-07' → 年=2026, 月=2, 開始日=1
+    _compute_month_week_map を使用して正確な週境界で日付をマッピングする。
     Returns: {'year':int, 'month':int, 'weeks':[ {day_name: day_number, ...}, ... ]}
     """
     import datetime as _dt, re
@@ -926,21 +1053,22 @@ def extract_week_dates(booth_wb, num_weeks):
         return None
 
     day_names = ['月','火','水','木','金','土']
-    last_day = (_dt.date(year, month % 12 + 1, 1) - _dt.timedelta(days=1)).day if month < 12 else 31
+    week_map = _compute_month_week_map(year, month)
+
+    # 週番号ごとに日付をグループ化
+    by_week = {}
+    for day_num, week_num in week_map.items():
+        dt = _dt.date(year, month, day_num)
+        wd = dt.weekday()  # 0=Mon ... 5=Sat
+        if wd < 6:
+            if week_num not in by_week:
+                by_week[week_num] = {}
+            by_week[week_num][day_names[wd]] = day_num
+
+    # 0-indexed リストに変換 (wi=0 → week 1)
     weeks = []
     for wi in range(num_weeks):
-        start = wi * 7 + 1
-        end = min((wi + 1) * 7, last_day)
-        day_map = {}
-        for d in range(start, end + 1):
-            try:
-                dt = _dt.date(year, month, d)
-            except ValueError:
-                continue
-            wd = dt.weekday()  # 0=Mon ... 5=Sat, 6=Sun
-            if wd < 6:
-                day_map[day_names[wd]] = d
-        weeks.append(day_map)
+        weeks.append(by_week.get(wi + 1, {}))
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== Excel出力 ==========
