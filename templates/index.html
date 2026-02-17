@@ -183,7 +183,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.4.5</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.0</span></h1><p>ファイルアップロード → 設定 → 生成 → 手動調整 → ダウンロード</p></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -449,7 +449,8 @@ el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
 el.addEventListener('click',e=>{if(!dragged){e.stopPropagation();goStudent(slot[1]);}dragged=false;});return el;}
 
 function mkUnChip(u,ui){const el=document.createElement('div');el.className='slot-chip';el.draggable=true;
-el.innerHTML='<span class="g">'+u.grade+'</span><span class="s">'+u.name+'</span><span class="j">'+u.subject+'</span>';
+el.innerHTML='<span class="g">'+u.grade+'</span><span class="s">'+u.name+'</span><span class="j">'+u.subject+'</span>'+(u.reason?'<span style="font-size:9px;color:var(--orange);margin-left:3px">'+u.reason+'</span>':'');
+if(u.reason)el.title=u.reason;
 let dragged=false;
 el.addEventListener('dragstart',e=>{dragged=true;dragData={type:'unplaced',ui,slot:[u.grade,u.name,u.subject]};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
 el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
@@ -472,7 +473,7 @@ else{showSwapModal(wi,day,ts,bi,booth);}}}
 
 function doUnplaced(){if(!dragData||(dragData.type!=='booth'&&dragData.type!=='calSlot'))return;
 const wi=dragData.wi,ws=R.schedule[wi],slot=ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si,1)[0];
-const ex=R.unplaced.find(u=>u.name===slot[1]&&u.subject===slot[2]);if(ex)ex.count++;else R.unplaced.push({grade:slot[0],name:slot[1],subject:slot[2],count:1});
+const ex=R.unplaced.find(u=>u.name===slot[1]&&u.subject===slot[2]);if(ex)ex.count++;else R.unplaced.push({grade:slot[0],name:slot[1],subject:slot[2],count:1,reason:''});
 edited=true;dragData=null;rR();}
 
 function showSwapModal(wi,day,ts,bi,booth){
@@ -545,8 +546,8 @@ zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag-
 wrap.appendChild(zone);}
 
 function rU(wrap){if(!R.unplaced.length){wrap.innerHTML='<p class="ap">✅ 全コマ配置済み</p>';return;}
-let h='<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th></tr></thead><tbody>';
-for(const u of R.unplaced)h+='<tr><td>'+u.grade+'</td><td>'+u.name+'</td><td>'+u.subject+'</td><td class="ct">'+u.count+'</td></tr>';h+='</tbody></table>';wrap.innerHTML=h;}
+let h='<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th><th>理由</th></tr></thead><tbody>';
+for(const u of R.unplaced)h+='<tr><td>'+u.grade+'</td><td>'+u.name+'</td><td>'+u.subject+'</td><td class="ct">'+u.count+'</td><td style="font-size:11px;color:var(--orange)">'+(u.reason||'')+'</td></tr>';h+='</tbody></table>';wrap.innerHTML=h;}
 
 // === Student Calendar ===
 function rCal(wrap){
@@ -663,11 +664,11 @@ function renderStudentCal(){
       }
       if(!items.length&&!dl){const em=document.createElement('span');em.className='cal-empty';em.textContent='-';td.appendChild(em);}
       // Drop: move into this day/week with teacher selection
-      td.addEventListener('dragover',e=>{e.preventDefault();if(dragData&&(dragData.type==='calSlot'||dragData.type==='booth'))td.classList.add('drag-over');});
+      td.addEventListener('dragover',e=>{e.preventDefault();if(dragData&&(dragData.type==='calSlot'||dragData.type==='booth'||dragData.type==='unplaced'))td.classList.add('drag-over');});
       td.addEventListener('dragleave',()=>{td.classList.remove('drag-over');});
       ((wi_,day_)=>{
         td.addEventListener('drop',e=>{e.preventDefault();td.classList.remove('drag-over');
-          if(!dragData||(dragData.type!=='calSlot'&&dragData.type!=='booth'))return;
+          if(!dragData||(dragData.type!=='calSlot'&&dragData.type!=='booth'&&dragData.type!=='unplaced'))return;
           showTeacherModal(wi_,day_,dragData);
         });
       })(wi,day);
@@ -680,6 +681,30 @@ function renderStudentCal(){
   const info=document.createElement('div');info.style.cssText='margin-top:8px;font-size:12px;color:var(--ink2)';
   info.innerHTML='合計: <b>'+slots.length+'コマ</b>　<span style="font-size:11px;color:var(--orange)">✋ クリックで講師/時間変更、ドラッグで別の日に移動</span>';
   cw.appendChild(info);
+
+  // 対象生徒の未配置コマ表示
+  const stuUnplaced=R.unplaced.filter(u=>u.name===s.name);
+  if(stuUnplaced.length){
+    const upLabel=document.createElement('div');upLabel.className='unplaced-label';
+    upLabel.textContent='📦 未配置コマ（カレンダーにドラッグして配置）';
+    cw.appendChild(upLabel);
+    const upZone=document.createElement('div');upZone.className='unplaced-zone';
+    stuUnplaced.forEach(u=>{
+      const gi=R.unplaced.indexOf(u);
+      for(let i=0;i<u.count;i++){
+        const chip=document.createElement('div');chip.className='slot-chip';chip.draggable=true;
+        chip.innerHTML='<span class="g">'+u.grade+'</span><span class="s">'+u.name+'</span><span class="j">'+u.subject+'</span>'
+          +(u.reason?'<span style="font-size:9px;color:var(--orange);margin-left:4px">'+u.reason+'</span>':'');
+        chip.title=u.reason||'未配置';
+        ((gi_)=>{
+          chip.addEventListener('dragstart',e=>{dragData={type:'unplaced',ui:gi_,slot:[u.grade,u.name,u.subject]};chip.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
+        })(gi);
+        chip.addEventListener('dragend',()=>{chip.style.opacity='1';dragData=null;});
+        upZone.appendChild(chip);
+      }
+    });
+    cw.appendChild(upZone);
+  }
 }
 
 // === Teacher selection modal ===
@@ -711,12 +736,9 @@ function showTeacherModal(targetWi,targetDay,dd){
     const ngMark=dd.slot?isNg(dd.slot[1],teacher):'';
     btn.innerHTML='<span class="t-name" style="'+(ngMark?'color:var(--red)':'')+'">'+(ngMark?'⚠ ':'')+teacher+'</span><span class="t-info">'+timesList+'</span>';
     btn.onclick=()=>{
-      // Pick the first available time slot for this teacher
       const pick=tOpts[0];
-      // Remove from source
-      const srcWs=R.schedule[dd.wi];
-      srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si,1);
-      // Add to target
+      if(dd.type==='unplaced'){const u=R.unplaced[dd.ui];if(u){u.count--;if(u.count<=0)R.unplaced.splice(dd.ui,1);}}
+      else{const srcWs=R.schedule[dd.wi];srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si,1);}
       ws[targetDay][pick.ts][pick.bi].slots.push(dd.slot);
       edited=true;dragData=null;root.innerHTML='';rR();
     };
@@ -727,7 +749,8 @@ function showTeacherModal(targetWi,targetDay,dd){
         const sub=document.createElement('div');sub.className='modal-opt';sub.style.paddingLeft='28px';
         sub.innerHTML='<span class="t-info">└ '+o.time+' ('+o.cnt+'/2)</span>';
         sub.onclick=()=>{
-          const srcWs=R.schedule[dd.wi];srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si,1);
+          if(dd.type==='unplaced'){const u=R.unplaced[dd.ui];if(u){u.count--;if(u.count<=0)R.unplaced.splice(dd.ui,1);}}
+          else{const srcWs=R.schedule[dd.wi];srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si,1);}
           ws[targetDay][o.ts][o.bi].slots.push(dd.slot);
           edited=true;dragData=null;root.innerHTML='';rR();
         };
@@ -818,7 +841,7 @@ function showSlotEditModal(student,it){
     if(si<0){root.innerHTML='';return;}
     const slot=srcBooth.slots.splice(si,1)[0];
     const ex=R.unplaced.find(u=>u.name===slot[1]&&u.subject===slot[2]);
-    if(ex)ex.count++;else R.unplaced.push({grade:slot[0],name:slot[1],subject:slot[2],count:1});
+    if(ex)ex.count++;else R.unplaced.push({grade:slot[0],name:slot[1],subject:slot[2],count:1,reason:''});
     edited=true;root.innerHTML='';rR();
   };
   opts.appendChild(rmBtn);
