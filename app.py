@@ -1754,16 +1754,16 @@ def restore_json():
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         return jsonify({'error': f'JSONの解析に失敗しました: {e}'}), 400
 
-    schedule = state.get('schedule')
+    schedule = state.get('schedule') or state.get('schedule_json')
     if not schedule:
         return jsonify({'error': 'スケジュールデータが含まれていません'}), 400
 
     unplaced = state.get('unplaced', [])
-    office_teachers = state.get('officeTeachers', [])
-    booth_pref = state.get('boothPref', {})
+    office_teachers = state.get('officeTeachers') or state.get('office_teachers', [])
+    booth_pref = state.get('boothPref') or state.get('booth_pref', {})
     students = state.get('students', [])
-    week_dates = state.get('weekDates')
-    weekly_teachers = state.get('weeklyTeachers')
+    week_dates = state.get('weekDates') or state.get('week_dates')
+    weekly_teachers = state.get('weeklyTeachers') or state.get('weekly_teachers')
     placed = state.get('placed', 0)
     total = state.get('total', 0)
 
