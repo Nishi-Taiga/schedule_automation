@@ -1202,7 +1202,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
                             cell.alignment = data_align
 
         # 教室業務・チューター
-        ot = office_teachers[wi]
+        ot = office_teachers[wi] if wi < len(office_teachers) else {}
         holiday_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
         holiday_font = Font(name='MS PGothic', color='FFFFFF', bold=True, size=11)
         for day in DAYS:
@@ -1557,6 +1557,7 @@ def generate():
             'schedule_json': schedule_json,
             'unplaced': unplaced,
             'office_teachers': office_teachers,
+            'office_rule': office_rule,
             'booth_pref': booth_pref,
             'students': students,
             'week_dates': week_dates,
@@ -1652,10 +1653,21 @@ def download():
                         placed += len(b['slots'])
         state_json['placed'] = placed
 
+        # office_teachers が不足している場合（古いバックアップ等）、デフォルト設定で補完
+        _DEFAULT_RULE = {'月':['石川T'],'火':['石川T'],'水':['西T'],'木':['石川T'],'金':['石川T'],'土':['越智T']}
+        ot_list = list(res.get('office_teachers', []))
+        rule = res.get('office_rule') or _DEFAULT_RULE
+        num_sched_weeks = len(res.get('schedule', []))
+        while len(ot_list) < num_sched_weeks:
+            if ot_list:
+                ot_list.append(dict(ot_list[-1]))
+            else:
+                ot_list.append({d: rule[d][0] for d in DAYS if rule.get(d)})
+
         write_excel(
             res['schedule'],
             res['unplaced'],
-            res['office_teachers'],
+            ot_list,
             sd['files']['booth'],
             output_path,
             state_json=state_json
