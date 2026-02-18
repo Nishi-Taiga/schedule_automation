@@ -10,7 +10,7 @@ from collections import defaultdict
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 import openpyxl
-from openpyxl.styles import Font, Alignment
+from openpyxl.styles import Font, Alignment, PatternFill
 
 random.seed(42)
 
@@ -824,8 +824,28 @@ def resolve_office_teacher(day, candidates, day_data):
                 return candidate
     return None
 
+def load_holidays(booth_wb, num_weeks):
+    """ブース表の教室業務行(row 5)から休塾日を検出する。
+    Returns: [{day: True, ...}, ...] 各週の休塾日マップ
+    """
+    meta_sheets = [sn for sn in booth_wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
+    week_sheets = [sn for sn in booth_wb.sheetnames if sn not in meta_sheets]
+    holidays = []
+    for wi in range(min(num_weeks, len(week_sheets))):
+        ws = booth_wb[week_sheets[wi]]
+        h = {}
+        for day, cols in DAY_COLS.items():
+            val = ws.cell(5, cols[0]).value
+            if val and '休塾' in str(val):
+                h[day] = True
+        holidays.append(h)
+    # 足りない週は空辞書で埋める
+    while len(holidays) < num_weeks:
+        holidays.append({})
+    return holidays
+
 # ========== スケジューラー ==========
-def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
+def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None):
     remaining = {s['name']: dict(s['needs']) for s in students}
     smap = {s['name']: s for s in students}
     schedule = []
@@ -840,9 +860,13 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref):
     for wi in range(num_weeks):
         ot = {}
         for d in DAYS:
-            candidates = office_rule.get(d, ['石川T'])
-            d_data = weekly_teachers[wi].get(d, {})
-            ot[d] = resolve_office_teacher(d, candidates, d_data)
+            # 休塾日チェック
+            if holidays and wi < len(holidays) and holidays[wi].get(d):
+                ot[d] = '休塾日'
+            else:
+                candidates = office_rule.get(d, ['石川T'])
+                d_data = weekly_teachers[wi].get(d, {})
+                ot[d] = resolve_office_teacher(d, candidates, d_data)
         office_teachers.append(ot)
         ws = {}
         for day in DAYS:
@@ -1179,13 +1203,24 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
 
         # 教室業務・チューター
         ot = office_teachers[wi]
+        holiday_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
+        holiday_font = Font(name='MS PGothic', color='FFFFFF', bold=True, size=11)
         for day in DAYS:
             bc = DAY_COLS[day][0]
             t = ot.get(day)
             if t:
-                ws.cell(5, bc, t)
+                cell = ws.cell(5, bc, t)
+                if t == '休塾日':
+                    cell.fill = holiday_fill
+                    cell.font = holiday_font
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
                 for tr in TUTOR_ROWS:
-                    try: ws.cell(tr, bc, t)
+                    try:
+                        c = ws.cell(tr, bc, t)
+                        if t == '休塾日':
+                            c.fill = holiday_fill
+                            c.font = holiday_font
+                            c.alignment = Alignment(horizontal='center', vertical='center')
                     except: pass
 
     # 未配置コマシート
@@ -1492,8 +1527,11 @@ def generate():
         wt = load_weekly_teachers(files['src'])
         total = sum(sum(s['needs'].values()) for s in students)
 
+        # 休塾日検出
+        holidays = load_holidays(booth_wb, len(wt))
+
         schedule, unplaced, office_teachers = build_schedule(
-            students, wt, skills, office_rule, booth_pref
+            students, wt, skills, office_rule, booth_pref, holidays=holidays
         )
         placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
 
