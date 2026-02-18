@@ -546,6 +546,17 @@ def parse_survey_file(file_path):
                 break
     teacher_name = to_short(raw_name) if raw_name else None
     if not teacher_name:
+        # ファイル名から講師名を推定（例: 飯村　定子_202603シート.xlsx）
+        basename = os.path.basename(file_path)
+        if basename.startswith('survey_'):
+            basename = basename[7:]  # 'survey_' プレフィックスを除去
+        name_part = basename.split('_')[0].strip()
+        if name_part:
+            teacher_name = to_short(name_part)
+            if teacher_name:
+                raw_name = name_part
+                print(f"[survey] ファイル名から講師名を推定: {teacher_name} (from {os.path.basename(file_path)})", flush=True)
+    if not teacher_name:
         print(f"[survey] 講師名を検出できません: {file_path}", flush=True)
         return None
 
@@ -1044,9 +1055,9 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         for day, ts_str, subj in s['fixed']:
             for wi in range(num_weeks):
                 if (wi, day) in s.get('ng_dates', set()): continue
+                if remaining[s['name']].get(subj, 0) <= 0: continue  # 必要コマ数を超えたら配置しない
                 if place_student(schedule[wi], s, day, ts_str, subj):
-                    if remaining[s['name']].get(subj,0)>0:
-                        remaining[s['name']][subj] -= 1
+                    remaining[s['name']][subj] -= 1
 
     # Phase2: 通常配置
     order = sorted(students, key=lambda s: (

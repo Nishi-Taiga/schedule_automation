@@ -74,6 +74,7 @@ tr.er{background:#f5f7fa}
 .tp-new{color:#1565c0;font-weight:600}
 .tp-swap{color:#6a1b9a}
 .tp-clear{color:var(--red);border-top:1px solid #eee;font-size:10px}
+.tp-cancel{color:#666;border-top:1px solid #eee;font-size:10px;text-align:center}
 .slot-chip{display:flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;margin:1px 0;font-size:10px;cursor:pointer;user-select:none;transition:all .12s;width:100%;background:#e8f5e9;border:1px solid #a5d6a7}
 .slot-chip:active{cursor:grabbing}.slot-chip:hover{background:#c8e6c9;border-color:#66bb6a}
 .slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32}
@@ -192,7 +193,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.5</span></h1></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.6</span></h1></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -563,6 +564,9 @@ opt.onclick=e=>{e.stopPropagation();swapTeacherFull(wi,day,bi,t);picker.remove()
 // 空欄にする
 const clr=document.createElement('div');clr.className='tp-opt tp-clear';clr.textContent='× 講師を外す';
 clr.onclick=e=>{e.stopPropagation();removeTeacher(wi,day,bi);picker.remove();};picker.appendChild(clr);
+// キャンセル
+const cancel=document.createElement('div');cancel.className='tp-opt tp-cancel';cancel.textContent='× キャンセル';
+cancel.onclick=e=>{e.stopPropagation();picker.remove();};picker.appendChild(cancel);
 anchor.parentElement.style.position='relative';anchor.parentElement.appendChild(picker);
 const close=e=>{if(!picker.contains(e.target)){picker.remove();document.removeEventListener('click',close);}};
 setTimeout(()=>document.addEventListener('click',close),0);}
