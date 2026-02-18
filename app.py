@@ -1643,13 +1643,15 @@ def download():
                 'ng_dates': [list(d) for d in s.get('ng_dates', set())],
             })
         state_json['students'] = students_json
-        # weeklyTeachers
+        # weeklyTeachers: srcファイルがあれば再取得、なければresultのキャッシュを利用
         wt = None
         if 'src' in sd.get('files', {}):
             try:
                 wt = load_weekly_teachers(sd['files']['src'])
             except Exception:
                 pass
+        if not wt:
+            wt = res.get('weekly_teachers')
         if wt:
             state_json['weeklyTeachers'] = wt
         # placed count
@@ -1748,7 +1750,7 @@ def update_schedule():
 @app.route('/api/restore_json', methods=['POST'])
 @login_required
 def restore_json():
-    """JSONバックアップファイルからスケジュール状態を復元する"""
+    """JSONバックアップ + 既存ファイルからスケジュール状態を復元する"""
     f = request.files.get('file')
     if not f:
         return jsonify({'error': 'ファイルが選択されていません'}), 400
@@ -1763,7 +1765,6 @@ def restore_json():
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         return jsonify({'error': f'JSONの解析に失敗しました: {e}'}), 400
 
-    # /api/state レスポンス形式の場合（has_state キーあり）
     schedule = state.get('schedule')
     if not schedule:
         return jsonify({'error': 'スケジュールデータが含まれていません'}), 400
@@ -1777,13 +1778,32 @@ def restore_json():
     placed = state.get('placed', 0)
     total = state.get('total', 0)
 
-    # placed/total を再計算（信頼できない場合のため）
     if not placed:
         placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     if not total and students:
         total = sum(sum(s.get('needs', {}).values()) for s in students)
 
-    # セッションに保存
+    # booth / src ファイルが同時にアップロードされた場合はセッションに保存
+    files = dict(sd.get('files', {}))
+    for key in ['booth', 'src']:
+        fx = request.files.get(key)
+        if fx and fx.filename:
+            ok, err = validate_file(fx)
+            if not ok:
+                return jsonify({'error': f'{key}ファイル: {err}'}), 400
+            path = os.path.join(sd['dir'], key + '_' + fx.filename)
+            fx.save(path)
+            files[key] = path
+    sd['files'] = files
+    save_session_files(sd)
+
+    # srcがあればweeklyTeachersを再取得（最新化）
+    if 'src' in files:
+        try:
+            weekly_teachers = load_weekly_teachers(files['src'])
+        except Exception:
+            pass
+
     sd['result'] = {
         'schedule_json': schedule,
         'schedule': schedule,
@@ -1792,6 +1812,7 @@ def restore_json():
         'booth_pref': booth_pref,
         'students': students,
         'week_dates': week_dates,
+        'weekly_teachers': weekly_teachers,  # ダウンロード時のフォールバック用
     }
     save_session_result(sd)
 
@@ -1805,6 +1826,7 @@ def restore_json():
         'boothPref': booth_pref,
         'students': students,
         'weekDates': week_dates,
+        'hasBooth': 'booth' in files,
     }
     if weekly_teachers:
         resp['weeklyTeachers'] = weekly_teachers
