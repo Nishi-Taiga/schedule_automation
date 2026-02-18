@@ -192,7 +192,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.6</span></h1></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.7</span></h1></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -237,7 +237,11 @@ table.stu tr:hover{background:#f0f5ff}
 <p style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">ダウンロードしたブース表Excelを選択すると、前回の配置状態を復元できます</p>
 <label class="upload-row" id="uSaved"><div class="icon">📥</div><div><div class="label">保存済みブース表 (.xlsx)</div><div class="desc" id="nSaved">ブース表DLでダウンロードしたファイルを選択</div></div><input type="file" accept=".xlsx" onchange="onLoadSaved(this)"></label>
 <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'saved')"></div>
-<label class="upload-row" id="uJson"><div class="icon">📋</div><div><div class="label">JSONバックアップ (.json)</div><div class="desc" id="nJson">ブラウザコンソールから保存したJSONファイルを選択</div></div><input type="file" accept=".json" onchange="onLoadJson(this)"></label>
+<p style="font-size:11.5px;color:var(--ink3);margin:10px 0 6px">JSONと既存ファイルをまとめて選択してから「復元する」を押すと、ブース表DLも使えます</p>
+<label class="upload-row" id="uJson"><div class="icon">📋</div><div><div class="label">JSONバックアップ (.json) <span style="color:var(--red);font-size:11px">必須</span></div><div class="desc" id="nJson">ブラウザコンソールから保存したJSONファイル</div></div><input type="file" accept=".json" onchange="onJsonFileSelect(this)"></label>
+<label class="upload-row" id="uJsonBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsx) <span style="color:var(--orange);font-size:11px">DLに必要</span></div><div class="desc" id="nJsonBooth">ブース表DLで使うテンプレートExcel</div></div><input type="file" accept=".xlsx" onchange="onJsonBoothSelect(this)"></label>
+<label class="upload-row" id="uJsonSrc"><div class="icon">📁</div><div><div class="label">元シート (.xlsx) <span style="color:var(--ink3);font-size:11px">任意</span></div><div class="desc" id="nJsonSrc">講師ピッカーを使う場合は選択</div></div><input type="file" accept=".xlsx" onchange="onJsonSrcSelect(this)"></label>
+<div class="bg"><button class="btn btn-p" id="jsonRestoreBtn" disabled onclick="doRestoreJson()">JSONから復元</button><div class="status" id="jsonRestSt"></div></div>
 </div>
 <div id="pSettings" class="card" style="display:none">
 <h2>教室業務・チューター担当</h2>
@@ -313,19 +317,31 @@ if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b})
 go('result');rR();showSaveIndicator('スケジュールを復元しました');}
 else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent=d.error||'読み込み失敗';}}
 catch(e){hideProgress();row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー: '+e.message;}}
-async function onLoadJson(inp){const f=inp.files[0];if(!f)return;
-const row=inp.closest('.upload-row');row.querySelector('.desc').textContent='読み込み中...';row.querySelector('.icon').textContent='📄';
-showProgress(20,'JSONバックアップを読み込んでいます...','読み込み中');
-const fd=new FormData();fd.append('file',f);
+// === JSON restore ===
+let _jsonFile=null,_jsonBoothFile=null,_jsonSrcFile=null;
+function _updateJsonRestoreBtn(){document.getElementById('jsonRestoreBtn').disabled=!_jsonFile;}
+function onJsonFileSelect(inp){const f=inp.files[0];if(!f)return;_jsonFile=f;
+const row=document.getElementById('uJson');row.querySelector('.icon').textContent='📋';row.querySelector('.desc').textContent=f.name;row.classList.add('done');
+_updateJsonRestoreBtn();}
+function onJsonBoothSelect(inp){const f=inp.files[0];if(!f)return;_jsonBoothFile=f;
+const row=document.getElementById('uJsonBooth');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;row.classList.add('done');}
+function onJsonSrcSelect(inp){const f=inp.files[0];if(!f)return;_jsonSrcFile=f;
+const row=document.getElementById('uJsonSrc');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;row.classList.add('done');}
+async function doRestoreJson(){if(!_jsonFile)return;
+const st=document.getElementById('jsonRestSt');st.textContent='';st.className='status';
+showProgress(20,'JSONバックアップを復元しています...','読み込み中');
+const fd=new FormData();fd.append('file',_jsonFile);
+if(_jsonBoothFile)fd.append('booth',_jsonBoothFile);
+if(_jsonSrcFile)fd.append('src',_jsonSrcFile);
 try{const res=await fetch('/api/restore_json',{method:'POST',body:fd});const d=await res.json();
 hideProgress();
-if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';
-row.querySelector('.desc').textContent=f.name+' ('+d.placed+'/'+d.total+'コマ)';
+if(res.ok&&d.ok){
+document.getElementById('uJson').querySelector('.desc').textContent=_jsonFile.name+' ('+d.placed+'/'+d.total+'コマ)';
 R=d;PW=0;edited=false;calStudent=null;buildNgMap();
 if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));
-go('result');rR();showSaveIndicator('JSONから復元しました');}
-else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent=d.error||'読み込み失敗';}}
-catch(e){hideProgress();row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー: '+e.message;}}
+go('result');rR();showSaveIndicator('JSONから復元しました'+(d.hasBooth?'（DL可）':''));}
+else{st.className='status err';st.textContent=d.error||'読み込み失敗';}}
+catch(e){hideProgress();st.className='status err';st.textContent='通信エラー: '+e.message;}}
 window.addEventListener('DOMContentLoaded',()=>{checkSavedState();});
 
 // === Folder upload helper ===
