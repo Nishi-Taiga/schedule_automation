@@ -238,6 +238,7 @@ table.stu tr:hover{background:#f0f5ff}
 <p style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">ダウンロードしたブース表Excelを選択すると、前回の配置状態を復元できます</p>
 <label class="upload-row" id="uSaved"><div class="icon">📥</div><div><div class="label">保存済みブース表 (.xlsx)</div><div class="desc" id="nSaved">ブース表DLでダウンロードしたファイルを選択</div></div><input type="file" accept=".xlsx" onchange="onLoadSaved(this)"></label>
 <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'saved')"></div>
+<label class="upload-row" id="uJson"><div class="icon">📋</div><div><div class="label">JSONバックアップ (.json)</div><div class="desc" id="nJson">ブラウザコンソールから保存したJSONファイルを選択</div></div><input type="file" accept=".json" onchange="onLoadJson(this)"></label>
 </div>
 <div id="pSettings" class="card" style="display:none">
 <h2>教室業務・チューター担当</h2>
@@ -311,6 +312,19 @@ row.querySelector('.desc').textContent=f.name+' ('+d.placed+'/'+d.total+'コマ)
 R=d;PW=0;edited=false;calStudent=null;buildNgMap();
 if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));
 go('result');rR();showSaveIndicator('スケジュールを復元しました');}
+else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent=d.error||'読み込み失敗';}}
+catch(e){hideProgress();row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー: '+e.message;}}
+async function onLoadJson(inp){const f=inp.files[0];if(!f)return;
+const row=inp.closest('.upload-row');row.querySelector('.desc').textContent='読み込み中...';row.querySelector('.icon').textContent='📄';
+showProgress(20,'JSONバックアップを読み込んでいます...','読み込み中');
+const fd=new FormData();fd.append('file',f);
+try{const res=await fetch('/api/restore_json',{method:'POST',body:fd});const d=await res.json();
+hideProgress();
+if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';
+row.querySelector('.desc').textContent=f.name+' ('+d.placed+'/'+d.total+'コマ)';
+R=d;PW=0;edited=false;calStudent=null;buildNgMap();
+if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));
+go('result');rR();showSaveIndicator('JSONから復元しました');}
 else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent=d.error||'読み込み失敗';}}
 catch(e){hideProgress();row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー: '+e.message;}}
 window.addEventListener('DOMContentLoaded',()=>{checkSavedState();});
