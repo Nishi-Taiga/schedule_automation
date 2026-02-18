@@ -1733,6 +1733,72 @@ def update_schedule():
     placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     return jsonify({'ok': True, 'placed': placed})
 
+# ========== JSON restore API ==========
+@app.route('/api/restore_json', methods=['POST'])
+@login_required
+def restore_json():
+    """JSONバックアップファイルからスケジュール状態を復元する"""
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'ファイルが選択されていません'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext != '.json':
+        return jsonify({'error': f'JSONファイルを選択してください（選択: {ext}）'}), 400
+
+    sd = get_session_data()
+    try:
+        raw = f.read().decode('utf-8')
+        state = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        return jsonify({'error': f'JSONの解析に失敗しました: {e}'}), 400
+
+    # /api/state レスポンス形式の場合（has_state キーあり）
+    schedule = state.get('schedule')
+    if not schedule:
+        return jsonify({'error': 'スケジュールデータが含まれていません'}), 400
+
+    unplaced = state.get('unplaced', [])
+    office_teachers = state.get('officeTeachers', [])
+    booth_pref = state.get('boothPref', {})
+    students = state.get('students', [])
+    week_dates = state.get('weekDates')
+    weekly_teachers = state.get('weeklyTeachers')
+    placed = state.get('placed', 0)
+    total = state.get('total', 0)
+
+    # placed/total を再計算（信頼できない場合のため）
+    if not placed:
+        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+    if not total and students:
+        total = sum(sum(s.get('needs', {}).values()) for s in students)
+
+    # セッションに保存
+    sd['result'] = {
+        'schedule_json': schedule,
+        'schedule': schedule,
+        'unplaced': unplaced,
+        'office_teachers': office_teachers,
+        'booth_pref': booth_pref,
+        'students': students,
+        'week_dates': week_dates,
+    }
+    save_session_result(sd)
+
+    resp = {
+        'ok': True,
+        'placed': placed,
+        'total': total,
+        'schedule': schedule,
+        'unplaced': unplaced,
+        'officeTeachers': office_teachers,
+        'boothPref': booth_pref,
+        'students': students,
+        'weekDates': week_dates,
+    }
+    if weekly_teachers:
+        resp['weeklyTeachers'] = weekly_teachers
+    return jsonify(resp)
+
 # ========== State persistence API ==========
 @app.route('/api/state')
 @login_required
