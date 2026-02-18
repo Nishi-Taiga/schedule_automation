@@ -193,7 +193,7 @@ table.stu tr:hover{background:#f0f5ff}
 </style>
 </head>
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.7</span></h1></div></div>
+<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.8</span></h1></div></div>
 <div class="container">
 <div class="steps">
 <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
@@ -240,8 +240,34 @@ table.stu tr:hover{background:#f0f5ff}
 <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'saved')"></div>
 <p style="font-size:11.5px;color:var(--ink3);margin:10px 0 6px">JSONと既存ファイルをまとめて選択してから「復元する」を押すと、ブース表DLも使えます</p>
 <label class="upload-row" id="uJson"><div class="icon">📋</div><div><div class="label">JSONバックアップ (.json) <span style="color:var(--red);font-size:11px">必須</span></div><div class="desc" id="nJson">ブラウザコンソールから保存したJSONファイル</div></div><input type="file" accept=".json" onchange="onJsonFileSelect(this)"></label>
-<label class="upload-row" id="uJsonBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsx) <span style="color:var(--orange);font-size:11px">DLに必要</span></div><div class="desc" id="nJsonBooth">ブース表DLで使うテンプレートExcel</div></div><input type="file" accept=".xlsx" onchange="onJsonBoothSelect(this)"></label>
-<label class="upload-row" id="uJsonSrc"><div class="icon">📁</div><div><div class="label">元シート (.xlsx) <span style="color:var(--ink3);font-size:11px">任意</span></div><div class="desc" id="nJsonSrc">講師ピッカーを使う場合は選択</div></div><input type="file" accept=".xlsx" onchange="onJsonSrcSelect(this)"></label>
+<h3 style="font-size:12px;margin:12px 0 6px">ブース表の取得方法 <span style="color:var(--orange);font-size:11px">DLに必要</span></h3>
+<div class="booth-toggle">
+<button id="jrBoothMode1" class="active" onclick="setJrBoothMode('file')">ブース表をアップロード</button>
+<button id="jrBoothMode2" onclick="setJrBoothMode('consolidate')">ブース表を集約</button>
+</div>
+<div id="jrBoothFileMode">
+<label class="upload-row" id="uJsonBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsx)</div><div class="desc" id="nJsonBooth">ブース表DLで使うテンプレートExcel</div></div><input type="file" accept=".xlsx" onchange="onJsonBoothSelect(this)"></label>
+<div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onJrFolderBooth(this)"></div>
+</div>
+<div id="jrBoothConsolMode" style="display:none">
+<div class="consol-zone" id="jrConsolMetaZone"><div class="consol-label">📋 メタデータファイル (.xlsx)</div><div class="consol-desc" id="jrConsolMetaDesc">必要コマ数・一覧表(指導科目)・ブース希望シートを含むファイル</div><input type="file" accept=".xlsx" onchange="onJrConsolMeta(this)"></div>
+<div class="consol-zone" id="jrConsolWeekZone"><div class="consol-label">📁 週別ブース表ファイル (.xlsx 複数選択可)</div><div class="consol-desc" id="jrConsolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx" multiple onchange="onJrConsolWeeks(this)"><div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onJrFolderWeeks(this)"></div><div class="consol-files" id="jrConsolWeekList"></div></div>
+<div class="bg" style="margin-top:8px"><button class="btn btn-s" id="jrConsolBtn" disabled onclick="doJrConsolidate()">集約して統合</button></div>
+<div id="jrConsolResult"></div>
+<div class="file-note">※ メタデータファイルの古い週シートは自動削除されます</div>
+</div>
+<h3 style="font-size:12px;margin:12px 0 6px">元シートの取得方法 <span style="color:var(--ink3);font-size:11px">任意</span></h3>
+<div class="src-toggle">
+<button id="jrSrcMode1" class="active" onclick="setJrSrcMode('file')">元シートをアップロード</button>
+<button id="jrSrcMode2" onclick="setJrSrcMode('survey')">講師回答ファイルから集約</button>
+</div>
+<div id="jrSrcFileMode">
+<label class="upload-row" id="uJsonSrc"><div class="icon">📁</div><div><div class="label">元シート (.xlsx)</div><div class="desc" id="nJsonSrc">講師ピッカーを使う場合は選択</div></div><input type="file" accept=".xlsx" onchange="onJsonSrcSelect(this)"></label>
+<div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onJrFolderSrc(this)"></div>
+</div>
+<div id="jrSrcSurveyMode" style="display:none">
+<div class="survey-zone" id="jrSurveyZone"><div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div><div class="survey-desc" id="jrSurveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx" multiple onchange="onJrSurveyFiles(this)"><div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onJrFolderSurvey(this)"></div><div class="survey-files" id="jrSurveyFileList"></div></div>
+</div>
 <div class="bg"><button class="btn btn-p" id="jsonRestoreBtn" disabled onclick="doRestoreJson()">JSONから復元</button><div class="status" id="jsonRestSt"></div></div>
 </div>
 <div id="pSettings" class="card" style="display:none">
@@ -320,20 +346,95 @@ else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').tex
 catch(e){hideProgress();row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー: '+e.message;}}
 // === JSON restore ===
 let _jsonFile=null,_jsonBoothFile=null,_jsonSrcFile=null;
+let _jrBoothUploaded=false,_jrSrcUploaded=false;
+let jrBoothMode='file',jrSrcMode='file';
+let jrConsolMeta=null,jrConsolWeeks=null;
 function _updateJsonRestoreBtn(){document.getElementById('jsonRestoreBtn').disabled=!_jsonFile;}
 function onJsonFileSelect(inp){const f=inp.files[0];if(!f)return;_jsonFile=f;
 const row=document.getElementById('uJson');row.querySelector('.icon').textContent='📋';row.querySelector('.desc').textContent=f.name;row.classList.add('done');
 _updateJsonRestoreBtn();}
-function onJsonBoothSelect(inp){const f=inp.files[0];if(!f)return;_jsonBoothFile=f;
+function onJsonBoothSelect(inp){const f=inp.files[0];if(!f)return;_jsonBoothFile=f;_jrBoothUploaded=false;
 const row=document.getElementById('uJsonBooth');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;row.classList.add('done');}
-function onJsonSrcSelect(inp){const f=inp.files[0];if(!f)return;_jsonSrcFile=f;
+function onJsonSrcSelect(inp){const f=inp.files[0];if(!f)return;_jsonSrcFile=f;_jrSrcUploaded=false;
 const row=document.getElementById('uJsonSrc');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;row.classList.add('done');}
+// --- JSON restore: booth mode toggle ---
+function setJrBoothMode(mode){jrBoothMode=mode;
+document.getElementById('jrBoothMode1').className=mode==='file'?'active':'';
+document.getElementById('jrBoothMode2').className=mode==='consolidate'?'active':'';
+document.getElementById('jrBoothFileMode').style.display=mode==='file'?'':'none';
+document.getElementById('jrBoothConsolMode').style.display=mode==='consolidate'?'':'none';}
+function onJrFolderBooth(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
+const f=files[0];_jsonBoothFile=f;_jrBoothUploaded=false;
+const row=document.getElementById('uJsonBooth');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;row.classList.add('done');}
+function onJrConsolMeta(inp){const f=inp.files[0];if(!f)return;jrConsolMeta=f;
+document.getElementById('jrConsolMetaZone').classList.add('done');
+document.getElementById('jrConsolMetaDesc').textContent=f.name;
+document.getElementById('jrConsolBtn').disabled=!(jrConsolMeta&&jrConsolWeeks);}
+function onJrConsolWeeks(inp){const files=inp.files;if(!files||!files.length)return;jrConsolWeeks=files;
+document.getElementById('jrConsolWeekZone').classList.add('done');
+document.getElementById('jrConsolWeekDesc').textContent=files.length+'件のファイルを選択';
+const flist=document.getElementById('jrConsolWeekList');
+flist.innerHTML=Array.from(files).map(f=>'<span class="cf-item">'+f.name+'</span>').join('');
+document.getElementById('jrConsolBtn').disabled=!(jrConsolMeta&&jrConsolWeeks);}
+function onJrFolderWeeks(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
+jrConsolWeeks=files;
+document.getElementById('jrConsolWeekZone').classList.add('done');
+document.getElementById('jrConsolWeekDesc').textContent=files.length+'件のファイルを選択';
+const flist=document.getElementById('jrConsolWeekList');
+flist.innerHTML=files.map(f=>'<span class="cf-item">'+f.name+'</span>').join('');
+document.getElementById('jrConsolBtn').disabled=!(jrConsolMeta&&jrConsolWeeks);}
+async function doJrConsolidate(){if(!jrConsolMeta||!jrConsolWeeks)return;
+const btn=document.getElementById('jrConsolBtn');btn.disabled=true;btn.textContent='集約中...';
+document.getElementById('jrConsolResult').innerHTML='';
+showProgress(20,'ブース表を集約しています...','ブース表集約中');startProgressAnim(20,p=>'ファイルを処理しています...');
+const fd=new FormData();fd.append('meta',jrConsolMeta);
+for(let i=0;i<jrConsolWeeks.length;i++)fd.append('weeks',jrConsolWeeks[i]);
+try{const res=await fetch('/api/consolidate_booth',{method:'POST',body:fd});const d=await res.json();
+if(res.ok&&d.ok){
+document.getElementById('jrConsolResult').innerHTML='<div class="consol-result">✅ 統合完了: '+d.weekCount+'週分のシートを統合<br>メタシート: '+d.metaSheets.join(', ')+(d.removedSheets.length?' / 削除: '+d.removedSheets.join(', '):'')+'<br>最終シート構成: '+d.finalSheets.join(', ')+'</div>';
+_jrBoothUploaded=true;_jsonBoothFile=null;
+}else{document.getElementById('jrConsolResult').innerHTML='<div class="status err">エラー: '+(d.error||'不明')+'</div>';_jrBoothUploaded=false;}}
+catch(e){document.getElementById('jrConsolResult').innerHTML='<div class="status err">通信エラー: '+e.message+'</div>';_jrBoothUploaded=false;}
+hideProgress();btn.disabled=false;btn.textContent='集約して統合';}
+// --- JSON restore: src mode toggle ---
+function setJrSrcMode(mode){jrSrcMode=mode;
+document.getElementById('jrSrcMode1').className=mode==='file'?'active':'';
+document.getElementById('jrSrcMode2').className=mode==='survey'?'active':'';
+document.getElementById('jrSrcFileMode').style.display=mode==='file'?'':'none';
+document.getElementById('jrSrcSurveyMode').style.display=mode==='survey'?'':'none';}
+function onJrFolderSrc(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
+const f=files[0];_jsonSrcFile=f;_jrSrcUploaded=false;
+const row=document.getElementById('uJsonSrc');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;row.classList.add('done');}
+async function onJrSurveyFiles(inp){const files=inp.files;if(!files||!files.length)return;
+const zone=document.getElementById('jrSurveyZone');const desc=document.getElementById('jrSurveyDesc');const flist=document.getElementById('jrSurveyFileList');
+desc.textContent=files.length+'件のファイルをアップロード中...';zone.classList.remove('done');
+showProgress(10,'講師回答ファイルを集約しています...','講師回答ファイル集約中');
+const fd=new FormData();for(let i=0;i<files.length;i++)fd.append('surveys',files[i]);
+try{const res=await fetch('/api/upload_surveys',{method:'POST',body:fd});const d=await res.json();
+if(res.ok&&d.ok){zone.classList.add('done');desc.textContent=d.teacherCount+'名の講師データを集約（'+d.weeks+'週分）';
+flist.innerHTML=d.teachers.map(t=>'<span class="sf-item">'+t+'</span>').join('');
+_jrSrcUploaded=true;_jsonSrcFile=null;}
+else{desc.textContent='エラー: '+(d.error||'不明');_jrSrcUploaded=false;}}
+catch(e){desc.textContent='通信エラー: '+e.message;_jrSrcUploaded=false;}
+hideProgress();}
+function onJrFolderSurvey(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
+const zone=document.getElementById('jrSurveyZone');const desc=document.getElementById('jrSurveyDesc');const flist=document.getElementById('jrSurveyFileList');
+desc.textContent=files.length+'件のファイルをアップロード中...';zone.classList.remove('done');
+showProgress(10,'講師回答ファイルを集約しています...','講師回答ファイル集約中');
+const fd=new FormData();files.forEach(f=>fd.append('surveys',f));
+fetch('/api/upload_surveys',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+if(d.ok){zone.classList.add('done');desc.textContent=d.teacherCount+'名の講師データを集約（'+d.weeks+'週分）';
+flist.innerHTML=d.teachers.map(t=>'<span class="sf-item">'+t+'</span>').join('');
+_jrSrcUploaded=true;_jsonSrcFile=null;}
+else{desc.textContent='エラー: '+(d.error||'不明');_jrSrcUploaded=false;}
+hideProgress();}).catch(e=>{desc.textContent='通信エラー: '+e.message;_jrSrcUploaded=false;hideProgress();});}
+// --- JSON restore: main action ---
 async function doRestoreJson(){if(!_jsonFile)return;
 const st=document.getElementById('jsonRestSt');st.textContent='';st.className='status';
 showProgress(20,'JSONバックアップを復元しています...','読み込み中');
 const fd=new FormData();fd.append('file',_jsonFile);
-if(_jsonBoothFile)fd.append('booth',_jsonBoothFile);
-if(_jsonSrcFile)fd.append('src',_jsonSrcFile);
+if(_jsonBoothFile&&!_jrBoothUploaded)fd.append('booth',_jsonBoothFile);
+if(_jsonSrcFile&&!_jrSrcUploaded)fd.append('src',_jsonSrcFile);
 try{const res=await fetch('/api/restore_json',{method:'POST',body:fd});const d=await res.json();
 hideProgress();
 if(res.ok&&d.ok){
