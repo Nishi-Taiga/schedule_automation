@@ -1852,6 +1852,35 @@
         return nw;
       });
     }
+    // 生徒ごとの配置数カウント
+    function countPlaced(studentName) {
+      if (!R || !R.schedule) return 0;
+      let c = 0;
+      R.schedule.forEach(w => {
+        Object.values(w).forEach(d => {
+          Object.values(d).forEach(bs => {
+            bs.forEach(b => {
+              if (studentName) {
+                b.slots.forEach(s => {
+                  if (s[1] === studentName) c++;
+                });
+              } else {
+                c += b.slots.length;
+              }
+            });
+          });
+        });
+      });
+      return c;
+    }
+    // 生徒ごとの必要コマ数取得
+    function getStudentNeeds(name) {
+      if (!R || !R.students) return 0;
+      const s = R.students.find(st => st.name === name);
+      if (!s || !s.needs) return 0;
+      return Object.values(s.needs).reduce((a, b) => a + b, 0);
+    }
+
     function rR() {
       // 時間キーを正規化（古いファイルの '16:00' 形式 → '16' 形式）
       if (R.schedule && R.schedule.length > 0 && R.schedule[0]) {
@@ -2100,6 +2129,85 @@
       edited = true; dragData = null; rR();
     }
 
+    // === Slot Manual Edit ===
+    function showSlotEditModal(wi, day, ts, bi) {
+      if (edited) scheduleAutoSave();
+      const booth = R.schedule[wi][day][ts][bi];
+      const m = document.createElement('div'); m.className = 'modal-overlay';
+      m.onclick = (e) => { if (e.target === m) closeSlotEditModal(); };
+
+      let h = '<div class="modal"><div class="modal-header">ブース編集 (' + day + ' ' + TSR[ts] + ' - ブース' + BL[bi] + ')</div><div class="modal-body"><div style="margin-bottom:12px"><label>講師</label><select id="seTeacher" style="width:100%;padding:4px"><option value="">(なし)</option>';
+      const allT = getAvailableTeachers(wi, day);
+      if (booth.teacher && !allT.includes(booth.teacher)) allT.push(booth.teacher); allT.sort();
+      allT.forEach(t => { h += '<option value="' + t + '"' + (t === booth.teacher ? ' selected' : '') + '>' + t + '</option>'; });
+      h += '</select></div>';
+
+      h += '<div style="margin-bottom:8px;font-weight:bold">生徒スロット</div>';
+      booth.slots.forEach((s, idx) => {
+        let subjOpts = [s[2]];
+        const stData = R.students.find(st => st.name === s[1]);
+        if (stData && stData.needs) { subjOpts = Object.keys(stData.needs); }
+        subjOpts = [...new Set(subjOpts)];
+        let sOpts = '';
+        subjOpts.forEach(sb => { sOpts += '<option value="' + sb + '"' + (sb === s[2] ? ' selected' : '') + '>' + sb + '</option>'; });
+
+        h += '<div class="slot-row" style="display:flex;gap:4px;align-items:center;margin-bottom:4px"><span class="badge ' + getGradeColor(s[0]) + '">' + s[0] + '</span><span style="flex:1;font-weight:bold">' + s[1] + '</span>';
+        h += '<select id="seSubj_' + idx + '" style="width:60px;padding:2px;font-size:12px">' + sOpts + '</select>';
+        h += '<button class="btn btn-o" style="padding:2px 6px;font-size:11px;color:var(--red);border-color:var(--red)" onclick="removeSlot(' + wi + ',\'' + day + '\',\'' + ts + '\',' + bi + ',' + idx + ')">削除</button></div>';
+      });
+
+      if (booth.slots.length < 2) {
+        h += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #ddd">';
+        h += '<div style="font-size:12px;margin-bottom:4px;color:var(--ink2)">コマ追加</div>';
+        h += '<div style="display:flex;gap:4px">';
+        h += '<select id="newSlotName" style="flex:1;font-size:12px"><option value="">生徒を選択...</option>';
+        const sortedStudents = [...R.students].sort((a, b) => a.grade.localeCompare(b.grade) || a.name.localeCompare(b.name));
+        sortedStudents.forEach(st => { h += '<option value="' + st.name + '">' + st.grade + ' ' + st.name + '</option>'; });
+        h += '</select>';
+        h += '<input type="text" id="newSlotSubj" placeholder="科目" style="width:50px;font-size:12px">';
+        h += '<button class="btn btn-p" style="padding:2px 8px;font-size:11px" onclick="addSlotManual(' + wi + ',\'' + day + '\',\'' + ts + '\',' + bi + ')">追加</button>';
+        h += '</div></div>';
+      }
+
+      h += '</div><div class="modal-footer"><button class="btn btn-o" onclick="closeSlotEditModal()">閉じる</button><button class="btn btn-p" onclick="saveSlotEdit(' + wi + ',\'' + day + '\',\'' + ts + '\',' + bi + ')">保存</button></div></div>';
+      m.innerHTML = h; document.getElementById('modalRoot').appendChild(m);
+    }
+
+    function addSlotManual(wi, day, ts, bi) {
+      const name = document.getElementById('newSlotName').value;
+      const subj = document.getElementById('newSlotSubj').value;
+      if (!name || !subj) { alert('生徒と科目を入力してください'); return; }
+      const st = R.students.find(s => s.name === name);
+      const grade = st ? st.grade : '?';
+      R.schedule[wi][day][ts][bi].slots.push([grade, name, subj]);
+      edited = true;
+      const unp = R.unplaced.find(u => u.name === name && u.subject === subj);
+      if (unp) {
+        unp.count--;
+        if (unp.count <= 0) { R.unplaced = R.unplaced.filter(u => u !== unp); }
+      }
+      closeSlotEditModal(); rR();
+    }
+    function removeSlot(wi, day, ts, bi, idx) {
+      if (!confirm('このコマを削除しますか？')) return;
+      const s = R.schedule[wi][day][ts][bi].slots[idx];
+      let u = R.unplaced.find(x => x.name === s[1] && x.subject === s[2]);
+      if (u) u.count++; else R.unplaced.push({ grade: s[0], name: s[1], subject: s[2], count: 1, reason: '手動削除' });
+      R.schedule[wi][day][ts][bi].slots.splice(idx, 1);
+      edited = true; closeSlotEditModal(); rR();
+    }
+    function saveSlotEdit(wi, day, ts, bi) {
+      const t = document.getElementById('seTeacher').value;
+      const slots = R.schedule[wi][day][ts][bi].slots;
+      slots.forEach((s, idx) => {
+        const sel = document.getElementById('seSubj_' + idx);
+        if (sel) s[2] = sel.value;
+      });
+      R.schedule[wi][day][ts][bi].teacher = t;
+      edited = true; closeSlotEditModal(); rR();
+    }
+    function closeSlotEditModal() { const m = document.querySelector('.modal-overlay'); if (m) m.remove(); }
+
     function rW(wrap, wi) {
       const ws = R.schedule[wi];
       // デバッグ: 各曜日・時間帯のブース数をコンソールに出力
@@ -2168,13 +2276,34 @@
 
     // === Student Calendar ===
     function rCal(wrap) {
-      if (!R || !R.students || !R.students.length) { wrap.innerHTML = '<p>生徒データがありません</p>'; return; }
-      const sel = document.createElement('div'); sel.className = 'cal-sel';
-      const lb = document.createElement('span'); lb.textContent = '生徒:'; lb.style.fontWeight = '600'; sel.appendChild(lb);
+      if (!R.students || !R.students.length) { wrap.innerHTML = '<p>生徒データがありません</p>'; return; }
+
+      const selDiv = document.createElement('div'); selDiv.className = 'cal-sel';
+      const lb = document.createElement('span'); lb.textContent = '生徒:'; lb.style.fontWeight = '600'; selDiv.appendChild(lb);
+
       const dd = document.createElement('select'); dd.id = 'calSel';
       R.students.forEach((s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = s.grade + ' ' + s.name; if (calStudent === i) o.selected = true; dd.appendChild(o); });
-      dd.onchange = () => { calStudent = parseInt(dd.value); renderStudentCal(); };
-      sel.appendChild(dd); wrap.appendChild(sel);
+      dd.onchange = () => { calStudent = parseInt(dd.value); rCal(wrap); };
+      selDiv.appendChild(dd);
+
+      // 配置数表示
+      if (calStudent !== null && R.students[calStudent]) {
+        const sName = R.students[calStudent].name;
+        const placed = countPlaced(sName);
+        const needs = getStudentNeeds(sName);
+        const info = document.createElement('span');
+        info.style.marginLeft = '12px';
+        info.style.fontSize = '12px';
+        info.style.fontWeight = 'bold';
+        // 色分け: 足りない=赤, 超過=オレンジ, ちょうど=緑
+        info.style.color = (placed < needs) ? 'var(--red)' : ((placed > needs) ? 'var(--orange)' : 'var(--green)');
+        info.textContent = `(配置: ${placed} / 必要: ${needs})`;
+        selDiv.appendChild(info);
+      }
+
+      wrap.innerHTML = ''; // Clear previous content (important for re-render)
+      wrap.appendChild(selDiv);
+
       const cw = document.createElement('div'); cw.id = 'calWrap'; wrap.appendChild(cw);
       if (calStudent === null) calStudent = 0;
       renderStudentCal();

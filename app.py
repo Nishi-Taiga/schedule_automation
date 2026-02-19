@@ -1873,31 +1873,34 @@ def load_saved():
                 'fixed': [list(f) for f in fixed] if fixed and isinstance(next(iter(fixed), None), (list, tuple)) else (fixed or []),
             }
 
-        if '必要コマ数' in wb.sheetnames:
-            # 保存済みExcel自体から生徒データを取得（別途ブース表不要）
-            fresh_students = load_students_from_wb(wb, year, month)
-            fresh_booth_pref = load_booth_pref(wb) or dict(DEFAULT_BOOTH_PREF)
-            state['students'] = [serialize_student(s) for s in fresh_students]
-            state['boothPref'] = fresh_booth_pref
-        else:
-            # 必要コマ数シートがない場合は旧来の fallback（別途ブース表から取得）
-            students = state.get('students', [])
-            is_complete = students and 'needs' in students[0] and students[0]['needs']
-            if not is_complete:
-                files = sd.get('files', {})
-                booth_path = files.get('booth')
-                if booth_path and os.path.exists(booth_path):
-                    try:
-                        wb_booth = openpyxl.load_workbook(booth_path, data_only=True)
-                        fresh_students = load_students_from_wb(wb_booth, year, month)
-                        fresh_booth_pref = load_booth_pref(wb_booth) or dict(DEFAULT_BOOTH_PREF)
-                        wb_booth.close()
-                        state['students'] = [serialize_student(s) for s in fresh_students]
-                        state['boothPref'] = fresh_booth_pref
-                    except Exception as e:
-                        wb.close()
-                        return jsonify({'error': f'アップロードされたブース表からのデータ復元に失敗しました: {e}'}), 400
-                else:
+        # 3. 生徒データとブース希望を保存済みExcelから再読み込み（常に最新の状態にする）
+        # 元の `state['students']` はJSONパース結果だが、Excelシートの内容を優先する
+        try:
+            # 年月が必要だが、weekDatesから推測またはデフォルト値
+            wd = state.get('weekDates') or {}
+            year = wd.get('year', 2026)
+            month = wd.get('month', 3)
+
+            # 「必要コマ数」シートがあればそこから生徒情報をフルリロード
+            if '必要コマ数' in wb.sheetnames:
+                fresh_students = load_students_from_wb(wb, year, month)
+                state['students'] = [serialize_student(s) for s in fresh_students]
+                print(f"[load_saved] Reloaded {len(fresh_students)} students from '必要コマ数' sheet", flush=True)
+            
+            # 「講師ブース希望」シートがあればリロード
+            fresh_booth_pref = load_booth_pref(wb)
+            if fresh_booth_pref:
+                 state['boothPref'] = fresh_booth_pref
+                 print(f"[load_saved] Reloaded boothPref from '講師ブース希望' sheet", flush=True)
+
+        except Exception as e:
+            print(f"[load_saved] Warning: Failed to reload fresh data from sheets: {e}", flush=True)
+            # 失敗しても致命的ではない（JSONデータ等を使う）ので続行
+
+        # 必要ならファイルをセッションに登録（次回以降のために）
+        # ただし saved_ は一時ファイル扱いなので、src/booth としては登録しないほうが無難
+        # ここでは純粋に state を返すことに集中する
+
                     wb.close()
                     return jsonify({'error': '生徒データの詳細(必要コマ数等)が不足しています。\n先に「ファイル」画面で「ブース表 (.xlsx)」をアップロードしてから、保存済みファイルを読み込んでください。'}), 400
         wb.close()
