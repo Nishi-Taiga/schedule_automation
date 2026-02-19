@@ -1704,6 +1704,11 @@ def load_saved():
         # ブース表として保存（再ダウンロード用）
         sd['files'] = {**sd.get('files', {}), 'booth': path}
         save_session_files(sd)
+        
+        # 安全策: weekDatesがない場合のデフォルト
+        if 'weekDates' not in state or not state['weekDates']:
+             state['weekDates'] = {'year': 2026, 'month': 3, 'weeks': []}
+        
         return jsonify({'ok': True, **state})
     except json.JSONDecodeError as e:
         return jsonify({'error': f'スケジュールデータの解析に失敗: {e}'}), 500
@@ -1783,7 +1788,7 @@ def get_state():
             'officeTeachers': res.get('office_teachers', []),
             'boothPref': res.get('booth_pref', {}),
             'students': students_json,
-            'weekDates': res.get('week_dates'),
+            'weekDates': res.get('week_dates') or {'year':2026, 'month':3, 'weeks':[]},
         })
 
     # ディスクから復元を試みる
@@ -1796,8 +1801,8 @@ def get_state():
                 students_json.append({
                     'grade': s.get('grade', ''), 'name': s.get('name', ''),
                     'needs': s.get('needs', {}),
-                    'avail': s.get('avail'),
-                    'backup_avail': s.get('backup_avail'),
+                    'avail': s.get('avail') if s.get('avail') else [],
+                    'backup_avail': s.get('backup_avail') if s.get('backup_avail') else [],
                     'fixed': s.get('fixed', []),
                     'notes': s.get('notes', ''),
                     'ng_teachers': s.get('ng_teachers', []),
@@ -1829,7 +1834,7 @@ def get_state():
                 'officeTeachers': disk_result.get('office_teachers', []),
                 'boothPref': disk_result.get('booth_pref', {}),
                 'students': students_json,
-                'weekDates': disk_result.get('week_dates'),
+                'weekDates': disk_result.get('week_dates') or {'year':2026, 'month':3, 'weeks':[]},
             })
 
     return jsonify({'has_state': False})

@@ -1,1052 +1,2436 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<title>ブース表自動生成</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Outfit:wght@400;600;700;800&display=swap');
-:root{--ink:#1b2838;--ink2:#3d4f63;--ink3:#6b7f95;--bg:#f4f6f9;--card:#fff;--accent:#2563eb;--accent2:#1d4ed8;--green:#059669;--red:#dc2626;--orange:#ea580c;--border:#e2e8f0;--radius:10px}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Zen Kaku Gothic New','Hiragino Kaku Gothic ProN',sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;min-height:100vh}
-.header{background:var(--ink);color:#fff;padding:18px 28px}
-.header h1{font-family:'Outfit',sans-serif;font-weight:800;font-size:21px}
-.header p{font-size:12px;opacity:.6;margin-top:2px}
-.container{max-width:1400px;margin:0 auto;padding:20px 16px}
-.steps{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
-.step-btn{padding:7px 20px;border-radius:20px;border:none;cursor:pointer;font-weight:600;font-size:12.5px;font-family:inherit;transition:all .15s}
-.step-btn.active{background:var(--accent);color:#fff}
-.step-btn:not(.active){background:#dde3ea;color:var(--ink2)}
-.card{background:var(--card);border-radius:var(--radius);padding:24px 28px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:16px}
-.card h2{font-size:16px;margin-bottom:16px;font-weight:700}
-.card h3{font-size:14px;margin:20px 0 10px;font-weight:700;color:var(--ink2)}
-.upload-row{display:flex;align-items:center;gap:14px;padding:14px 18px;border:2px dashed var(--border);border-radius:10px;cursor:pointer;margin-bottom:10px;background:#fafbfc;transition:all .15s}
-.upload-row:hover{border-color:var(--accent);background:#f0f5ff}
-.upload-row.done{border-color:var(--green);background:#f0fdf4}
-.upload-row .icon{font-size:26px}.upload-row .label{font-weight:600;font-size:13.5px}
-.upload-row .desc{font-size:11.5px;color:var(--ink3)}.upload-row input{display:none}
-.sg{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-.si{background:#f7f9fb;padding:10px 12px;border-radius:8px}
-.si label{font-weight:600;font-size:13px;display:block;margin-bottom:4px}
-.si input,.si select{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit}
-.bp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
-.bp-item{display:flex;align-items:center;gap:8px;background:#f7f9fb;padding:8px 12px;border-radius:8px}
-.bp-item select{padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit}
-.btn{padding:10px 24px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13.5px;font-family:inherit;transition:all .15s}
-.btn-p{background:var(--accent);color:#fff}.btn-p:hover{background:var(--accent2)}
-.btn-g{background:var(--green);color:#fff}.btn-g:hover{background:#047857}
-.btn-o{background:#fff;border:1px solid var(--border);color:var(--ink2)}.btn-o:hover{background:#f7f9fb}
-.btn-s{background:#7c3aed;color:#fff;font-size:12px;padding:5px 12px}.btn-s:hover{background:#6d28d9}
-.btn:disabled{opacity:.4;cursor:default}
-.bg{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
-.status{margin-top:12px;font-size:12.5px;color:var(--ink2)}.status.err{color:var(--red)}
-.summary{display:flex;gap:20px;align-items:center;flex-wrap:wrap;padding:16px 0}
-.big-num{font-family:'Outfit',sans-serif;font-size:34px;font-weight:800;color:var(--accent)}
-.big-num span{font-size:15px;font-weight:400;color:var(--ink3)}
-.rate{font-size:12px;color:var(--ink3)}
-.badge-w{background:#fef2f2;color:var(--red);padding:6px 14px;border-radius:8px;font-size:12.5px}
-.badge-m{background:#fff7ed;color:var(--orange);padding:6px 14px;border-radius:8px;font-size:12.5px}
-.wt{display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap;position:sticky;top:0;z-index:100;background:#f7f9fb;padding:8px 0}
-.wt button{padding:7px 16px;border-radius:7px;border:none;cursor:pointer;font-weight:600;font-size:12px;font-family:inherit}
-.wt button.active{background:var(--accent);color:#fff}
-.wt button:not(.active){background:#e2e8f0;color:var(--ink2)}
-.wt button.warn{background:#fee2e2;color:var(--red)}.wt button.warn.active{background:var(--red);color:#fff}
-.wt button.cal{background:#e0f2fe;color:#0369a1}.wt button.cal.active{background:#0284c7;color:#fff}
-.tw{overflow-x:auto}
-table.sch{width:100%;border-collapse:collapse;font-size:11px;min-width:920px;table-layout:fixed;border:2px solid #b8c5d4}
-table.sch th{padding:7px 5px;border:1px solid #c5d0dc;text-align:center;font-size:11.5px;font-weight:700;background:#f7f9fb;position:sticky;top:0}
-table.sch td{padding:2px 4px;border:1px solid #d0d8e2;vertical-align:top}
-table.sch tr{border-bottom:1px solid #d0d8e2}
-.tc{font-weight:700;font-size:11.5px;background:#f0f3f7;text-align:center;vertical-align:middle}
-.bc{text-align:center;font-size:12px;color:var(--accent2);font-weight:700;width:32px;background:#eef3fb;border-right:2px solid #c5d5e8}
-.or td{font-weight:700;background:#ebf1ff;text-align:center;font-size:12px;color:var(--accent)}
-.holiday-cell{background:#ef4444 !important;color:#fff !important;font-weight:700;font-size:11px;border-radius:3px;padding:2px 4px}
-.cd{background:#f0f0f0}
-tr.er{background:#f5f7fa}
-.tn{display:block;font-weight:600;color:var(--accent2);font-size:11px;margin-bottom:2px;cursor:pointer;padding:1px 4px;border-radius:3px;border:1px solid transparent;transition:all .12s;user-select:none;width:100%;text-align:center}
-.tn:hover{background:#e0e7ff;border-color:#93c5fd}.tn:active{cursor:grabbing}
-.tn.drag-over-t{background:#dbeafe;border-color:var(--accent)}
-.teacher-picker{position:absolute;top:100%;left:0;z-index:100;background:#fff;border:1px solid #c5d5e8;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:120px;max-height:240px;overflow-y:auto;font-size:11px}
-.tp-hdr{padding:4px 8px;font-weight:700;color:var(--ink3);background:#f0f3f7;font-size:10px;border-bottom:1px solid #e0e5ec}
-.tp-opt{padding:5px 10px;cursor:pointer;transition:background .1s;white-space:nowrap}
-.tp-opt:hover{background:#e8f0fe}
-.tp-new{color:#1565c0;font-weight:600}
-.tp-swap{color:#6a1b9a}
-.tp-clear{color:var(--red);border-top:1px solid #eee;font-size:10px}
-.tp-cancel{color:#666;border-top:1px solid #eee;font-size:10px;text-align:center}
-.slot-chip{display:flex;align-items:center;gap:3px;border-radius:5px;padding:1px 6px;margin:1px 0;font-size:10px;cursor:pointer;user-select:none;transition:all .12s;width:100%;background:#e8f5e9;border:1px solid #a5d6a7}
-.slot-chip:active{cursor:grabbing}.slot-chip:hover{background:#c8e6c9;border-color:#66bb6a}
-.slot-chip .g{color:#78909c;font-size:9px}.slot-chip .s{font-weight:600;color:#2e7d32}
-.slot-chip .j{color:#558b2f;font-size:9px}
-.slot-chip.ng{background:#ffebee;border-color:#e57373}.slot-chip.ng .s{color:#c62828}
-.booth-cell{min-height:34px;position:relative;transition:background .12s;padding:2px 3px;border-left:1px solid #d8dfe8;border-bottom:1px solid #d8dfe8}
-.booth-cell.drag-over{background:#e3f2fd !important;outline:2px dashed var(--accent);outline-offset:-2px}
-.booth-cell.full{background:#fff3e0}
-.booth-cell.empty-booth{background:#fafbfc}.booth-cell.empty-booth .tn{opacity:.5;font-size:10px;color:#8899aa;border:1px dashed #ccc}
-.unplaced-zone{min-height:60px;border:2px dashed var(--border);border-radius:8px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:4px;transition:all .12s;margin-top:6px}
-.unplaced-zone.drag-over{border-color:var(--red);background:#fef2f2}
-.unplaced-zone .slot-chip{background:#ffebee;border-color:#ef9a9a}.unplaced-zone .slot-chip .s{color:#c62828}
-.unplaced-label{font-size:11px;color:var(--ink3);margin-top:10px;font-weight:600}
-table.up{width:100%;border-collapse:collapse;font-size:13px}
-table.up th{padding:8px 10px;border-bottom:2px solid var(--border);text-align:left;font-weight:700;background:#f7f9fb}
-table.up td{padding:6px 10px;border-bottom:1px solid #eef1f5}
-table.up .ct{font-weight:700;color:var(--red)}
-.ap{color:var(--green);font-weight:600;font-size:14px}
-.spinner{display:inline-block;width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
-@keyframes spin{to{transform:rotate(360deg)}}
-.note{font-size:11.5px;color:var(--ink3);margin-top:6px;padding:8px 12px;background:#f7f9fb;border-radius:6px;border-left:3px solid var(--accent)}
-.file-note{font-size:11px;color:var(--ink3);margin-top:4px;padding-left:54px}
-.folder-btn{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 10px;background:#f0f4ff;color:var(--accent);border:1px solid #c7d2fe;border-radius:6px;cursor:pointer;margin-left:8px;white-space:nowrap;transition:background .15s}.folder-btn:hover{background:#e0e7ff}
-.edit-hint{font-size:11px;color:var(--orange);font-weight:600}
-/* Calendar */
-.cal-sel{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-.cal-sel select{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit}
-.cal-tbl{width:100%;border-collapse:collapse;font-size:12px}
-.cal-tbl th{padding:8px 6px;background:#f0f7ff;border:1px solid #d1e3f6;text-align:center;font-weight:700;color:var(--accent2)}
-.cal-tbl td{padding:4px 6px;border:1px solid #e2e8f0;vertical-align:top;min-height:40px;min-width:80px}
-.cal-tbl .cal-date{font-weight:700;font-size:11px;color:var(--ink2);margin-bottom:2px}
-.cal-slot{font-size:10px;padding:2px 6px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:4px;margin:2px 0;display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none;transition:all .12s}
-.cal-slot:hover{background:#c8e6c9;border-color:#66bb6a}
-.cal-slot.ng{background:#ffebee;border-color:#e57373}
-.cal-drop{min-height:28px;transition:background .12s;border-radius:4px}
-.cal-drop.drag-over{background:#e3f2fd;outline:2px dashed var(--accent);outline-offset:-2px}
-.cal-empty{color:#ccc;font-size:10px}
-/* Student Info Tab */
-.stu-wrap{overflow-x:auto}
-table.stu{width:100%;border-collapse:collapse;font-size:12px;min-width:900px}
-table.stu th{padding:8px 6px;background:#f0f3f7;border:1px solid #d1dbe6;text-align:center;font-weight:700;font-size:11px;position:sticky;top:0;white-space:nowrap}
-table.stu td{padding:5px 6px;border:1px solid #e2e8f0;vertical-align:top;font-size:11.5px}
-table.stu tr:nth-child(even){background:#fafbfc}
-table.stu tr:hover{background:#f0f5ff}
-.stu-name{font-weight:700;white-space:nowrap}
-.stu-grade{color:var(--ink3);font-size:10px}
-.stu-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin:1px 2px;white-space:nowrap}
-.stu-tag.subj{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
-.stu-tag.time{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
-.stu-tag.fixed{background:#fff3e0;color:#e65100;border:1px solid #ffcc80}
-.stu-tag.wish{background:#f3e5f5;color:#7b1fa2;border:1px solid #ce93d8}
-.stu-tag.ng{background:#ffebee;color:#c62828;border:1px solid #ef9a9a}
-.stu-tag.ngs{background:#fce4ec;color:#ad1457;border:1px solid #f48fb1}
-.stu-needs-num{font-weight:700;color:var(--accent);font-size:12px}
-.stu-filter{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-.stu-filter input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;min-width:200px}
-.stu-total{font-size:11px;color:var(--ink3);font-weight:600}
-/* Student Info Panel */
-.stu-info-panel{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:14px}
-.stu-info-panel h4{font-size:14px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:6px}
-.stu-info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 16px}
-.stu-info-item{font-size:12px;line-height:1.6}
-.stu-info-item .label{font-weight:700;color:var(--ink2);font-size:11px;display:block;margin-bottom:2px}
-.stu-info-item .value{color:var(--ink)}
-.stu-info-notes{grid-column:1/-1;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11.5px;color:#92400e;margin-top:4px}
-/* Save indicator */
-.save-indicator{position:fixed;bottom:20px;right:20px;background:var(--green);color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:500;transition:opacity .3s;opacity:0;pointer-events:none}
-.save-indicator.show{opacity:1}
-/* Restore banner */
-.restore-banner{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.restore-banner .msg{font-size:13px;color:var(--accent2);font-weight:600}
-.restore-banner .actions{display:flex;gap:8px}
-/* Survey upload toggle */
-.src-toggle{display:flex;gap:4px;margin-bottom:10px}
-.src-toggle button{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all .12s;color:var(--ink2)}
-.src-toggle button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.survey-zone{border:2px dashed var(--border);border-radius:10px;padding:14px 18px;background:#fafbfc;transition:all .15s;cursor:pointer;position:relative}
-.survey-zone:hover{border-color:var(--accent);background:#f0f5ff}
-.survey-zone.done{border-color:var(--green);background:#f0fdf4}
-.survey-zone .survey-label{font-weight:600;font-size:13.5px;margin-bottom:4px}
-.survey-zone .survey-desc{font-size:11.5px;color:var(--ink3)}
-.survey-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
-.survey-files{margin-top:8px;font-size:11px;color:var(--ink2)}
-.survey-files .sf-item{display:inline-block;padding:2px 8px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:4px;margin:2px;font-size:10px}
-/* Booth consolidation */
-.booth-toggle{display:flex;gap:4px;margin-bottom:10px}
-.booth-toggle button{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:all .12s;color:var(--ink2)}
-.booth-toggle button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.consol-zone{border:2px dashed var(--border);border-radius:10px;padding:14px 18px;background:#fafbfc;transition:all .15s;cursor:pointer;position:relative;margin-bottom:8px}
-.consol-zone:hover{border-color:var(--accent);background:#f0f5ff}
-.consol-zone.done{border-color:var(--green);background:#f0fdf4}
-.consol-zone .consol-label{font-weight:600;font-size:13px;margin-bottom:4px}
-.consol-zone .consol-desc{font-size:11.5px;color:var(--ink3)}
-.consol-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
-.consol-files{margin-top:6px;font-size:11px;color:var(--ink2)}
-.consol-files .cf-item{display:inline-block;padding:2px 8px;background:#e3f2fd;border:1px solid #90caf9;border-radius:4px;margin:2px;font-size:10px}
-.consol-result{margin-top:10px;padding:10px 14px;background:#f0fdf4;border:1px solid #a5d6a7;border-radius:8px;font-size:12px}
-/* Modal */
-.modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center}
-.modal{background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.2)}
-.modal h3{margin-bottom:12px;font-size:15px}
-.modal-opts{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto}
-.modal-opt{padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit;transition:all .1s;display:flex;justify-content:space-between;align-items:center}
-.modal-opt:hover{background:#f0f5ff;border-color:var(--accent)}
-.modal-opt .t-name{font-weight:600}.modal-opt .t-info{font-size:11px;color:var(--ink3)}
-.modal-cancel{margin-top:12px;text-align:right}
-/* Progress overlay */
-.progress-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center}
-.progress-box{background:#fff;border-radius:16px;padding:36px 44px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25);min-width:320px;max-width:400px}
-.progress-spinner{width:44px;height:44px;border:4px solid #e2e8f0;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
-.progress-title{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:10px}
-.progress-bar-wrap{width:100%;height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;margin-bottom:10px}
-.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#60a5fa);border-radius:4px;transition:width .4s ease;width:0%}
-.progress-pct{font-family:'Outfit',sans-serif;font-size:28px;font-weight:700;color:var(--accent);margin-bottom:4px}
-.progress-msg{font-size:13px;color:var(--ink3);line-height:1.6}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <title>ブース表自動生成</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Outfit:wght@400;600;700;800&display=swap');
+
+    :root {
+      --ink: #1b2838;
+      --ink2: #3d4f63;
+      --ink3: #6b7f95;
+      --bg: #f4f6f9;
+      --card: #fff;
+      --accent: #2563eb;
+      --accent2: #1d4ed8;
+      --green: #059669;
+      --red: #dc2626;
+      --orange: #ea580c;
+      --border: #e2e8f0;
+      --radius: 10px
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      font-family: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+      min-height: 100vh
+    }
+
+    .header {
+      background: var(--ink);
+      color: #fff;
+      padding: 18px 28px
+    }
+
+    .header h1 {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 21px
+    }
+
+    .header p {
+      font-size: 12px;
+      opacity: .6;
+      margin-top: 2px
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px 16px
+    }
+
+    .steps {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 20px;
+      flex-wrap: wrap
+    }
+
+    .step-btn {
+      padding: 7px 20px;
+      border-radius: 20px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12.5px;
+      font-family: inherit;
+      transition: all .15s
+    }
+
+    .step-btn.active {
+      background: var(--accent);
+      color: #fff
+    }
+
+    .step-btn:not(.active) {
+      background: #dde3ea;
+      color: var(--ink2)
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+      margin-bottom: 16px
+    }
+
+    .card h2 {
+      font-size: 16px;
+      margin-bottom: 16px;
+      font-weight: 700
+    }
+
+    .card h3 {
+      font-size: 14px;
+      margin: 20px 0 10px;
+      font-weight: 700;
+      color: var(--ink2)
+    }
+
+    .upload-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      margin-bottom: 10px;
+      background: #fafbfc;
+      transition: all .15s
+    }
+
+    .upload-row:hover {
+      border-color: var(--accent);
+      background: #f0f5ff
+    }
+
+    .upload-row.done {
+      border-color: var(--green);
+      background: #f0fdf4
+    }
+
+    .upload-row .icon {
+      font-size: 26px
+    }
+
+    .upload-row .label {
+      font-weight: 600;
+      font-size: 13.5px
+    }
+
+    .upload-row .desc {
+      font-size: 11.5px;
+      color: var(--ink3)
+    }
+
+    .upload-row input {
+      display: none
+    }
+
+    .sg {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px
+    }
+
+    .si {
+      background: #f7f9fb;
+      padding: 10px 12px;
+      border-radius: 8px
+    }
+
+    .si label {
+      font-weight: 600;
+      font-size: 13px;
+      display: block;
+      margin-bottom: 4px
+    }
+
+    .si input,
+    .si select {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit
+    }
+
+    .bp-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px
+    }
+
+    .bp-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f7f9fb;
+      padding: 8px 12px;
+      border-radius: 8px
+    }
+
+    .bp-item select {
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit
+    }
+
+    .btn {
+      padding: 10px 24px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13.5px;
+      font-family: inherit;
+      transition: all .15s
+    }
+
+    .btn-p {
+      background: var(--accent);
+      color: #fff
+    }
+
+    .btn-p:hover {
+      background: var(--accent2)
+    }
+
+    .btn-g {
+      background: var(--green);
+      color: #fff
+    }
+
+    .btn-g:hover {
+      background: #047857
+    }
+
+    .btn-o {
+      background: #fff;
+      border: 1px solid var(--border);
+      color: var(--ink2)
+    }
+
+    .btn-o:hover {
+      background: #f7f9fb
+    }
+
+    .btn-s {
+      background: #7c3aed;
+      color: #fff;
+      font-size: 12px;
+      padding: 5px 12px
+    }
+
+    .btn-s:hover {
+      background: #6d28d9
+    }
+
+    .btn:disabled {
+      opacity: .4;
+      cursor: default
+    }
+
+    .bg {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+      flex-wrap: wrap
+    }
+
+    .status {
+      margin-top: 12px;
+      font-size: 12.5px;
+      color: var(--ink2)
+    }
+
+    .status.err {
+      color: var(--red)
+    }
+
+    .summary {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 16px 0
+    }
+
+    .big-num {
+      font-family: 'Outfit', sans-serif;
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--accent)
+    }
+
+    .big-num span {
+      font-size: 15px;
+      font-weight: 400;
+      color: var(--ink3)
+    }
+
+    .rate {
+      font-size: 12px;
+      color: var(--ink3)
+    }
+
+    .badge-w {
+      background: #fef2f2;
+      color: var(--red);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12.5px
+    }
+
+    .badge-m {
+      background: #fff7ed;
+      color: var(--orange);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12.5px
+    }
+
+    .wt {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #f7f9fb;
+      padding: 8px 0
+    }
+
+    .wt button {
+      padding: 7px 16px;
+      border-radius: 7px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+      font-family: inherit
+    }
+
+    .wt button.active {
+      background: var(--accent);
+      color: #fff
+    }
+
+    .wt button:not(.active) {
+      background: #e2e8f0;
+      color: var(--ink2)
+    }
+
+    .wt button.warn {
+      background: #fee2e2;
+      color: var(--red)
+    }
+
+    .wt button.warn.active {
+      background: var(--red);
+      color: #fff
+    }
+
+    .wt button.cal {
+      background: #e0f2fe;
+      color: #0369a1
+    }
+
+    .wt button.cal.active {
+      background: #0284c7;
+      color: #fff
+    }
+
+    .tw {
+      overflow-x: auto
+    }
+
+    table.sch {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      min-width: 920px;
+      table-layout: fixed;
+      border: 2px solid #b8c5d4
+    }
+
+    table.sch th {
+      padding: 7px 5px;
+      border: 1px solid #c5d0dc;
+      text-align: center;
+      font-size: 11.5px;
+      font-weight: 700;
+      background: #f7f9fb;
+      position: sticky;
+      top: 0
+    }
+
+    table.sch td {
+      padding: 2px 4px;
+      border: 1px solid #d0d8e2;
+      vertical-align: top
+    }
+
+    table.sch tr {
+      border-bottom: 1px solid #d0d8e2
+    }
+
+    .tc {
+      font-weight: 700;
+      font-size: 11.5px;
+      background: #f0f3f7;
+      text-align: center;
+      vertical-align: middle
+    }
+
+    .bc {
+      text-align: center;
+      font-size: 12px;
+      color: var(--accent2);
+      font-weight: 700;
+      width: 32px;
+      background: #eef3fb;
+      border-right: 2px solid #c5d5e8
+    }
+
+    .or td {
+      font-weight: 700;
+      background: #ebf1ff;
+      text-align: center;
+      font-size: 12px;
+      color: var(--accent)
+    }
+
+    .holiday-cell {
+      background: #ef4444 !important;
+      color: #fff !important;
+      font-weight: 700;
+      font-size: 11px;
+      border-radius: 3px;
+      padding: 2px 4px
+    }
+
+    .cd {
+      background: #f0f0f0
+    }
+
+    tr.er {
+      background: #f5f7fa
+    }
+
+    .tn {
+      display: block;
+      font-weight: 600;
+      color: var(--accent2);
+      font-size: 11px;
+      margin-bottom: 2px;
+      cursor: pointer;
+      padding: 1px 4px;
+      border-radius: 3px;
+      border: 1px solid transparent;
+      transition: all .12s;
+      user-select: none;
+      width: 100%;
+      text-align: center
+    }
+
+    .tn:hover {
+      background: #e0e7ff;
+      border-color: #93c5fd
+    }
+
+    .tn:active {
+      cursor: grabbing
+    }
+
+    .tn.drag-over-t {
+      background: #dbeafe;
+      border-color: var(--accent)
+    }
+
+    .teacher-picker {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      z-index: 100;
+      background: #fff;
+      border: 1px solid #c5d5e8;
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, .15);
+      min-width: 120px;
+      max-height: 240px;
+      overflow-y: auto;
+      font-size: 11px
+    }
+
+    .tp-hdr {
+      padding: 4px 8px;
+      font-weight: 700;
+      color: var(--ink3);
+      background: #f0f3f7;
+      font-size: 10px;
+      border-bottom: 1px solid #e0e5ec
+    }
+
+    .tp-opt {
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: background .1s;
+      white-space: nowrap
+    }
+
+    .tp-opt:hover {
+      background: #e8f0fe
+    }
+
+    .tp-new {
+      color: #1565c0;
+      font-weight: 600
+    }
+
+    .tp-swap {
+      color: #6a1b9a
+    }
+
+    .tp-clear {
+      color: var(--red);
+      border-top: 1px solid #eee;
+      font-size: 10px
+    }
+
+    .tp-cancel {
+      color: #666;
+      border-top: 1px solid #eee;
+      font-size: 10px;
+      text-align: center
+    }
+
+    .slot-chip {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      border-radius: 5px;
+      padding: 1px 6px;
+      margin: 1px 0;
+      font-size: 10px;
+      cursor: pointer;
+      user-select: none;
+      transition: all .12s;
+      width: 100%;
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7
+    }
+
+    .slot-chip:active {
+      cursor: grabbing
+    }
+
+    .slot-chip:hover {
+      background: #c8e6c9;
+      border-color: #66bb6a
+    }
+
+    .slot-chip .g {
+      color: #78909c;
+      font-size: 9px
+    }
+
+    .slot-chip .s {
+      font-weight: 600;
+      color: #2e7d32
+    }
+
+    .slot-chip .j {
+      color: #558b2f;
+      font-size: 9px
+    }
+
+    .slot-chip.ng {
+      background: #ffebee;
+      border-color: #e57373
+    }
+
+    .slot-chip.ng .s {
+      color: #c62828
+    }
+
+    .booth-cell {
+      min-height: 34px;
+      position: relative;
+      transition: background .12s;
+      padding: 2px 3px;
+      border-left: 1px solid #d8dfe8;
+      border-bottom: 1px solid #d8dfe8
+    }
+
+    .booth-cell.drag-over {
+      background: #e3f2fd !important;
+      outline: 2px dashed var(--accent);
+      outline-offset: -2px
+    }
+
+    .booth-cell.full {
+      background: #fff3e0
+    }
+
+    .booth-cell.empty-booth {
+      background: #fafbfc
+    }
+
+    .booth-cell.empty-booth .tn {
+      opacity: .5;
+      font-size: 10px;
+      color: #8899aa;
+      border: 1px dashed #ccc
+    }
+
+    .unplaced-zone {
+      min-height: 60px;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      transition: all .12s;
+      margin-top: 6px
+    }
+
+    .unplaced-zone.drag-over {
+      border-color: var(--red);
+      background: #fef2f2
+    }
+
+    .unplaced-zone .slot-chip {
+      background: #ffebee;
+      border-color: #ef9a9a
+    }
+
+    .unplaced-zone .slot-chip .s {
+      color: #c62828
+    }
+
+    .unplaced-label {
+      font-size: 11px;
+      color: var(--ink3);
+      margin-top: 10px;
+      font-weight: 600
+    }
+
+    table.up {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px
+    }
+
+    table.up th {
+      padding: 8px 10px;
+      border-bottom: 2px solid var(--border);
+      text-align: left;
+      font-weight: 700;
+      background: #f7f9fb
+    }
+
+    table.up td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #eef1f5
+    }
+
+    table.up .ct {
+      font-weight: 700;
+      color: var(--red)
+    }
+
+    .ap {
+      color: var(--green);
+      font-weight: 600;
+      font-size: 14px
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #fff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .note {
+      font-size: 11.5px;
+      color: var(--ink3);
+      margin-top: 6px;
+      padding: 8px 12px;
+      background: #f7f9fb;
+      border-radius: 6px;
+      border-left: 3px solid var(--accent)
+    }
+
+    .file-note {
+      font-size: 11px;
+      color: var(--ink3);
+      margin-top: 4px;
+      padding-left: 54px
+    }
+
+    .folder-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      padding: 4px 10px;
+      background: #f0f4ff;
+      color: var(--accent);
+      border: 1px solid #c7d2fe;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-left: 8px;
+      white-space: nowrap;
+      transition: background .15s
+    }
+
+    .folder-btn:hover {
+      background: #e0e7ff
+    }
+
+    .edit-hint {
+      font-size: 11px;
+      color: var(--orange);
+      font-weight: 600
+    }
+
+    /* Calendar */
+    .cal-sel {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap
+    }
+
+    .cal-sel select {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit
+    }
+
+    .cal-tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px
+    }
+
+    .cal-tbl th {
+      padding: 8px 6px;
+      background: #f0f7ff;
+      border: 1px solid #d1e3f6;
+      text-align: center;
+      font-weight: 700;
+      color: var(--accent2)
+    }
+
+    .cal-tbl td {
+      padding: 4px 6px;
+      border: 1px solid #e2e8f0;
+      vertical-align: top;
+      min-height: 40px;
+      min-width: 80px
+    }
+
+    .cal-tbl .cal-date {
+      font-weight: 700;
+      font-size: 11px;
+      color: var(--ink2);
+      margin-bottom: 2px
+    }
+
+    .cal-slot {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      border-radius: 4px;
+      margin: 2px 0;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      user-select: none;
+      transition: all .12s
+    }
+
+    .cal-slot:hover {
+      background: #c8e6c9;
+      border-color: #66bb6a
+    }
+
+    .cal-slot.ng {
+      background: #ffebee;
+      border-color: #e57373
+    }
+
+    .cal-drop {
+      min-height: 28px;
+      transition: background .12s;
+      border-radius: 4px
+    }
+
+    .cal-drop.drag-over {
+      background: #e3f2fd;
+      outline: 2px dashed var(--accent);
+      outline-offset: -2px
+    }
+
+    .cal-empty {
+      color: #ccc;
+      font-size: 10px
+    }
+
+    /* Student Info Tab */
+    .stu-wrap {
+      overflow-x: auto
+    }
+
+    table.stu {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      min-width: 900px
+    }
+
+    table.stu th {
+      padding: 8px 6px;
+      background: #f0f3f7;
+      border: 1px solid #d1dbe6;
+      text-align: center;
+      font-weight: 700;
+      font-size: 11px;
+      position: sticky;
+      top: 0;
+      white-space: nowrap
+    }
+
+    table.stu td {
+      padding: 5px 6px;
+      border: 1px solid #e2e8f0;
+      vertical-align: top;
+      font-size: 11.5px
+    }
+
+    table.stu tr:nth-child(even) {
+      background: #fafbfc
+    }
+
+    table.stu tr:hover {
+      background: #f0f5ff
+    }
+
+    .stu-name {
+      font-weight: 700;
+      white-space: nowrap
+    }
+
+    .stu-grade {
+      color: var(--ink3);
+      font-size: 10px
+    }
+
+    .stu-tag {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      margin: 1px 2px;
+      white-space: nowrap
+    }
+
+    .stu-tag.subj {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #a5d6a7
+    }
+
+    .stu-tag.time {
+      background: #e3f2fd;
+      color: #1565c0;
+      border: 1px solid #90caf9
+    }
+
+    .stu-tag.fixed {
+      background: #fff3e0;
+      color: #e65100;
+      border: 1px solid #ffcc80
+    }
+
+    .stu-tag.wish {
+      background: #f3e5f5;
+      color: #7b1fa2;
+      border: 1px solid #ce93d8
+    }
+
+    .stu-tag.ng {
+      background: #ffebee;
+      color: #c62828;
+      border: 1px solid #ef9a9a
+    }
+
+    .stu-tag.ngs {
+      background: #fce4ec;
+      color: #ad1457;
+      border: 1px solid #f48fb1
+    }
+
+    .stu-needs-num {
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 12px
+    }
+
+    .stu-filter {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap
+    }
+
+    .stu-filter input {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      min-width: 200px
+    }
+
+    .stu-total {
+      font-size: 11px;
+      color: var(--ink3);
+      font-weight: 600
+    }
+
+    /* Student Info Panel */
+    .stu-info-panel {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 14px
+    }
+
+    .stu-info-panel h4 {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    .stu-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 8px 16px
+    }
+
+    .stu-info-item {
+      font-size: 12px;
+      line-height: 1.6
+    }
+
+    .stu-info-item .label {
+      font-weight: 700;
+      color: var(--ink2);
+      font-size: 11px;
+      display: block;
+      margin-bottom: 2px
+    }
+
+    .stu-info-item .value {
+      color: var(--ink)
+    }
+
+    .stu-info-notes {
+      grid-column: 1/-1;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 11.5px;
+      color: #92400e;
+      margin-top: 4px
+    }
+
+    /* Save indicator */
+    .save-indicator {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--green);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+      z-index: 500;
+      transition: opacity .3s;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .save-indicator.show {
+      opacity: 1
+    }
+
+    /* Restore banner */
+    .restore-banner {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 12px 18px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px
+    }
+
+    .restore-banner .msg {
+      font-size: 13px;
+      color: var(--accent2);
+      font-weight: 600
+    }
+
+    .restore-banner .actions {
+      display: flex;
+      gap: 8px
+    }
+
+    /* Survey upload toggle */
+    .src-toggle {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 10px
+    }
+
+    .src-toggle button {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      transition: all .12s;
+      color: var(--ink2)
+    }
+
+    .src-toggle button.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent)
+    }
+
+    .survey-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      background: #fafbfc;
+      transition: all .15s;
+      cursor: pointer;
+      position: relative
+    }
+
+    .survey-zone:hover {
+      border-color: var(--accent);
+      background: #f0f5ff
+    }
+
+    .survey-zone.done {
+      border-color: var(--green);
+      background: #f0fdf4
+    }
+
+    .survey-zone .survey-label {
+      font-weight: 600;
+      font-size: 13.5px;
+      margin-bottom: 4px
+    }
+
+    .survey-zone .survey-desc {
+      font-size: 11.5px;
+      color: var(--ink3)
+    }
+
+    .survey-zone input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer
+    }
+
+    .survey-files {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--ink2)
+    }
+
+    .survey-files .sf-item {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      border-radius: 4px;
+      margin: 2px;
+      font-size: 10px
+    }
+
+    /* Booth consolidation */
+    .booth-toggle {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 10px
+    }
+
+    .booth-toggle button {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      transition: all .12s;
+      color: var(--ink2)
+    }
+
+    .booth-toggle button.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent)
+    }
+
+    .consol-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      background: #fafbfc;
+      transition: all .15s;
+      cursor: pointer;
+      position: relative;
+      margin-bottom: 8px
+    }
+
+    .consol-zone:hover {
+      border-color: var(--accent);
+      background: #f0f5ff
+    }
+
+    .consol-zone.done {
+      border-color: var(--green);
+      background: #f0fdf4
+    }
+
+    .consol-zone .consol-label {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 4px
+    }
+
+    .consol-zone .consol-desc {
+      font-size: 11.5px;
+      color: var(--ink3)
+    }
+
+    .consol-zone input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer
+    }
+
+    .consol-files {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--ink2)
+    }
+
+    .consol-files .cf-item {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      border-radius: 4px;
+      margin: 2px;
+      font-size: 10px
+    }
+
+    .consol-result {
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: #f0fdf4;
+      border: 1px solid #a5d6a7;
+      border-radius: 8px;
+      font-size: 12px
+    }
+
+    /* Modal */
+    .modal-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, .4);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center
+    }
+
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      min-width: 300px;
+      max-width: 90vw;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .2)
+    }
+
+    .modal h3 {
+      margin-bottom: 12px;
+      font-size: 15px
+    }
+
+    .modal-opts {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 300px;
+      overflow-y: auto
+    }
+
+    .modal-opt {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+      transition: all .1s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center
+    }
+
+    .modal-opt:hover {
+      background: #f0f5ff;
+      border-color: var(--accent)
+    }
+
+    .modal-opt .t-name {
+      font-weight: 600
+    }
+
+    .modal-opt .t-info {
+      font-size: 11px;
+      color: var(--ink3)
+    }
+
+    .modal-cancel {
+      margin-top: 12px;
+      text-align: right
+    }
+
+    /* Progress overlay */
+    .progress-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, .5);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center
+    }
+
+    .progress-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px 44px;
+      text-align: center;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+      min-width: 320px;
+      max-width: 400px
+    }
+
+    .progress-spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid #e2e8f0;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px
+    }
+
+    .progress-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 10px
+    }
+
+    .progress-bar-wrap {
+      width: 100%;
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 10px
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #60a5fa);
+      border-radius: 4px;
+      transition: width .4s ease;
+      width: 0%
+    }
+
+    .progress-pct {
+      font-family: 'Outfit', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 4px
+    }
+
+    .progress-msg {
+      font-size: 13px;
+      color: var(--ink3);
+      line-height: 1.6
+    }
+  </style>
 </head>
+
 <body>
-<div class="header"><div><h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.6</span></h1></div></div>
-<div class="container">
-<div class="steps">
-<button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
-<button class="step-btn" id="sb2" onclick="go('settings')">2. 設定</button>
-<button class="step-btn" id="sb3" onclick="go('result')">3. 結果</button>
-</div>
-<div id="pUpload" class="card">
-<h2>ファイルアップロード</h2>
-<h3 style="font-size:13px;margin-bottom:6px">元シートの取得方法</h3>
-<div class="src-toggle">
-<button id="srcMode1" class="active" onclick="setSrcMode('file')">元シートをアップロード</button>
-<button id="srcMode2" onclick="setSrcMode('survey')">講師回答ファイルから集約</button>
-</div>
-<div id="srcFileMode">
-<label class="upload-row" id="uSrc"><div class="icon">📁</div><div><div class="label">ブース表元シート (.xlsx)</div><div class="desc" id="nSrc">出勤可能講師の一覧</div></div><input type="file" accept=".xlsx" onchange="onF(this,'src')"></label>
-<div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'src')"></div>
-</div>
-<div id="srcSurveyMode" style="display:none">
-<div class="survey-zone" id="surveyZone"><div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div><div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx" multiple onchange="onSurveyFiles(this)"><div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSurvey(this)"></div><div class="survey-files" id="surveyFileList"></div></div>
-</div>
-<h3 style="font-size:13px;margin-bottom:6px;margin-top:16px">ブース表の取得方法</h3>
-<div class="booth-toggle">
-<button id="boothMode1" class="active" onclick="setBoothMode('file')">ブース表をアップロード</button>
-<button id="boothMode2" onclick="setBoothMode('consolidate')">ブース表を集約</button>
-</div>
-<div id="boothFileMode">
-<label class="upload-row" id="uBooth"><div class="icon">📁</div><div><div class="label">ブース表 (.xlsx)</div><div class="desc" id="nBooth">生徒情報・講師指導可能科目・テンプレート</div></div><input type="file" accept=".xlsx" onchange="onF(this,'booth')"></label>
-<div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'booth')"></div>
-<div class="file-note">※ ブース表に「必要コマ数」「一覧表」「講師ブース希望」シートが含まれている必要があります</div>
-</div>
-<div id="boothConsolMode" style="display:none">
-<div class="consol-zone" id="consolMetaZone"><div class="consol-label">📋 メタデータファイル (.xlsx)</div><div class="consol-desc" id="consolMetaDesc">必要コマ数・一覧表(指導科目)・ブース希望シートを含むファイル</div><input type="file" accept=".xlsx" onchange="onConsolMeta(this)"></div>
-<div class="consol-zone" id="consolWeekZone"><div class="consol-label">📁 週別ブース表ファイル (.xlsx 複数選択可)</div><div class="consol-desc" id="consolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx" multiple onchange="onConsolWeeks(this)"><div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderWeeks(this)"></div><div class="consol-files" id="consolWeekList"></div></div>
-<div class="bg" style="margin-top:8px"><button class="btn btn-s" id="consolBtn" disabled onclick="doConsolidate()">集約して統合</button></div>
-<div id="consolResult"></div>
-<div class="file-note">※ メタデータファイルの古い週シートは自動削除されます</div>
-</div>
-<div class="bg"><button class="btn btn-p" id="toS" disabled onclick="go('settings')">次へ: 設定 →</button></div>
-<div class="status" id="upSt"></div>
-<hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
-<h3 style="font-size:13px;margin-bottom:6px">📥 保存済みスケジュールの読み込み</h3>
-<p style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">ダウンロードしたブース表Excelを選択すると、前回の配置状態を復元できます</p>
-<label class="upload-row" id="uSaved"><div class="icon">📥</div><div><div class="label">保存済みブース表 (.xlsx)</div><div class="desc" id="nSaved">ブース表DLでダウンロードしたファイルを選択</div></div><input type="file" accept=".xlsx" onchange="onLoadSaved(this)"></label>
-<div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSingle(this,'saved')"></div>
-</div>
-<div id="pSettings" class="card" style="display:none">
-<h2>教室業務・チューター担当</h2>
-<p style="font-size:12.5px;color:var(--ink3);margin-bottom:14px">各曜日の教室業務/チューター担当講師</p>
-<div class="sg" id="oGrid"></div>
-<h3>🪑 講師ブース希望</h3>
-<p style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">ブース表の「講師ブース希望」シートから自動読み込み。ここで変更も可能。</p>
-<div class="bp-grid" id="bpGrid"></div>
-<div style="margin-top:8px"><button class="btn btn-s" onclick="addBP()">＋ 講師追加</button></div>
-<div class="note">※ ブース⑥まで。教室業務担当はブースから除外。NG講師はプレビューで赤く表示。</div>
-<div class="bg">
-<button class="btn btn-o" onclick="go('upload')">← 戻る</button>
-<button class="btn btn-g" id="genBtn" onclick="gen()">🚀 スケジュール生成</button>
-</div>
-<div class="status" id="stTxt"></div>
-</div>
-<div id="pResult" style="display:none">
-<div class="card">
-<div class="summary">
-<div><div class="big-num" id="pNum">0<span>/0コマ</span></div><div class="rate" id="rTxt"></div></div>
-<div id="uBadge" class="badge-w" style="display:none"></div>
-<div id="mBadge" class="badge-m" style="display:none"></div>
-<div style="flex:1"></div>
-<button class="btn btn-p" onclick="dlExcel()">📥 ブース表DL</button>
-<button class="btn btn-o" onclick="go('settings')">↻ 再生成</button>
-</div>
-<div class="edit-hint">✋ 講師名・生徒チップをD&Dで移動。生徒名クリック→個人カレンダー。カレンダー内の授業クリック→講師/時間変更。<span style="color:var(--red)">赤＝NG</span></div>
-</div>
-<div class="wt" id="wTabs"></div>
-<div class="card"><div class="tw" id="pWrap"></div></div>
-</div>
-</div>
-<div id="saveIndicator" class="save-indicator">保存しました</div>
-<div id="modalRoot"></div>
-<script>
-const D=['月','火','水','木','金','土'],WT=['16:00','17:05','18:10','19:15','20:20'],ST=['14:55','16:00','17:05','18:10'];
-const TL=['14:55','16:00','17:05','18:10','19:15','20:20'],TS={'14:55':'14','16:00':'16','17:05':'17','18:10':'18','19:15':'19','20:20':'20'},TSR={'14':'14:55','16':'16:00','17':'17:05','18':'18:10','19':'19:15','20':'20:20'},BL=['①','②','③','④','⑤','⑥'];
-let OR={月:['石川T'],火:['石川T'],水:['西T'],木:['石川T'],金:['石川T'],土:['越智T','粉川T']};
-let BP=[],R=null,PW=0,uploaded={},edited=false,dragData=null,calStudent=null,teacherList=[];
-let ngMap={},ngStudentMap={};
-function buildNgMap(){ngMap={};ngStudentMap={};if(!R||!R.students)return;R.students.forEach(s=>{ngMap[s.name]=new Set(s.ng_teachers||[]);ngStudentMap[s.name]=new Set(s.ng_students||[])});}
-function isNg(n,t){return ngMap[n]&&ngMap[n].has(t);}
-function isNgStudent(a,b){return(ngStudentMap[a]&&ngStudentMap[a].has(b))||(ngStudentMap[b]&&ngStudentMap[b].has(a));}
-function isAdjacentNg(wi,day,ts,bi,sn){const bs=R.schedule[wi]?.[day]?.[ts];if(!bs)return false;for(const a of[bi-1,bi+1]){if(a<0||a>=bs.length)continue;for(const sl of bs[a].slots){if(isNgStudent(sn,sl[1]))return true;}}return false;}
+  <div class="header">
+    <div>
+      <h1>📋 ブース表自動生成 <span style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.6</span>
+      </h1>
+    </div>
+  </div>
+  <div class="container">
+    <div class="steps">
+      <button class="step-btn active" id="sb1" onclick="go('upload')">1. ファイル</button>
+      <button class="step-btn" id="sb2" onclick="go('settings')">2. 設定</button>
+      <button class="step-btn" id="sb3" onclick="go('result')">3. 結果</button>
+    </div>
+    <div id="pUpload" class="card">
+      <h2>ファイルアップロード</h2>
+      <h3 style="font-size:13px;margin-bottom:6px">元シートの取得方法</h3>
+      <div class="src-toggle">
+        <button id="srcMode1" class="active" onclick="setSrcMode('file')">元シートをアップロード</button>
+        <button id="srcMode2" onclick="setSrcMode('survey')">講師回答ファイルから集約</button>
+      </div>
+      <div id="srcFileMode">
+        <label class="upload-row" id="uSrc">
+          <div class="icon">📁</div>
+          <div>
+            <div class="label">ブース表元シート (.xlsx)</div>
+            <div class="desc" id="nSrc">出勤可能講師の一覧</div>
+          </div><input type="file" accept=".xlsx" onchange="onF(this,'src')">
+        </label>
+        <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn"
+            onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory
+            style="display:none" onchange="onFolderSingle(this,'src')"></div>
+      </div>
+      <div id="srcSurveyMode" style="display:none">
+        <div class="survey-zone" id="surveyZone">
+          <div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div>
+          <div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx"
+            multiple onchange="onSurveyFiles(this)">
+          <div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂
+              フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSurvey(this)">
+          </div>
+          <div class="survey-files" id="surveyFileList"></div>
+        </div>
+      </div>
+      <h3 style="font-size:13px;margin-bottom:6px;margin-top:16px">ブース表の取得方法</h3>
+      <div class="booth-toggle">
+        <button id="boothMode1" class="active" onclick="setBoothMode('file')">ブース表をアップロード</button>
+        <button id="boothMode2" onclick="setBoothMode('consolidate')">ブース表を集約</button>
+      </div>
+      <div id="boothFileMode">
+        <label class="upload-row" id="uBooth">
+          <div class="icon">📁</div>
+          <div>
+            <div class="label">ブース表 (.xlsx)</div>
+            <div class="desc" id="nBooth">生徒情報・講師指導可能科目・テンプレート</div>
+          </div><input type="file" accept=".xlsx" onchange="onF(this,'booth')">
+        </label>
+        <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn"
+            onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory
+            style="display:none" onchange="onFolderSingle(this,'booth')"></div>
+        <div class="file-note">※ ブース表に「必要コマ数」「一覧表」「講師ブース希望」シートが含まれている必要があります</div>
+      </div>
+      <div id="boothConsolMode" style="display:none">
+        <div class="consol-zone" id="consolMetaZone">
+          <div class="consol-label">📋 メタデータファイル (.xlsx)</div>
+          <div class="consol-desc" id="consolMetaDesc">必要コマ数・一覧表(指導科目)・ブース希望シートを含むファイル</div><input type="file"
+            accept=".xlsx" onchange="onConsolMeta(this)">
+        </div>
+        <div class="consol-zone" id="consolWeekZone">
+          <div class="consol-label">📁 週別ブース表ファイル (.xlsx 複数選択可)</div>
+          <div class="consol-desc" id="consolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx"
+            multiple onchange="onConsolWeeks(this)">
+          <div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂
+              フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderWeeks(this)">
+          </div>
+          <div class="consol-files" id="consolWeekList"></div>
+        </div>
+        <div class="bg" style="margin-top:8px"><button class="btn btn-s" id="consolBtn" disabled
+            onclick="doConsolidate()">集約して統合</button></div>
+        <div id="consolResult"></div>
+        <div class="file-note">※ メタデータファイルの古い週シートは自動削除されます</div>
+      </div>
+      <div class="bg"><button class="btn btn-p" id="toS" disabled onclick="go('settings')">次へ: 設定 →</button></div>
+      <div class="status" id="upSt"></div>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
+      <h3 style="font-size:13px;margin-bottom:6px">📥 保存済みスケジュールの読み込み</h3>
+      <p style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">ダウンロードしたブース表Excelを選択すると、前回の配置状態を復元できます</p>
+      <label class="upload-row" id="uSaved">
+        <div class="icon">📥</div>
+        <div>
+          <div class="label">保存済みブース表 (.xlsx)</div>
+          <div class="desc" id="nSaved">ブース表DLでダウンロードしたファイルを選択</div>
+        </div><input type="file" accept=".xlsx" onchange="onLoadSaved(this)">
+      </label>
+      <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn"
+          onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory
+          style="display:none" onchange="onFolderSingle(this,'saved')"></div>
+    </div>
+    <div id="pSettings" class="card" style="display:none">
+      <h2>教室業務・チューター担当</h2>
+      <p style="font-size:12.5px;color:var(--ink3);margin-bottom:14px">各曜日の教室業務/チューター担当講師</p>
+      <div class="sg" id="oGrid"></div>
+      <h3>🪑 講師ブース希望</h3>
+      <p style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">ブース表の「講師ブース希望」シートから自動読み込み。ここで変更も可能。</p>
+      <div class="bp-grid" id="bpGrid"></div>
+      <div style="margin-top:8px"><button class="btn btn-s" onclick="addBP()">＋ 講師追加</button></div>
+      <div class="note">※ ブース⑥まで。教室業務担当はブースから除外。NG講師はプレビューで赤く表示。</div>
+      <div class="bg">
+        <button class="btn btn-o" onclick="go('upload')">← 戻る</button>
+        <button class="btn btn-g" id="genBtn" onclick="gen()">🚀 スケジュール生成</button>
+      </div>
+      <div class="status" id="stTxt"></div>
+    </div>
+    <div id="pResult" style="display:none">
+      <div class="card">
+        <div class="summary">
+          <div>
+            <div class="big-num" id="pNum">0<span>/0コマ</span></div>
+            <div class="rate" id="rTxt"></div>
+          </div>
+          <div id="uBadge" class="badge-w" style="display:none"></div>
+          <div id="mBadge" class="badge-m" style="display:none"></div>
+          <div style="flex:1"></div>
+          <button class="btn btn-p" onclick="dlExcel()">📥 ブース表DL</button>
+          <button class="btn btn-o" onclick="go('settings')">↻ 再生成</button>
+        </div>
+        <div class="edit-hint">✋ 講師名・生徒チップをD&Dで移動。生徒名クリック→個人カレンダー。カレンダー内の授業クリック→講師/時間変更。<span
+            style="color:var(--red)">赤＝NG</span></div>
+      </div>
+      <div class="wt" id="wTabs"></div>
+      <div class="card">
+        <div class="tw" id="pWrap"></div>
+      </div>
+    </div>
+  </div>
+  <div id="saveIndicator" class="save-indicator">保存しました</div>
+  <div id="modalRoot"></div>
+  <script>
+    const D = ['月', '火', '水', '木', '金', '土'], WT = ['16:00', '17:05', '18:10', '19:15', '20:20'], ST = ['14:55', '16:00', '17:05', '18:10'];
+    const TL = ['14:55', '16:00', '17:05', '18:10', '19:15', '20:20'], TS = { '14:55': '14', '16:00': '16', '17:05': '17', '18:10': '18', '19:15': '19', '20:20': '20' }, TSR = { '14': '14:55', '16': '16:00', '17': '17:05', '18': '18:10', '19': '19:15', '20': '20:20' }, BL = ['①', '②', '③', '④', '⑤', '⑥'];
+    let OR = { 月: ['石川T'], 火: ['石川T'], 水: ['西T'], 木: ['石川T'], 金: ['石川T'], 土: ['越智T', '粉川T'] };
+    let BP = [], R = null, PW = 0, uploaded = {}, edited = false, dragData = null, calStudent = null, teacherList = [];
+    let ngMap = {}, ngStudentMap = {};
+    function buildNgMap() { ngMap = {}; ngStudentMap = {}; if (!R || !R.students) return; R.students.forEach(s => { ngMap[s.name] = new Set(s.ng_teachers || []); ngStudentMap[s.name] = new Set(s.ng_students || []) }); }
+    function isNg(n, t) { return ngMap[n] && ngMap[n].has(t); }
+    function isNgStudent(a, b) { return (ngStudentMap[a] && ngStudentMap[a].has(b)) || (ngStudentMap[b] && ngStudentMap[b].has(a)); }
+    function isAdjacentNg(wi, day, ts, bi, sn) { const bs = R.schedule[wi]?.[day]?.[ts]; if (!bs) return false; for (const a of [bi - 1, bi + 1]) { if (a < 0 || a >= bs.length) continue; for (const sl of bs[a].slots) { if (isNgStudent(sn, sl[1])) return true; } } return false; }
 
-// === Auto-save/restore ===
-function showSaveIndicator(msg){const el=document.getElementById('saveIndicator');el.textContent=msg||'保存しました';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2000);}
-async function autoSave(){if(!R||!edited)return;try{await fetch('/api/update_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedule:R.schedule,unplaced:R.unplaced})});showSaveIndicator('自動保存しました');}catch(e){}}
-let autoSaveTimer=null;
-function scheduleAutoSave(){if(autoSaveTimer)clearTimeout(autoSaveTimer);autoSaveTimer=setTimeout(autoSave,3000);}
-async function checkSavedState(){
-try{const res=await fetch('/api/state');const d=await res.json();
-if(d.has_state&&d.schedule){
-const wrap=document.getElementById('pUpload');
-const banner=document.createElement('div');banner.className='restore-banner';banner.id='restoreBanner';
-banner.innerHTML='<span class="msg">前回の作業データがあります（'+d.placed+'/'+d.total+'コマ配置済み）</span><div class="actions"><button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="restoreState()">復元する</button><button class="btn btn-o" style="padding:6px 14px;font-size:12px" onclick="dismissRestore()">新規作成</button></div>';
-wrap.insertBefore(banner,wrap.firstChild);
-window._savedState=d;}}catch(e){}}
-function restoreState(){if(!window._savedState)return;R=window._savedState;PW=0;edited=false;calStudent=null;buildNgMap();
-if(R.boothPref)BP=Object.entries(R.boothPref).map(([t,b])=>({teacher:t,booth:b}));
-const b=document.getElementById('restoreBanner');if(b)b.remove();go('result');rR();showSaveIndicator('復元しました');}
-function dismissRestore(){const b=document.getElementById('restoreBanner');if(b)b.remove();window._savedState=null;}
-async function onLoadSaved(inp){const f=inp.files[0];if(!f)return;
-const row=inp.closest('.upload-row');row.querySelector('.desc').textContent='読み込み中...';row.querySelector('.icon').textContent='📄';
-showProgress(20,'保存済みスケジュールを読み込んでいます...','読み込み中');
-const fd=new FormData();fd.append('file',f);
-try{const res=await fetch('/api/load_saved',{method:'POST',body:fd});const d=await res.json();
-hideProgress();
-if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';
-row.querySelector('.desc').textContent=f.name+' ('+d.placed+'/'+d.total+'コマ)';
-R=d;PW=0;edited=false;calStudent=null;buildNgMap();
-if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));
-go('result');rR();showSaveIndicator('スケジュールを復元しました');}
-else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent=d.error||'読み込み失敗';}}
-catch(e){hideProgress();row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー: '+e.message;}}
-window.addEventListener('DOMContentLoaded',()=>{checkSavedState();});
-
-// === Folder upload helper ===
-function filterXlsx(fileList){return Array.from(fileList).filter(f=>f.name.endsWith('.xlsx')&&!f.name.startsWith('~$'));}
-async function onFolderSingle(inp,key){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
-const f=files[0];
-if(key==='saved'){
-const row=document.getElementById('uSaved');row.querySelector('.desc').textContent='読み込み中...';row.querySelector('.icon').textContent='📄';
-showProgress(20,'保存済みスケジュールを読み込んでいます...','読み込み中');
-const fd=new FormData();fd.append('file',f);
-try{const res=await fetch('/api/load_saved',{method:'POST',body:fd});const d=await res.json();hideProgress();
-if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name+' ('+d.placed+'/'+d.total+'コマ)';
-R=d;PW=0;edited=false;calStudent=null;buildNgMap();if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));go('result');rR();showSaveIndicator('スケジュールを復元しました');}
-else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent=d.error||'読み込み失敗';}}
-catch(e){hideProgress();row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー';}
-return;}
-// src or booth
-const row=document.getElementById(key==='src'?'uSrc':'uBooth');row.querySelector('.desc').textContent='アップロード中...';row.classList.remove('done');row.querySelector('.icon').textContent='📄';
-const fd=new FormData();fd.append(key,f);
-try{const res=await fetch('/api/upload',{method:'POST',body:fd});const d=await res.json();
-if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;uploaded[key]=true;}
-else{row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='失敗: '+(d.error||'不明');uploaded[key]=false;}}
-catch(e){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー';uploaded[key]=false;}
-const ready=uploaded.src&&uploaded.booth;document.getElementById('toS').disabled=true;
-if(ready){const btn=document.getElementById('toS');btn.textContent='読み込み中...';showProgress(30,'講師データを読み込んでいます...','データ読み込み中');
-try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
-hideProgress();btn.textContent='次へ: 設定 →';}
-document.getElementById('toS').disabled=!ready;}
-async function onFolderSurvey(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
-const zone=document.getElementById('surveyZone');const desc=document.getElementById('surveyDesc');const flist=document.getElementById('surveyFileList');
-desc.textContent=files.length+'件のファイルをアップロード中...';zone.classList.remove('done');
-showProgress(10,'講師回答ファイルを集約しています...','講師回答ファイル集約中');
-const fd=new FormData();files.forEach(f=>fd.append('surveys',f));
-try{const res=await fetch('/api/upload_surveys',{method:'POST',body:fd});const d=await res.json();
-if(res.ok&&d.ok){zone.classList.add('done');desc.textContent=d.teacherCount+'名の講師データを集約（'+d.weeks+'週分）';
-flist.innerHTML=d.teachers.map(t=>'<span class="sf-item">'+t+'</span>').join('');uploaded.src=true;}
-else{desc.textContent='エラー: '+(d.error||'不明');uploaded.src=false;}}
-catch(e){desc.textContent='通信エラー: '+e.message;uploaded.src=false;}
-hideProgress();document.getElementById('toS').disabled=true;
-if(uploaded.src&&uploaded.booth){const btn=document.getElementById('toS');btn.textContent='読み込み中...';showProgress(30,'講師データを読み込んでいます...','データ読み込み中');
-try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
-hideProgress();btn.textContent='次へ: 設定 →';}
-document.getElementById('toS').disabled=!(uploaded.src&&uploaded.booth);}
-function onFolderWeeks(inp){const files=filterXlsx(inp.files);if(!files.length){alert('フォルダ内に .xlsx ファイルが見つかりません');return;}
-consolWeeks=files;
-document.getElementById('consolWeekZone').classList.add('done');
-document.getElementById('consolWeekDesc').textContent=files.length+'件のファイルを選択';
-const flist=document.getElementById('consolWeekList');
-flist.innerHTML=files.map(f=>'<span class="cf-item">'+f.name+'</span>').join('');
-document.getElementById('consolBtn').disabled=!(consolMeta&&consolWeeks);}
-
-// === Survey upload ===
-let srcMode='file';
-function setSrcMode(mode){srcMode=mode;
-document.getElementById('srcMode1').className=mode==='file'?'active':'';
-document.getElementById('srcMode2').className=mode==='survey'?'active':'';
-document.getElementById('srcFileMode').style.display=mode==='file'?'':'none';
-document.getElementById('srcSurveyMode').style.display=mode==='survey'?'':'none';
-checkReady();}
-function checkReady(){const ready=uploaded.src&&uploaded.booth;document.getElementById('toS').disabled=!ready;}
-async function onSurveyFiles(inp){const files=inp.files;if(!files||!files.length)return;
-const zone=document.getElementById('surveyZone');const desc=document.getElementById('surveyDesc');const flist=document.getElementById('surveyFileList');
-desc.textContent=files.length+'件のファイルをアップロード中...';zone.classList.remove('done');
-document.getElementById('upSt').textContent='';document.getElementById('upSt').className='status';
-showProgress(10,'講師回答ファイルを集約しています...','講師回答ファイル集約中');
-const fd=new FormData();for(let i=0;i<files.length;i++)fd.append('surveys',files[i]);
-try{const res=await fetch('/api/upload_surveys',{method:'POST',body:fd});const d=await res.json();
-if(res.ok&&d.ok){zone.classList.add('done');desc.textContent=d.teacherCount+'名の講師データを集約（'+d.weeks+'週分）';
-flist.innerHTML=d.teachers.map(t=>'<span class="sf-item">'+t+'</span>').join('');
-uploaded.src=true;
-if(d.errors&&d.errors.length){document.getElementById('upSt').textContent='一部エラー: '+d.errors.join(', ');document.getElementById('upSt').className='status err';}
-}else{desc.textContent='エラー: '+(d.error||'不明');uploaded.src=false;
-if(d.details)document.getElementById('upSt').innerHTML=d.details.map(e=>'<div>'+e+'</div>').join('');document.getElementById('upSt').className='status err';}
-}catch(e){desc.textContent='通信エラー: '+e.message;uploaded.src=false;}
-hideProgress();
-document.getElementById('toS').disabled=true;
-if(uploaded.src&&uploaded.booth){const btn=document.getElementById('toS');btn.textContent='読み込み中...';
-showProgress(30,'講師データを読み込んでいます...','データ読み込み中');
-try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
-hideProgress();btn.textContent='次へ: 設定 →';}
-document.getElementById('toS').disabled=!(uploaded.src&&uploaded.booth);}
-
-// === Booth consolidation ===
-let boothMode='file',consolMeta=null,consolWeeks=null;
-function setBoothMode(mode){boothMode=mode;
-document.getElementById('boothMode1').className=mode==='file'?'active':'';
-document.getElementById('boothMode2').className=mode==='consolidate'?'active':'';
-document.getElementById('boothFileMode').style.display=mode==='file'?'':'none';
-document.getElementById('boothConsolMode').style.display=mode==='consolidate'?'':'none';
-checkReady();}
-function onConsolMeta(inp){const f=inp.files[0];if(!f)return;consolMeta=f;
-document.getElementById('consolMetaZone').classList.add('done');
-document.getElementById('consolMetaDesc').textContent=f.name;
-document.getElementById('consolBtn').disabled=!(consolMeta&&consolWeeks);}
-function onConsolWeeks(inp){const files=inp.files;if(!files||!files.length)return;consolWeeks=files;
-document.getElementById('consolWeekZone').classList.add('done');
-document.getElementById('consolWeekDesc').textContent=files.length+'件のファイルを選択';
-const flist=document.getElementById('consolWeekList');
-flist.innerHTML=Array.from(files).map(f=>'<span class="cf-item">'+f.name+'</span>').join('');
-document.getElementById('consolBtn').disabled=!(consolMeta&&consolWeeks);}
-async function doConsolidate(){if(!consolMeta||!consolWeeks)return;
-const btn=document.getElementById('consolBtn');btn.disabled=true;btn.textContent='集約中...';
-document.getElementById('consolResult').innerHTML='';document.getElementById('upSt').textContent='';document.getElementById('upSt').className='status';
-showProgress(20,'ブース表を集約しています...','ブース表集約中');startProgressAnim(20,p=>'ファイルを処理しています...');
-const fd=new FormData();fd.append('meta',consolMeta);
-for(let i=0;i<consolWeeks.length;i++)fd.append('weeks',consolWeeks[i]);
-try{const res=await fetch('/api/consolidate_booth',{method:'POST',body:fd});const d=await res.json();
-if(res.ok&&d.ok){
-document.getElementById('consolResult').innerHTML='<div class="consol-result">✅ 統合完了: '+d.weekCount+'週分のシートを統合<br>メタシート: '+d.metaSheets.join(', ')+(d.removedSheets.length?' / 削除: '+d.removedSheets.join(', '):'')+'<br>最終シート構成: '+d.finalSheets.join(', ')+'</div>';
-uploaded.booth=true;
-if(d.errors&&d.errors.length){document.getElementById('upSt').textContent='一部エラー: '+d.errors.join(', ');document.getElementById('upSt').className='status err';}
-}else{document.getElementById('upSt').textContent='エラー: '+(d.error||'不明');document.getElementById('upSt').className='status err';uploaded.booth=false;}
-}catch(e){document.getElementById('upSt').textContent='通信エラー: '+e.message;document.getElementById('upSt').className='status err';uploaded.booth=false;}
-hideProgress();
-btn.disabled=false;btn.textContent='集約して統合';
-document.getElementById('toS').disabled=true;
-if(uploaded.src&&uploaded.booth){const toS=document.getElementById('toS');toS.textContent='読み込み中...';
-showProgress(30,'講師データを読み込んでいます...','データ読み込み中');
-try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
-hideProgress();toS.textContent='次へ: 設定 →';}
-document.getElementById('toS').disabled=!(uploaded.src&&uploaded.booth);}
-
-function fmtSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
-function showUpErr(detail){const st=document.getElementById('upSt');st.className='status err';st.innerHTML=detail;}
-async function onF(inp,key){const f=inp.files[0];if(!f)return;const row=inp.closest('.upload-row');row.querySelector('.desc').textContent='アップロード中...';row.classList.remove('done');row.querySelector('.icon').textContent='📄';document.getElementById('upSt').textContent='';document.getElementById('upSt').className='status';
-const maxSize=10*1024*1024;if(f.size>maxSize){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='ファイルサイズ超過';showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+') は上限 10MB を超えています');uploaded[key]=false;const ready=uploaded.src&&uploaded.booth;document.getElementById('toS').disabled=!ready;return;}
-const fd=new FormData();fd.append(key,f);
-try{const res=await fetch('/api/upload',{method:'POST',body:fd});let d;try{d=await res.json();}catch(pe){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='サーバーエラー (HTTP '+res.status+')';showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>HTTP '+res.status+' - レスポンス解析失敗');uploaded[key]=false;return;}
-if(res.ok&&d.ok){row.classList.add('done');row.querySelector('.icon').textContent='✅';row.querySelector('.desc').textContent=f.name;uploaded[key]=true;}else{const msg=d.error||'不明なエラー (HTTP '+res.status+')';row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='失敗: '+msg;showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>HTTP '+res.status+': '+msg);uploaded[key]=false;}}catch(e){row.querySelector('.icon').textContent='❌';row.querySelector('.desc').textContent='通信エラー';showUpErr('['+key+'] <b>'+f.name+'</b> ('+fmtSize(f.size)+')<br>通信エラー: '+e.message+'<br><small>サーバーに接続できませんでした。ネットワーク接続・ファイルサイズを確認してください。</small>');uploaded[key]=false;}
-const ready=uploaded.src&&uploaded.booth;
-document.getElementById('toS').disabled=true;
-if(ready){const btn=document.getElementById('toS');btn.textContent='読み込み中...';
-showProgress(30,'講師データを読み込んでいます...','データ読み込み中');
-try{const r=await fetch('/api/teachers');const d=await r.json();if(d.teachers)teacherList=d.teachers;if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));}catch(e){}
-hideProgress();btn.textContent='次へ: 設定 →';}
-document.getElementById('toS').disabled=!ready;}
-
-function go(step){document.getElementById('pUpload').style.display=step==='upload'?'':'none';document.getElementById('pSettings').style.display=step==='settings'?'':'none';document.getElementById('pResult').style.display=step==='result'?'':'none';
-for(const[k,id]of[['upload','sb1'],['settings','sb2'],['result','sb3']])document.getElementById(id).className='step-btn'+(step===k?' active':'');if(step==='settings')buildSettingsUI();}
-function buildSettingsUI(){const g=document.getElementById('oGrid');g.innerHTML='';
-const opts=teacherList.length?[...teacherList]:['石川T','西T','越智T','寒河江T','若林T','隆斗T','瑠璃T','田村T','粉川T','平畑T','後藤T','渡邉T','橋本T','小山T','井上T','藤原T','飯村T'];
-const optSet=new Set(opts);for(const d of D){(OR[d]||[]).forEach(c=>{if(c&&!optSet.has(c)){opts.push(c);optSet.add(c);}});}
-for(const d of D){const div=document.createElement('div');div.className='si';
-if(!Array.isArray(OR[d]))OR[d]=[OR[d]||'石川T'];
-let html='<label>'+d+'曜</label>';
-OR[d].forEach((c,i)=>{
-const selHtml=opts.map(t=>'<option value="'+t+'"'+(t===c?' selected':'')+'>'+t+'</option>').join('');
-html+='<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center"><span style="font-size:11px;color:var(--ink3);min-width:16px">'+(i+1)+'.</span><select style="flex:1" onchange="OR[\''+d+'\']['+i+']=this.value"><option value="">-- 選択 --</option>'+selHtml+'</select>'+(OR[d].length>1?'<button type="button" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px" onclick="OR[\''+d+'\'].splice('+i+',1);buildSettingsUI()">✕</button>':'')+'</div>';});
-html+='<button type="button" style="background:#7c3aed;color:#fff;font-size:11px;padding:3px 8px;border:none;border-radius:4px;cursor:pointer;margin-top:2px" onclick="OR[\''+d+'\'].push(\'\');buildSettingsUI()">＋ 追加</button>';
-div.innerHTML=html;g.appendChild(div);}renderBP();}
-function renderBP(){const g=document.getElementById('bpGrid');g.innerHTML='';BP.forEach((bp,i)=>{const div=document.createElement('div');div.className='bp-item';
-div.innerHTML='<input style="min-width:80px;max-width:100px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;font-weight:600" value="'+bp.teacher+'" onchange="BP['+i+'].teacher=this.value">'
-+'<select onchange="BP['+i+'].booth=parseInt(this.value)||0"><option value="0">なし</option>'+[1,2,3,4,5,6].map(n=>'<option value="'+n+'"'+(bp.booth===n?' selected':'')+'>'+BL[n-1]+'</option>').join('')+'</select>'
-+'<button style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--red)" onclick="BP.splice('+i+',1);renderBP()">✕</button>';g.appendChild(div);});}
-function addBP(){BP.push({teacher:'',booth:0});renderBP();}
-
-let progTimer=null;
-function showProgress(pct,msg,title){const root=document.getElementById('modalRoot');
-root.innerHTML='<div class="progress-bg"><div class="progress-box"><div class="progress-spinner"></div><div class="progress-title">'+(title||'処理中')+'</div><div class="progress-pct" id="progPct">'+pct+'%</div><div class="progress-bar-wrap"><div class="progress-bar-fill" id="progBar" style="width:'+pct+'%"></div></div><div class="progress-msg" id="progMsg">'+msg+'</div></div></div>';}
-function updateProgress(pct,msg){
-const bar=document.getElementById('progBar');if(bar)bar.style.width=pct+'%';
-const p=document.getElementById('progPct');if(p)p.textContent=pct+'%';
-const el=document.getElementById('progMsg');if(el)el.innerHTML=msg;}
-function hideProgress(){if(progTimer){clearInterval(progTimer);progTimer=null;}document.getElementById('modalRoot').innerHTML='';}
-function startProgressAnim(startPct,msgFn){
-let pct=startPct||10;
-const defaultMsg=p=>p<30?'データを読み込んでいます':p<60?'講師配置を計算しています':p<85?'生徒を配置しています':'最終調整しています';
-const getMsg=msgFn||defaultMsg;
-progTimer=setInterval(()=>{
-if(pct<30)pct+=2;else if(pct<60)pct+=1.5;else if(pct<85)pct+=0.8;else if(pct<95)pct+=0.2;
-pct=Math.min(pct,95);
-updateProgress(Math.round(pct),getMsg(pct));
-},400);}
-
-async function gen(){const st=document.getElementById('stTxt'),btn=document.getElementById('genBtn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>生成中...';st.textContent='';st.className='status';
-showProgress(5,'データを読み込んでいます','スケジュール生成中');startProgressAnim();
-const bpObj={};BP.forEach(bp=>{if(bp.teacher&&bp.booth)bpObj[bp.teacher]=bp.booth;});
-try{
-const res=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({officeRule:OR,boothPref:bpObj})});const d=await res.json();
-if(d.error){hideProgress();st.textContent='エラー: '+d.error;st.className='status err';
-if(d.error.includes('アップロード')||d.error.includes('不足')||d.error.includes('見つかりません')){st.textContent+=' ファイルを再アップロードしてください。';setTimeout(()=>go('upload'),2000);}return;}
-updateProgress(100,'完了！ '+d.placed+'/'+d.total+'コマ配置');
-await new Promise(r=>setTimeout(r,600));
-R=d;PW=0;edited=false;calStudent=null;buildNgMap();
-if(d.boothPref)BP=Object.entries(d.boothPref).map(([t,b])=>({teacher:t,booth:b}));
-hideProgress();go('result');rR();
-}catch(e){hideProgress();st.textContent='エラー: '+e.message;st.className='status err';}finally{btn.disabled=false;btn.innerHTML='🚀 スケジュール生成';}}
-
-async function dlExcel(){if(edited){await fetch('/api/update_schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedule:R.schedule,unplaced:R.unplaced})});}window.location.href='/api/download';}
-
-function countPlaced(){let c=0;for(const w of R.schedule)for(const d of Object.values(w))for(const bs of Object.values(d))for(const b of bs)c+=b.slots.length;return c;}
-
-// Navigate to student calendar
-function goStudent(name){const idx=R.students.findIndex(s=>s.name===name);if(idx<0)return;calStudent=idx;PW=-2;rR();}
-
-function rR(){if(edited)scheduleAutoSave();const p=countPlaced();document.getElementById('pNum').innerHTML=p+'<span>/'+R.total+'コマ</span>';document.getElementById('rTxt').textContent='配置率 '+(p/R.total*100).toFixed(1)+'%';
-const ub=document.getElementById('uBadge'),uT=R.unplaced.reduce((s,u)=>s+u.count,0);if(uT>0){ub.style.display='';ub.textContent='⚠️ 未配置: '+uT+'コマ';}else ub.style.display='none';
-const mb=document.getElementById('mBadge');if(edited){mb.style.display='';mb.textContent='✏️ 手動編集あり';}else mb.style.display='none';
-const tabs=document.getElementById('wTabs');tabs.innerHTML='';
-const NW=R.schedule.length;for(let w=0;w<NW;w++){const b=document.createElement('button');b.className=PW===w?'active':'';const wr=getWeekRange(w);b.textContent='第'+(w+1)+'週'+(wr&&wr!=='W'+(w+1)?' '+wr:'');b.onclick=()=>{PW=w;rR();};tabs.appendChild(b);}
-const ub2=document.createElement('button');ub2.className='warn'+(PW===-1?' active':'');ub2.textContent='未配置';ub2.onclick=()=>{PW=-1;rR();};tabs.appendChild(ub2);
-const cb=document.createElement('button');cb.className='cal'+(PW===-2?' active':'');cb.textContent='📅 生徒別';cb.onclick=()=>{PW=-2;rR();};tabs.appendChild(cb);
-const wrap=document.getElementById('pWrap');wrap.innerHTML='';if(PW>=0)rW(wrap,PW);else if(PW===-1)rU(wrap);else rCal(wrap);}
-
-// === Teacher D&D ===
-function mkTeacher(t,wi,day,ts,bi){const el=document.createElement('span');el.className='tn';el.textContent=t;el.draggable=true;
-el.addEventListener('dragstart',e=>{dragData={type:'teacher',wi,day,ts,bi,teacher:t};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
-el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
-el.addEventListener('dragover',e=>{if(dragData&&dragData.type==='teacher'&&dragData.wi===wi&&dragData.day===day&&dragData.ts===ts){e.preventDefault();el.classList.add('drag-over-t');}});
-el.addEventListener('dragleave',()=>{el.classList.remove('drag-over-t');});
-el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('drag-over-t');doTeacherSwap(wi,day,ts,bi);});
-let wasDragged=false;
-el.addEventListener('mousedown',()=>{wasDragged=false;});
-el.addEventListener('mousemove',()=>{wasDragged=true;});
-el.addEventListener('click',e=>{if(!wasDragged){e.stopPropagation();showTeacherPicker(el,wi,day,ts,bi);}});
-return el;}
-function getAvailableTeachers(wi,day){
-// weekly_teachers から出勤可能な講師を取得（教室業務担当を除く）
-const wt=R.weeklyTeachers;if(!wt||!wt[wi]||!wt[wi][day])return[];
-const dayData=wt[wi][day];const all=new Set();
-for(const ts of Object.keys(dayData)){(dayData[ts]||[]).forEach(t=>all.add(t));}
-const ot=(R.officeTeachers[wi]||{})[day];if(ot)all.delete(ot);
-return [...all].sort();}
-function getAssignedTeachers(wi,day){
-const ws=R.schedule[wi];if(!ws||!ws[day])return new Set();
-const assigned=new Set();
-for(const ts of Object.keys(ws[day])){(ws[day][ts]||[]).forEach(b=>{if(b.teacher)assigned.add(b.teacher);});}
-return assigned;}
-function showTeacherPicker(anchor,wi,day,ts,bi){
-// 既存のピッカーを閉じる
-document.querySelectorAll('.teacher-picker').forEach(p=>p.remove());
-const assigned=getAssignedTeachers(wi,day);
-const available=getAvailableTeachers(wi,day);
-const unassigned=available.filter(t=>!assigned.has(t));
-if(!unassigned.length&&available.length<=1)return;
-const picker=document.createElement('div');picker.className='teacher-picker';
-// 未配置の出勤講師
-if(unassigned.length){
-const hdr=document.createElement('div');hdr.className='tp-hdr';hdr.textContent='出勤中（未配置）';picker.appendChild(hdr);
-unassigned.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-new';opt.textContent=t;
-opt.onclick=e=>{e.stopPropagation();replaceTeacher(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
-// 配置済み講師との入替（自分自身を除く）
-const currentT=R.schedule[wi][day][ts][bi].teacher;
-const others=available.filter(t=>assigned.has(t)&&t!==currentT);
-if(others.length){
-const hdr2=document.createElement('div');hdr2.className='tp-hdr';hdr2.textContent='配置済み（入替）';picker.appendChild(hdr2);
-others.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-swap';opt.textContent=t;
-opt.onclick=e=>{e.stopPropagation();swapTeacherFull(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
-// 空欄にする
-const clr=document.createElement('div');clr.className='tp-opt tp-clear';clr.textContent='× 講師を外す';
-clr.onclick=e=>{e.stopPropagation();removeTeacher(wi,day,bi);picker.remove();};picker.appendChild(clr);
-// キャンセル
-const cancel=document.createElement('div');cancel.className='tp-opt tp-cancel';cancel.textContent='× キャンセル';
-cancel.onclick=e=>{e.stopPropagation();picker.remove();};picker.appendChild(cancel);
-anchor.parentElement.style.position='relative';anchor.parentElement.appendChild(picker);
-const close=e=>{if(!picker.contains(e.target)){picker.remove();document.removeEventListener('click',close);}};
-setTimeout(()=>document.addEventListener('click',close),0);}
-function showEmptyBoothPicker(cell,wi,day,ts,bi){
-document.querySelectorAll('.teacher-picker').forEach(p=>p.remove());
-const assigned=getAssignedTeachers(wi,day);
-const available=getAvailableTeachers(wi,day);
-const unassigned=available.filter(t=>!assigned.has(t));
-const picker=document.createElement('div');picker.className='teacher-picker';
-if(unassigned.length){
-const hdr=document.createElement('div');hdr.className='tp-hdr';hdr.textContent='出勤中（未配置）';picker.appendChild(hdr);
-unassigned.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-new';opt.textContent=t;
-opt.onclick=e=>{e.stopPropagation();replaceTeacher(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
-const others=available.filter(t=>assigned.has(t));
-if(others.length){
-const hdr2=document.createElement('div');hdr2.className='tp-hdr';hdr2.textContent='配置済み（入替）';picker.appendChild(hdr2);
-others.forEach(t=>{const opt=document.createElement('div');opt.className='tp-opt tp-swap';opt.textContent=t;
-opt.onclick=e=>{e.stopPropagation();swapTeacherFull(wi,day,bi,t);picker.remove();};picker.appendChild(opt);});}
-if(!unassigned.length&&!others.length){picker.remove();return;}
-cell.style.position='relative';cell.appendChild(picker);
-const close=e=>{if(!picker.contains(e.target)){picker.remove();document.removeEventListener('click',close);}};
-setTimeout(()=>document.addEventListener('click',close),0);}
-function replaceTeacher(wi,day,bi,newT){
-const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
-const wt=R.weeklyTeachers;
-// 出勤範囲（最初〜最後の出勤コマ）を計算して補間する
-let first=99,last=-1;
-if(wt&&wt[wi]&&wt[wi][day]){const tsOrd={'14':0,'16':1,'17':2,'18':3,'19':4,'20':5};
-for(const t of times){if((wt[wi][day][t]||[]).includes(newT)){const o=tsOrd[t];if(o<first)first=o;if(o>last)last=o;}}}
-const tsOrd={'14':0,'16':1,'17':2,'18':3,'19':4,'20':5};
-for(const t of times){const bs=ws[day]?.[t];if(!bs||!bs[bi])continue;
-const o=tsOrd[t];bs[bi].teacher=(first<=o&&o<=last)?newT:'';}
-edited=true;rR();}
-function swapTeacherFull(wi,day,bi,targetT){
-const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
-// targetTのブースインデックスを探す
-let tbi=null;for(const t of times){const bs=ws[day]?.[t];if(!bs)continue;for(let i=0;i<bs.length;i++){if(bs[i].teacher===targetT){tbi=i;break;}}if(tbi!==null)break;}
-if(tbi===null||tbi===bi)return;
-for(const t of times){const bs=ws[day]?.[t];if(!bs)continue;const s=bs[bi],g=bs[tbi];if(s&&g){const tmp=s.teacher;s.teacher=g.teacher;g.teacher=tmp;}}
-edited=true;rR();}
-function removeTeacher(wi,day,bi){
-const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
-for(const t of times){const bs=ws[day]?.[t];if(!bs||!bs[bi])continue;
-// 生徒が配置されている場合は未配置に戻す
-bs[bi].slots.forEach(sl=>{
-const existing=R.unplaced.find(u=>u.name===sl[1]&&u.subject===sl[2]);
-if(existing)existing.count++;else R.unplaced.push({grade:sl[0],name:sl[1],subject:sl[2],count:1,reason:'講師削除'});});
-bs[bi].slots=[];bs[bi].teacher='';}
-edited=true;rR();}
-function doTeacherSwap(wi,day,ts,tbi){if(!dragData||dragData.type!=='teacher'||dragData.wi!==wi||dragData.day!==day||dragData.ts!==ts||dragData.bi===tbi)return;
-const ws=R.schedule[wi],times=day==='土'?['14','16','17','18']:['16','17','18','19','20'];
-for(const t of times){const bs=ws[day]?.[t];if(!bs)continue;const s=bs[dragData.bi],g=bs[tbi];if(s&&g){const tmp=s.teacher;s.teacher=g.teacher;g.teacher=tmp;}}
-edited=true;dragData=null;rR();}
-
-// === Student slot ===
-function mkChip(slot,wi,day,ts,bi,si,teacher){
-const el=document.createElement('div');const ngT=isNg(slot[1],teacher);const ngS=isAdjacentNg(wi,day,ts,bi,slot[1]);const warn=ngT||ngS;
-el.className='slot-chip'+(warn?' ng':'');el.draggable=true;
-let wt=ngT?'NG講師:'+teacher:'';if(ngS)wt+=(wt?' / ':'')+'NG生徒が隣接';
-const gSpan='<span class="g">'+slot[0]+'</span>';
-const sSpan='<span class="s">'+slot[1]+'</span>';
-const jSpan='<span class="j">'+slot[2]+'</span>';
-el.innerHTML=gSpan+sSpan+jSpan+(warn?'<span style="color:var(--red);font-size:9px">⚠</span>':'');
-el.title=wt;
-let dragged=false;
-el.addEventListener('dragstart',e=>{dragged=true;dragData={type:'booth',wi,day,ts,bi,si,slot};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
-el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
-el.addEventListener('click',e=>{if(!dragged){e.stopPropagation();goStudent(slot[1]);}dragged=false;});return el;}
-
-function mkUnChip(u,ui){const el=document.createElement('div');el.className='slot-chip';el.draggable=true;
-el.innerHTML='<span class="g">'+u.grade+'</span><span class="s">'+u.name+'</span><span class="j">'+u.subject+'</span>'+(u.reason?'<span style="font-size:9px;color:var(--orange);margin-left:3px">'+u.reason+'</span>':'');
-if(u.reason)el.title=u.reason;
-let dragged=false;
-el.addEventListener('dragstart',e=>{dragged=true;dragData={type:'unplaced',ui,slot:[u.grade,u.name,u.subject]};el.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
-el.addEventListener('dragend',()=>{el.style.opacity='1';dragData=null;});
-el.addEventListener('click',e=>{if(!dragged){e.stopPropagation();goStudent(u.name);}dragged=false;});return el;}
-
-function doBooth(wi,day,ts,bi){if(!dragData)return;const ws=R.schedule[wi],booth=ws[day][ts][bi];
-if(booth.slots.length<2){
-// 空きあり: 通常の移動
-if(dragData.type==='booth'){if(dragData.wi!==wi||dragData.ts!==ts)return;if(dragData.day===day&&dragData.bi===bi)return;
-ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si,1);booth.slots.push(dragData.slot);}
-else if(dragData.type==='unplaced'){const u=R.unplaced[dragData.ui];if(!u||u.count<=0)return;booth.slots.push(dragData.slot);u.count--;if(u.count<=0)R.unplaced.splice(dragData.ui,1);}
-else if(dragData.type==='calSlot'){const src=R.schedule[dragData.wi][dragData.day][dragData.ts][dragData.bi];src.slots.splice(dragData.si,1);booth.slots.push(dragData.slot);}
-edited=true;dragData=null;rR();return;}
-// 満席: スワップモード（booth/calSlotのみ）
-if(dragData.type==='booth'||dragData.type==='calSlot'){
-if(dragData.type==='booth'&&(dragData.wi!==wi||dragData.ts!==ts))return;
-if(dragData.day===day&&dragData.bi===bi)return;
-if(booth.slots.length===1){doSwapExec(wi,day,ts,bi,0);}
-else{showSwapModal(wi,day,ts,bi,booth);}}}
-
-function doUnplaced(){if(!dragData||(dragData.type!=='booth'&&dragData.type!=='calSlot'))return;
-const wi=dragData.wi,ws=R.schedule[wi],slot=ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si,1)[0];
-const ex=R.unplaced.find(u=>u.name===slot[1]&&u.subject===slot[2]);if(ex)ex.count++;else R.unplaced.push({grade:slot[0],name:slot[1],subject:slot[2],count:1,reason:''});
-edited=true;dragData=null;rR();}
-
-function showSwapModal(wi,day,ts,bi,booth){
-const saved={...dragData};
-const root=document.getElementById('modalRoot');
-const bg=document.createElement('div');bg.className='modal-bg';
-const modal=document.createElement('div');modal.className='modal';
-modal.innerHTML='<h3>🔄 交換する生徒を選択</h3><p style="font-size:12px;color:var(--ink3);margin-bottom:10px">ドラッグ中の生徒と入れ替えます</p>';
-const opts=document.createElement('div');opts.className='modal-opts';
-booth.slots.forEach((sl,si)=>{
-const btn=document.createElement('div');btn.className='modal-opt';
-btn.innerHTML='<span class="t-name">'+sl[0]+' '+sl[1]+'</span><span class="t-info">'+sl[2]+'</span>';
-btn.onclick=()=>{root.innerHTML='';dragData=saved;doSwapExec(wi,day,ts,bi,si);};
-opts.appendChild(btn);});
-modal.appendChild(opts);
-const cancel=document.createElement('div');cancel.className='modal-cancel';
-cancel.innerHTML='<button class="btn btn-o" style="padding:6px 16px;font-size:12px">キャンセル</button>';
-cancel.querySelector('button').onclick=()=>{root.innerHTML='';dragData=null;};
-modal.appendChild(cancel);bg.appendChild(modal);root.appendChild(bg);
-bg.addEventListener('click',e=>{if(e.target===bg){root.innerHTML='';dragData=null;}});}
-
-function doSwapExec(wi,day,ts,bi,targetSi){
-if(!dragData)return;
-const ws=R.schedule[wi];
-const targetBooth=ws[day][ts][bi];
-const swappedOut=targetBooth.slots[targetSi];
-if(dragData.type==='booth'||dragData.type==='calSlot'){
-const srcBooth=R.schedule[dragData.wi][dragData.day][dragData.ts][dragData.bi];
-srcBooth.slots.splice(dragData.si,1);
-srcBooth.slots.push(swappedOut);
-targetBooth.slots[targetSi]=dragData.slot;}
-edited=true;dragData=null;rR();}
-
-function rW(wrap,wi){const ws=R.schedule[wi];
-// デバッグ: 各曜日・時間帯のブース数をコンソールに出力
-console.log('=== 週'+wi+' スケジュールデータ ===');
-for(const d of D){const dayData=ws[d]||{};const summary={};for(const[t,bs]of Object.entries(dayData))summary[t]=bs.length+'ブース(生徒:'+bs.reduce((s,b)=>s+b.slots.length,0)+')';console.log(d+'曜:',summary);}
-const tbl=document.createElement('table');tbl.className='sch';
-let hd='<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>';for(const d of D){const dl=getDateLabel(wi,d);hd+='<th style="width:calc((100% - 82px)/6)'+(d==='土'?';background:#edf2f7':'')+'">'+d+(dl?'<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">'+dl+'</span>':'')+'</th>';}
-hd+='</tr><tr class="or"><td colspan="2">教室業務</td>';for(const d of D){const ov=(R.officeTeachers[wi]||{})[d]||'';if(ov==='休塾日')hd+='<td><span class="holiday-cell">休塾日</span></td>';else hd+='<td>'+ov+'</td>';}hd+='</tr></thead>';tbl.innerHTML=hd;
-const tbody=document.createElement('tbody');
-const MX=6;// 常に6ブース行を表示
-for(const tl of TL){const ts=TS[tl];
-for(let bi=0;bi<MX;bi++){const tr=document.createElement('tr');if(!(bi%2))tr.className='er';if(!bi)tr.style.borderTop='2px solid #b8c5d4';
-if(!bi){const td=document.createElement('td');td.className='tc';td.rowSpan=MX;td.textContent=tl;tr.appendChild(td);}
-const btd=document.createElement('td');btd.className='bc';btd.textContent=BL[bi]||'';tr.appendChild(btd);
-for(const d of D){const dt=d==='土'?ST:WT;const td=document.createElement('td');
-if(!dt.includes(tl)){td.className='cd';td.textContent='-';tr.appendChild(td);continue;}
-td.className='booth-cell';const bs=ws[d]?.[ts]||[],b=bs[bi];
-if(b&&b.teacher){if(b.slots.length===0)td.classList.add('empty-booth');
-td.appendChild(mkTeacher(b.teacher,wi,d,ts,bi));
-b.slots.forEach((sl,si)=>{td.appendChild(mkChip(sl,wi,d,ts,bi,si,b.teacher));});if(b.slots.length>=2)td.classList.add('full');}
-else{td.classList.add('empty-booth');td.style.cursor='pointer';
-const dash=document.createElement('span');dash.className='tn';dash.textContent='-';dash.style.opacity='.4';dash.style.cursor='pointer';
-td.appendChild(dash);
-td.addEventListener('click',e=>{e.stopPropagation();showEmptyBoothPicker(td,wi,d,ts,bi);});}
-td.addEventListener('dragover',e=>{e.preventDefault();if(!dragData)return;const bth=bs[bi];
-if(dragData.type==='teacher'){if(dragData.wi===wi&&dragData.day===d&&dragData.ts===ts&&dragData.bi!==bi){td.classList.add('drag-over');}return;}
-if(!bth||!bth.teacher)return;
-if(dragData.type==='booth'&&(dragData.wi!==wi||dragData.ts!==ts))return;
-if(dragData.type==='unplaced'&&bth.slots.length>=2)return;
-td.classList.add('drag-over');});
-td.addEventListener('dragleave',()=>{td.classList.remove('drag-over');});
-td.addEventListener('drop',e=>{e.preventDefault();td.classList.remove('drag-over');
-if(dragData&&dragData.type==='teacher'){doTeacherSwap(wi,d,ts,bi);return;}
-if(dragData&&dragData.type!=='teacher')doBooth(wi,d,ts,bi);});
-tr.appendChild(td);}tbody.appendChild(tr);}}
-tbl.appendChild(tbody);wrap.appendChild(tbl);
-const lbl=document.createElement('div');lbl.className='unplaced-label';lbl.textContent='📦 未配置コマ';wrap.appendChild(lbl);
-const zone=document.createElement('div');zone.className='unplaced-zone';
-R.unplaced.forEach((u,ui)=>{for(let i=0;i<u.count;i++)zone.appendChild(mkUnChip(u,ui));});
-if(!R.unplaced.length)zone.innerHTML='<span style="color:var(--ink3);font-size:11px">✅ 全コマ配置済み</span>';
-zone.addEventListener('dragover',e=>{e.preventDefault();if(dragData&&(dragData.type==='booth'||dragData.type==='calSlot'))zone.classList.add('drag-over');});
-zone.addEventListener('dragleave',()=>{zone.classList.remove('drag-over');});
-zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag-over');doUnplaced();});
-wrap.appendChild(zone);}
-
-function rU(wrap){if(!R.unplaced.length){wrap.innerHTML='<p class="ap">✅ 全コマ配置済み</p>';return;}
-let h='<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th><th>理由</th></tr></thead><tbody>';
-for(const u of R.unplaced)h+='<tr><td>'+u.grade+'</td><td>'+u.name+'</td><td>'+u.subject+'</td><td class="ct">'+u.count+'</td><td style="font-size:11px;color:var(--orange)">'+(u.reason||'')+'</td></tr>';h+='</tbody></table>';wrap.innerHTML=h;}
-
-// === Student Calendar ===
-function rCal(wrap){
-  if(!R||!R.students||!R.students.length){wrap.innerHTML='<p>生徒データがありません</p>';return;}
-  const sel=document.createElement('div');sel.className='cal-sel';
-  const lb=document.createElement('span');lb.textContent='生徒:';lb.style.fontWeight='600';sel.appendChild(lb);
-  const dd=document.createElement('select');dd.id='calSel';
-  R.students.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s.grade+' '+s.name;if(calStudent===i)o.selected=true;dd.appendChild(o);});
-  dd.onchange=()=>{calStudent=parseInt(dd.value);renderStudentCal();};
-  sel.appendChild(dd);wrap.appendChild(sel);
-  const cw=document.createElement('div');cw.id='calWrap';wrap.appendChild(cw);
-  if(calStudent===null)calStudent=0;
-  renderStudentCal();
-}
-
-function getStudentSlots(name){
-  const slots=[];
-  for(let wi=0;wi<R.schedule.length;wi++){for(const day of D){for(const[ts,booths]of Object.entries(R.schedule[wi][day]||{})){
-    for(let bi=0;bi<booths.length;bi++){const b=booths[bi];for(let si=0;si<b.slots.length;si++){
-      if(b.slots[si][1]===name)slots.push({wi,day,ts,bi,si,grade:b.slots[si][0],subj:b.slots[si][2],teacher:b.teacher});
-    }}}}}
-  return slots;
-}
-
-function fmtAvail(avail){
-  if(!avail||!avail.length)return '-';
-  const dayMap={};
-  avail.forEach(a=>{const d=a[0],t=a[1];if(!dayMap[d])dayMap[d]=[];dayMap[d].push(t);});
-  return Object.entries(dayMap).map(([d,ts])=>d+ts.sort().join(',')).join(' / ');
-}
-function fmtFixed(fixed){
-  if(!fixed||!fixed.length)return '-';
-  return fixed.map(f=>f[0]+f[1]+':'+f[2]).join(', ');
-}
-function renderStudentInfo(s,slots){
-  const panel=document.createElement('div');panel.className='stu-info-panel';
-  const totalNeeds=Object.values(s.needs||{}).reduce((a,b)=>a+b,0);
-  const placedCount=slots.length;
-  const unplacedForStudent=R.unplaced.filter(u=>u.name===s.name).reduce((a,u)=>a+u.count,0);
-  let needsHtml=Object.entries(s.needs||{}).map(([subj,cnt])=>'<span class="stu-tag subj">'+subj+' <b>'+cnt+'</b></span>').join('');
-  if(!needsHtml)needsHtml='<span style="color:var(--ink3)">-</span>';
-  let availHtml=fmtAvail(s.avail);
-  let backupHtml=fmtAvail(s.backup_avail);
-  let fixedHtml=fmtFixed(s.fixed);
-  let wishHtml=(s.wish_teachers||[]).map(t=>'<span class="stu-tag wish">'+t+'</span>').join('')||'<span style="color:var(--ink3)">-</span>';
-  let ngTHtml=(s.ng_teachers||[]).map(t=>'<span class="stu-tag ng">'+t+'</span>').join('')||'<span style="color:var(--ink3)">-</span>';
-  let ngSHtml=(s.ng_students||[]).map(t=>'<span class="stu-tag ngs">'+t+'</span>').join('')||'<span style="color:var(--ink3)">-</span>';
-
-  let html='<h4>'+s.grade+' '+s.name+' <span style="font-size:12px;font-weight:400;color:var(--ink3)">配置: '+placedCount+'/'+totalNeeds+'コマ';
-  if(unplacedForStudent>0)html+=' <span style="color:var(--red)">未配置:'+unplacedForStudent+'</span>';
-  html+='</span></h4>';
-  html+='<div class="stu-info-grid">';
-  html+='<div class="stu-info-item"><span class="label">必要コマ数</span><div class="value">'+needsHtml+'</div></div>';
-  html+='<div class="stu-info-item"><span class="label">希望時間</span><div class="value" style="font-size:11px">'+availHtml+'</div></div>';
-  html+='<div class="stu-info-item"><span class="label">通常授業</span><div class="value"><span class="stu-tag fixed" style="font-size:11px">'+fixedHtml+'</span></div></div>';
-  html+='<div class="stu-info-item"><span class="label">予備時間</span><div class="value" style="font-size:11px">'+backupHtml+'</div></div>';
-  html+='<div class="stu-info-item"><span class="label">希望講師</span><div class="value">'+wishHtml+'</div></div>';
-  html+='<div class="stu-info-item"><span class="label">NG講師</span><div class="value">'+ngTHtml+'</div></div>';
-  html+='<div class="stu-info-item"><span class="label">NG生徒</span><div class="value">'+ngSHtml+'</div></div>';
-  if(s.notes){html+='<div class="stu-info-notes">備考: '+s.notes+'</div>';}
-  html+='</div>';
-  panel.innerHTML=html;
-  return panel;
-}
-
-function getDateLabel(wi,day){
-  const wd=R.weekDates;
-  if(!wd||!wd.weeks||!wd.weeks[wi])return '';
-  const d=wd.weeks[wi][day];
-  return d?wd.month+'/'+d:'';
-}
-function getWeekRange(wi){
-  const wd=R.weekDates;
-  if(!wd||!wd.weeks||!wd.weeks[wi])return 'W'+(wi+1);
-  const wk=wd.weeks[wi];
-  const days=Object.values(wk).sort((a,b)=>a-b);
-  if(!days.length)return 'W'+(wi+1);
-  return wd.month+'/'+days[0]+'~'+days[days.length-1];
-}
-
-function renderStudentCal(){
-  const s=R.students[calStudent];if(!s)return;
-  const cw=document.getElementById('calWrap');if(!cw)return;
-  const slots=getStudentSlots(s.name);
-  const grid={};slots.forEach(sl=>{const k=sl.wi+'_'+sl.day;if(!grid[k])grid[k]=[];grid[k].push(sl);});
-
-  cw.innerHTML='';
-  // Student info panel
-  cw.appendChild(renderStudentInfo(s,slots));
-
-  const tbl=document.createElement('table');tbl.className='cal-tbl';
-  let hd='<thead><tr><th style="width:70px">日程</th>';for(const d of D)hd+='<th>'+d+'</th>';hd+='</tr></thead>';
-  tbl.innerHTML=hd;
-  const tbody=document.createElement('tbody');
-  for(let wi=0;wi<R.schedule.length;wi++){
-    const tr=document.createElement('tr');
-    const wTd=document.createElement('td');wTd.style.cssText='text-align:center;font-weight:700;font-size:11px;line-height:1.4';wTd.innerHTML=getWeekRange(wi);tr.appendChild(wTd);
-    for(const day of D){
-      const td=document.createElement('td');td.className='cal-drop';
-      // 日付ラベル
-      const dl=getDateLabel(wi,day);
-      if(dl){const dateEl=document.createElement('div');dateEl.className='cal-date';dateEl.textContent=dl;td.appendChild(dateEl);}
-      const items=grid[wi+'_'+day]||[];
-      items.sort((a,b)=>(TSR[a.ts]||'').localeCompare(TSR[b.ts]||''));
-      for(const it of items){
-        const chip=document.createElement('div');
-        const ng=isNg(s.name,it.teacher);
-        chip.className='cal-slot'+(ng?' ng':'');chip.draggable=true;
-        chip.innerHTML=(TSR[it.ts]||it.ts).slice(0,5)+' '+it.subj+' <span style="font-size:9px;color:'+(ng?'#c62828':'#666')+'">'+it.teacher+'</span>';
-        chip.addEventListener('dragstart',e=>{dragData={type:'calSlot',wi:it.wi,day:it.day,ts:it.ts,bi:it.bi,si:it.si,slot:[it.grade,s.name,it.subj]};chip.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
-        chip.addEventListener('dragend',()=>{chip.style.opacity='1';dragData=null;});
-        ((it_)=>{chip.addEventListener('click',e=>{e.stopPropagation();showSlotEditModal(s,it_);});})(it);
-        td.appendChild(chip);
+    // === Auto-save/restore ===
+    function showSaveIndicator(msg) { const el = document.getElementById('saveIndicator'); el.textContent = msg || '保存しました'; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
+    async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); showSaveIndicator('自動保存しました'); } catch (e) { } }
+    let autoSaveTimer = null;
+    function scheduleAutoSave() { if (autoSaveTimer) clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(autoSave, 3000); }
+    async function checkSavedState() {
+      try {
+        const res = await fetch('/api/state'); const d = await res.json();
+        if (d.has_state && d.schedule) {
+          const wrap = document.getElementById('pUpload');
+          const banner = document.createElement('div'); banner.className = 'restore-banner'; banner.id = 'restoreBanner';
+          banner.innerHTML = '<span class="msg">前回の作業データがあります（' + d.placed + '/' + d.total + 'コマ配置済み）</span><div class="actions"><button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="restoreState()">復元する</button><button class="btn btn-o" style="padding:6px 14px;font-size:12px" onclick="dismissRestore()">新規作成</button></div>';
+          wrap.insertBefore(banner, wrap.firstChild);
+          window._savedState = d;
+        }
+      } catch (e) { }
+    }
+    function restoreState() {
+      if (!window._savedState) return; R = window._savedState; PW = 0; edited = false; calStudent = null; buildNgMap();
+      if (R.boothPref) BP = Object.entries(R.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
+      const b = document.getElementById('restoreBanner'); if (b) b.remove(); go('result'); rR(); showSaveIndicator('復元しました');
+    }
+    function dismissRestore() { const b = document.getElementById('restoreBanner'); if (b) b.remove(); window._savedState = null; }
+    async function onLoadSaved(inp) {
+      const f = inp.files[0]; if (!f) return;
+      const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
+      showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
+      const fd = new FormData(); fd.append('file', f);
+      try {
+        const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json();
+        hideProgress();
+        if (res.ok && d.ok) {
+          row.classList.add('done'); row.querySelector('.icon').textContent = '✅';
+          row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
+          R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
+          if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
+          go('result'); rR(); showSaveIndicator('スケジュールを復元しました');
+        }
+        else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
       }
-      if(!items.length&&!dl){const em=document.createElement('span');em.className='cal-empty';em.textContent='-';td.appendChild(em);}
-      // Drop: move into this day/week with teacher selection
-      td.addEventListener('dragover',e=>{e.preventDefault();if(dragData&&(dragData.type==='calSlot'||dragData.type==='booth'||dragData.type==='unplaced'))td.classList.add('drag-over');});
-      td.addEventListener('dragleave',()=>{td.classList.remove('drag-over');});
-      ((wi_,day_)=>{
-        td.addEventListener('drop',e=>{e.preventDefault();td.classList.remove('drag-over');
-          if(!dragData||(dragData.type!=='calSlot'&&dragData.type!=='booth'&&dragData.type!=='unplaced'))return;
-          showTeacherModal(wi_,day_,dragData);
+      catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
+    }
+    window.addEventListener('DOMContentLoaded', () => { checkSavedState(); });
+
+    // === Folder upload helper ===
+    function filterXlsx(fileList) { return Array.from(fileList).filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$')); }
+    async function onFolderSingle(inp, key) {
+      const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      const f = files[0];
+      if (key === 'saved') {
+        const row = document.getElementById('uSaved'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
+        showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
+        const fd = new FormData(); fd.append('file', f);
+        try {
+          const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json(); hideProgress();
+          if (res.ok && d.ok) {
+            row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
+            R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); go('result'); rR(); showSaveIndicator('スケジュールを復元しました');
+          }
+          else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
+        }
+        catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; }
+        return;
+      }
+      // src or booth
+      const row = document.getElementById(key === 'src' ? 'uSrc' : 'uBooth'); row.querySelector('.desc').textContent = 'アップロード中...'; row.classList.remove('done'); row.querySelector('.icon').textContent = '📄';
+      const fd = new FormData(); fd.append(key, f);
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: fd }); const d = await res.json();
+        if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; }
+        else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '失敗: ' + (d.error || '不明'); uploaded[key] = false; }
+      }
+      catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; uploaded[key] = false; }
+      const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = true;
+      if (ready) {
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
+        try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
+        hideProgress(); btn.textContent = '次へ: 設定 →';
+      }
+      document.getElementById('toS').disabled = !ready;
+    }
+    async function onFolderSurvey(inp) {
+      const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
+      desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
+      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
+      const fd = new FormData(); files.forEach(f => fd.append('surveys', f));
+      try {
+        const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
+        if (res.ok && d.ok) {
+          zone.classList.add('done'); desc.textContent = d.teacherCount + '名の講師データを集約（' + d.weeks + '週分）';
+          flist.innerHTML = d.teachers.map(t => '<span class="sf-item">' + t + '</span>').join(''); uploaded.src = true;
+        }
+        else { desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false; }
+      }
+      catch (e) { desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
+      hideProgress(); document.getElementById('toS').disabled = true;
+      if (uploaded.src && uploaded.booth) {
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
+        try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
+        hideProgress(); btn.textContent = '次へ: 設定 →';
+      }
+      document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
+    }
+    function onFolderWeeks(inp) {
+      const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      consolWeeks = files;
+      document.getElementById('consolWeekZone').classList.add('done');
+      document.getElementById('consolWeekDesc').textContent = files.length + '件のファイルを選択';
+      const flist = document.getElementById('consolWeekList');
+      flist.innerHTML = files.map(f => '<span class="cf-item">' + f.name + '</span>').join('');
+      document.getElementById('consolBtn').disabled = !(consolMeta && consolWeeks);
+    }
+
+    // === Survey upload ===
+    let srcMode = 'file';
+    function setSrcMode(mode) {
+      srcMode = mode;
+      document.getElementById('srcMode1').className = mode === 'file' ? 'active' : '';
+      document.getElementById('srcMode2').className = mode === 'survey' ? 'active' : '';
+      document.getElementById('srcFileMode').style.display = mode === 'file' ? '' : 'none';
+      document.getElementById('srcSurveyMode').style.display = mode === 'survey' ? '' : 'none';
+      checkReady();
+    }
+    function checkReady() { const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = !ready; }
+    async function onSurveyFiles(inp) {
+      const files = inp.files; if (!files || !files.length) return;
+      const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
+      desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
+      document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
+      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
+      const fd = new FormData(); for (let i = 0; i < files.length; i++)fd.append('surveys', files[i]);
+      try {
+        const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
+        if (res.ok && d.ok) {
+          zone.classList.add('done'); desc.textContent = d.teacherCount + '名の講師データを集約（' + d.weeks + '週分）';
+          flist.innerHTML = d.teachers.map(t => '<span class="sf-item">' + t + '</span>').join('');
+          uploaded.src = true;
+          if (d.errors && d.errors.length) { document.getElementById('upSt').textContent = '一部エラー: ' + d.errors.join(', '); document.getElementById('upSt').className = 'status err'; }
+        } else {
+          desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false;
+          if (d.details) document.getElementById('upSt').innerHTML = d.details.map(e => '<div>' + e + '</div>').join(''); document.getElementById('upSt').className = 'status err';
+        }
+      } catch (e) { desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
+      hideProgress();
+      document.getElementById('toS').disabled = true;
+      if (uploaded.src && uploaded.booth) {
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
+        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
+        try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
+        hideProgress(); btn.textContent = '次へ: 設定 →';
+      }
+      document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
+    }
+
+    // === Booth consolidation ===
+    let boothMode = 'file', consolMeta = null, consolWeeks = null;
+    function setBoothMode(mode) {
+      boothMode = mode;
+      document.getElementById('boothMode1').className = mode === 'file' ? 'active' : '';
+      document.getElementById('boothMode2').className = mode === 'consolidate' ? 'active' : '';
+      document.getElementById('boothFileMode').style.display = mode === 'file' ? '' : 'none';
+      document.getElementById('boothConsolMode').style.display = mode === 'consolidate' ? '' : 'none';
+      checkReady();
+    }
+    function onConsolMeta(inp) {
+      const f = inp.files[0]; if (!f) return; consolMeta = f;
+      document.getElementById('consolMetaZone').classList.add('done');
+      document.getElementById('consolMetaDesc').textContent = f.name;
+      document.getElementById('consolBtn').disabled = !(consolMeta && consolWeeks);
+    }
+    function onConsolWeeks(inp) {
+      const files = inp.files; if (!files || !files.length) return; consolWeeks = files;
+      document.getElementById('consolWeekZone').classList.add('done');
+      document.getElementById('consolWeekDesc').textContent = files.length + '件のファイルを選択';
+      const flist = document.getElementById('consolWeekList');
+      flist.innerHTML = Array.from(files).map(f => '<span class="cf-item">' + f.name + '</span>').join('');
+      document.getElementById('consolBtn').disabled = !(consolMeta && consolWeeks);
+    }
+    async function doConsolidate() {
+      if (!consolMeta || !consolWeeks) return;
+      const btn = document.getElementById('consolBtn'); btn.disabled = true; btn.textContent = '集約中...';
+      document.getElementById('consolResult').innerHTML = ''; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
+      showProgress(20, 'ブース表を集約しています...', 'ブース表集約中'); startProgressAnim(20, p => 'ファイルを処理しています...');
+      const fd = new FormData(); fd.append('meta', consolMeta);
+      for (let i = 0; i < consolWeeks.length; i++)fd.append('weeks', consolWeeks[i]);
+      try {
+        const res = await fetch('/api/consolidate_booth', { method: 'POST', body: fd }); const d = await res.json();
+        if (res.ok && d.ok) {
+          document.getElementById('consolResult').innerHTML = '<div class="consol-result">✅ 統合完了: ' + d.weekCount + '週分のシートを統合<br>メタシート: ' + d.metaSheets.join(', ') + (d.removedSheets.length ? ' / 削除: ' + d.removedSheets.join(', ') : '') + '<br>最終シート構成: ' + d.finalSheets.join(', ') + '</div>';
+          uploaded.booth = true;
+          if (d.errors && d.errors.length) { document.getElementById('upSt').textContent = '一部エラー: ' + d.errors.join(', '); document.getElementById('upSt').className = 'status err'; }
+        } else { document.getElementById('upSt').textContent = 'エラー: ' + (d.error || '不明'); document.getElementById('upSt').className = 'status err'; uploaded.booth = false; }
+      } catch (e) { document.getElementById('upSt').textContent = '通信エラー: ' + e.message; document.getElementById('upSt').className = 'status err'; uploaded.booth = false; }
+      hideProgress();
+      btn.disabled = false; btn.textContent = '集約して統合';
+      document.getElementById('toS').disabled = true;
+      if (uploaded.src && uploaded.booth) {
+        const toS = document.getElementById('toS'); toS.textContent = '読み込み中...';
+        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
+        try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
+        hideProgress(); toS.textContent = '次へ: 設定 →';
+      }
+      document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
+    }
+
+    function fmtSize(b) { if (b < 1024) return b + 'B'; if (b < 1048576) return (b / 1024).toFixed(1) + 'KB'; return (b / 1048576).toFixed(1) + 'MB'; }
+    function showUpErr(detail) { const st = document.getElementById('upSt'); st.className = 'status err'; st.innerHTML = detail; }
+    async function onF(inp, key) {
+      const f = inp.files[0]; if (!f) return; const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = 'アップロード中...'; row.classList.remove('done'); row.querySelector('.icon').textContent = '📄'; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
+      const maxSize = 10 * 1024 * 1024; if (f.size > maxSize) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'ファイルサイズ超過'; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ') は上限 10MB を超えています'); uploaded[key] = false; const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = !ready; return; }
+      const fd = new FormData(); fd.append(key, f);
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: fd }); let d; try { d = await res.json(); } catch (pe) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'サーバーエラー (HTTP ' + res.status + ')'; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ' - レスポンス解析失敗'); uploaded[key] = false; return; }
+        if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; } else { const msg = d.error || '不明なエラー (HTTP ' + res.status + ')'; row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '失敗: ' + msg; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ': ' + msg); uploaded[key] = false; }
+      } catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ')<br>通信エラー: ' + e.message + '<br><small>サーバーに接続できませんでした。ネットワーク接続・ファイルサイズを確認してください。</small>'); uploaded[key] = false; }
+      const ready = uploaded.src && uploaded.booth;
+      document.getElementById('toS').disabled = true;
+      if (ready) {
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
+        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
+        try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
+        hideProgress(); btn.textContent = '次へ: 設定 →';
+      }
+      document.getElementById('toS').disabled = !ready;
+    }
+
+    function go(step) {
+      document.getElementById('pUpload').style.display = step === 'upload' ? '' : 'none'; document.getElementById('pSettings').style.display = step === 'settings' ? '' : 'none'; document.getElementById('pResult').style.display = step === 'result' ? '' : 'none';
+      for (const [k, id] of [['upload', 'sb1'], ['settings', 'sb2'], ['result', 'sb3']]) document.getElementById(id).className = 'step-btn' + (step === k ? ' active' : ''); if (step === 'settings') buildSettingsUI();
+    }
+    function buildSettingsUI() {
+      const g = document.getElementById('oGrid'); g.innerHTML = '';
+      const opts = teacherList.length ? [...teacherList] : ['石川T', '西T', '越智T', '寒河江T', '若林T', '隆斗T', '瑠璃T', '田村T', '粉川T', '平畑T', '後藤T', '渡邉T', '橋本T', '小山T', '井上T', '藤原T', '飯村T'];
+      const optSet = new Set(opts); for (const d of D) { (OR[d] || []).forEach(c => { if (c && !optSet.has(c)) { opts.push(c); optSet.add(c); } }); }
+      for (const d of D) {
+        const div = document.createElement('div'); div.className = 'si';
+        if (!Array.isArray(OR[d])) OR[d] = [OR[d] || '石川T'];
+        let html = '<label>' + d + '曜</label>';
+        OR[d].forEach((c, i) => {
+          const selHtml = opts.map(t => '<option value="' + t + '"' + (t === c ? ' selected' : '') + '>' + t + '</option>').join('');
+          html += '<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center"><span style="font-size:11px;color:var(--ink3);min-width:16px">' + (i + 1) + '.</span><select style="flex:1" onchange="OR[\'' + d + '\'][' + i + ']=this.value"><option value="">-- 選択 --</option>' + selHtml + '</select>' + (OR[d].length > 1 ? '<button type="button" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px" onclick="OR[\'' + d + '\'].splice(' + i + ',1);buildSettingsUI()">✕</button>' : '') + '</div>';
         });
-      })(wi,day);
-      tr.appendChild(td);
+        html += '<button type="button" style="background:#7c3aed;color:#fff;font-size:11px;padding:3px 8px;border:none;border-radius:4px;cursor:pointer;margin-top:2px" onclick="OR[\'' + d + '\'].push(\'\');buildSettingsUI()">＋ 追加</button>';
+        div.innerHTML = html; g.appendChild(div);
+      } renderBP();
     }
-    tbody.appendChild(tr);
-  }
-  tbl.appendChild(tbody);
-  cw.appendChild(tbl);
-  const info=document.createElement('div');info.style.cssText='margin-top:8px;font-size:12px;color:var(--ink2)';
-  info.innerHTML='合計: <b>'+slots.length+'コマ</b>　<span style="font-size:11px;color:var(--orange)">✋ クリックで講師/時間変更、ドラッグで別の日に移動</span>';
-  cw.appendChild(info);
+    function renderBP() {
+      const g = document.getElementById('bpGrid'); g.innerHTML = ''; BP.forEach((bp, i) => {
+        const div = document.createElement('div'); div.className = 'bp-item';
+        div.innerHTML = '<input style="min-width:80px;max-width:100px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;font-weight:600" value="' + bp.teacher + '" onchange="BP[' + i + '].teacher=this.value">'
+          + '<select onchange="BP[' + i + '].booth=parseInt(this.value)||0"><option value="0">なし</option>' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (bp.booth === n ? ' selected' : '') + '>' + BL[n - 1] + '</option>').join('') + '</select>'
+          + '<button style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--red)" onclick="BP.splice(' + i + ',1);renderBP()">✕</button>'; g.appendChild(div);
+      });
+    }
+    function addBP() { BP.push({ teacher: '', booth: 0 }); renderBP(); }
 
-  // 対象生徒の未配置コマ表示
-  const stuUnplaced=R.unplaced.filter(u=>u.name===s.name);
-  if(stuUnplaced.length){
-    const upLabel=document.createElement('div');upLabel.className='unplaced-label';
-    upLabel.textContent='📦 未配置コマ（カレンダーにドラッグして配置）';
-    cw.appendChild(upLabel);
-    const upZone=document.createElement('div');upZone.className='unplaced-zone';
-    stuUnplaced.forEach(u=>{
-      const gi=R.unplaced.indexOf(u);
-      for(let i=0;i<u.count;i++){
-        const chip=document.createElement('div');chip.className='slot-chip';chip.draggable=true;
-        chip.innerHTML='<span class="g">'+u.grade+'</span><span class="s">'+u.name+'</span><span class="j">'+u.subject+'</span>'
-          +(u.reason?'<span style="font-size:9px;color:var(--orange);margin-left:4px">'+u.reason+'</span>':'');
-        chip.title=u.reason||'未配置';
-        ((gi_)=>{
-          chip.addEventListener('dragstart',e=>{dragData={type:'unplaced',ui:gi_,slot:[u.grade,u.name,u.subject]};chip.style.opacity='0.4';e.dataTransfer.effectAllowed='move';});
-        })(gi);
-        chip.addEventListener('dragend',()=>{chip.style.opacity='1';dragData=null;});
-        upZone.appendChild(chip);
+    let progTimer = null;
+    function showProgress(pct, msg, title) {
+      const root = document.getElementById('modalRoot');
+      root.innerHTML = '<div class="progress-bg"><div class="progress-box"><div class="progress-spinner"></div><div class="progress-title">' + (title || '処理中') + '</div><div class="progress-pct" id="progPct">' + pct + '%</div><div class="progress-bar-wrap"><div class="progress-bar-fill" id="progBar" style="width:' + pct + '%"></div></div><div class="progress-msg" id="progMsg">' + msg + '</div></div></div>';
+    }
+    function updateProgress(pct, msg) {
+      const bar = document.getElementById('progBar'); if (bar) bar.style.width = pct + '%';
+      const p = document.getElementById('progPct'); if (p) p.textContent = pct + '%';
+      const el = document.getElementById('progMsg'); if (el) el.innerHTML = msg;
+    }
+    function hideProgress() { if (progTimer) { clearInterval(progTimer); progTimer = null; } document.getElementById('modalRoot').innerHTML = ''; }
+    function startProgressAnim(startPct, msgFn) {
+      let pct = startPct || 10;
+      const defaultMsg = p => p < 30 ? 'データを読み込んでいます' : p < 60 ? '講師配置を計算しています' : p < 85 ? '生徒を配置しています' : '最終調整しています';
+      const getMsg = msgFn || defaultMsg;
+      progTimer = setInterval(() => {
+        if (pct < 30) pct += 2; else if (pct < 60) pct += 1.5; else if (pct < 85) pct += 0.8; else if (pct < 95) pct += 0.2;
+        pct = Math.min(pct, 95);
+        updateProgress(Math.round(pct), getMsg(pct));
+      }, 400);
+    }
+
+    async function gen() {
+      const st = document.getElementById('stTxt'), btn = document.getElementById('genBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>生成中...'; st.textContent = ''; st.className = 'status';
+      showProgress(5, 'データを読み込んでいます', 'スケジュール生成中'); startProgressAnim();
+      const bpObj = {}; BP.forEach(bp => { if (bp.teacher && bp.booth) bpObj[bp.teacher] = bp.booth; });
+      try {
+        const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ officeRule: OR, boothPref: bpObj }) }); const d = await res.json();
+        if (d.error) {
+          hideProgress(); st.textContent = 'エラー: ' + d.error; st.className = 'status err';
+          if (d.error.includes('アップロード') || d.error.includes('不足') || d.error.includes('見つかりません')) { st.textContent += ' ファイルを再アップロードしてください。'; setTimeout(() => go('upload'), 2000); } return;
+        }
+        updateProgress(100, '完了！ ' + d.placed + '/' + d.total + 'コマ配置');
+        await new Promise(r => setTimeout(r, 600));
+        R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
+        if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
+        hideProgress(); go('result'); rR();
+      } catch (e) { hideProgress(); st.textContent = 'エラー: ' + e.message; st.className = 'status err'; } finally { btn.disabled = false; btn.innerHTML = '🚀 スケジュール生成'; }
+    }
+
+    async function dlExcel() { if (edited) { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); } window.location.href = '/api/download'; }
+
+    function countPlaced() { let c = 0; for (const w of R.schedule) for (const d of Object.values(w)) for (const bs of Object.values(d)) for (const b of bs) c += b.slots.length; return c; }
+
+    // Navigate to student calendar
+    function goStudent(name) { const idx = R.students.findIndex(s => s.name === name); if (idx < 0) return; calStudent = idx; PW = -2; rR(); }
+
+    function rR() {
+      if (edited) scheduleAutoSave(); const p = countPlaced(); document.getElementById('pNum').innerHTML = p + '<span>/' + R.total + 'コマ</span>'; document.getElementById('rTxt').textContent = '配置率 ' + (p / R.total * 100).toFixed(1) + '%';
+      const ub = document.getElementById('uBadge'), uT = R.unplaced.reduce((s, u) => s + u.count, 0); if (uT > 0) { ub.style.display = ''; ub.textContent = '⚠️ 未配置: ' + uT + 'コマ'; } else ub.style.display = 'none';
+      const mb = document.getElementById('mBadge'); if (edited) { mb.style.display = ''; mb.textContent = '✏️ 手動編集あり'; } else mb.style.display = 'none';
+      const tabs = document.getElementById('wTabs'); tabs.innerHTML = '';
+      const NW = R.schedule.length; for (let w = 0; w < NW; w++) { const b = document.createElement('button'); b.className = PW === w ? 'active' : ''; const wr = getWeekRange(w); b.textContent = '第' + (w + 1) + '週' + (wr && wr !== 'W' + (w + 1) ? ' ' + wr : ''); b.onclick = () => { PW = w; rR(); }; tabs.appendChild(b); }
+      const ub2 = document.createElement('button'); ub2.className = 'warn' + (PW === -1 ? ' active' : ''); ub2.textContent = '未配置'; ub2.onclick = () => { PW = -1; rR(); }; tabs.appendChild(ub2);
+      const cb = document.createElement('button'); cb.className = 'cal' + (PW === -2 ? ' active' : ''); cb.textContent = '📅 生徒別'; cb.onclick = () => { PW = -2; rR(); }; tabs.appendChild(cb);
+      const wrap = document.getElementById('pWrap'); wrap.innerHTML = ''; if (PW >= 0) rW(wrap, PW); else if (PW === -1) rU(wrap); else rCal(wrap);
+    }
+
+    // === Teacher D&D ===
+    function mkTeacher(t, wi, day, ts, bi) {
+      const el = document.createElement('span'); el.className = 'tn'; el.textContent = t; el.draggable = true;
+      el.addEventListener('dragstart', e => { dragData = { type: 'teacher', wi, day, ts, bi, teacher: t }; el.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
+      el.addEventListener('dragend', () => { el.style.opacity = '1'; dragData = null; });
+      el.addEventListener('dragover', e => { if (dragData && dragData.type === 'teacher' && dragData.wi === wi && dragData.day === day && dragData.ts === ts) { e.preventDefault(); el.classList.add('drag-over-t'); } });
+      el.addEventListener('dragleave', () => { el.classList.remove('drag-over-t'); });
+      el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('drag-over-t'); doTeacherSwap(wi, day, ts, bi); });
+      let wasDragged = false;
+      el.addEventListener('mousedown', () => { wasDragged = false; });
+      el.addEventListener('mousemove', () => { wasDragged = true; });
+      el.addEventListener('click', e => { if (!wasDragged) { e.stopPropagation(); showTeacherPicker(el, wi, day, ts, bi); } });
+      return el;
+    }
+    function getAvailableTeachers(wi, day) {
+      // weekly_teachers から出勤可能な講師を取得（教室業務担当を除く）
+      const wt = R.weeklyTeachers; if (!wt || !wt[wi] || !wt[wi][day]) return [];
+      const dayData = wt[wi][day]; const all = new Set();
+      for (const ts of Object.keys(dayData)) { (dayData[ts] || []).forEach(t => all.add(t)); }
+      const ot = (R.officeTeachers[wi] || {})[day]; if (ot) all.delete(ot);
+      return [...all].sort();
+    }
+    function getAssignedTeachers(wi, day) {
+      const ws = R.schedule[wi]; if (!ws || !ws[day]) return new Set();
+      const assigned = new Set();
+      for (const ts of Object.keys(ws[day])) { (ws[day][ts] || []).forEach(b => { if (b.teacher) assigned.add(b.teacher); }); }
+      return assigned;
+    }
+    function showTeacherPicker(anchor, wi, day, ts, bi) {
+      // 既存のピッカーを閉じる
+      document.querySelectorAll('.teacher-picker').forEach(p => p.remove());
+      const assigned = getAssignedTeachers(wi, day);
+      const available = getAvailableTeachers(wi, day);
+      const unassigned = available.filter(t => !assigned.has(t));
+      if (!unassigned.length && available.length <= 1) return;
+      const picker = document.createElement('div'); picker.className = 'teacher-picker';
+      // 未配置の出勤講師
+      if (unassigned.length) {
+        const hdr = document.createElement('div'); hdr.className = 'tp-hdr'; hdr.textContent = '出勤中（未配置）'; picker.appendChild(hdr);
+        unassigned.forEach(t => {
+          const opt = document.createElement('div'); opt.className = 'tp-opt tp-new'; opt.textContent = t;
+          opt.onclick = e => { e.stopPropagation(); replaceTeacher(wi, day, bi, t); picker.remove(); }; picker.appendChild(opt);
+        });
       }
-    });
-    cw.appendChild(upZone);
-  }
-}
+      // 配置済み講師との入替（自分自身を除く）
+      const currentT = R.schedule[wi][day][ts][bi].teacher;
+      const others = available.filter(t => assigned.has(t) && t !== currentT);
+      if (others.length) {
+        const hdr2 = document.createElement('div'); hdr2.className = 'tp-hdr'; hdr2.textContent = '配置済み（入替）'; picker.appendChild(hdr2);
+        others.forEach(t => {
+          const opt = document.createElement('div'); opt.className = 'tp-opt tp-swap'; opt.textContent = t;
+          opt.onclick = e => { e.stopPropagation(); swapTeacherFull(wi, day, bi, t); picker.remove(); }; picker.appendChild(opt);
+        });
+      }
+      // 空欄にする
+      const clr = document.createElement('div'); clr.className = 'tp-opt tp-clear'; clr.textContent = '× 講師を外す';
+      clr.onclick = e => { e.stopPropagation(); removeTeacher(wi, day, bi); picker.remove(); }; picker.appendChild(clr);
+      // キャンセル
+      const cancel = document.createElement('div'); cancel.className = 'tp-opt tp-cancel'; cancel.textContent = '× キャンセル';
+      cancel.onclick = e => { e.stopPropagation(); picker.remove(); }; picker.appendChild(cancel);
+      anchor.parentElement.style.position = 'relative'; anchor.parentElement.appendChild(picker);
+      const close = e => { if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); } };
+      setTimeout(() => document.addEventListener('click', close), 0);
+    }
+    function showEmptyBoothPicker(cell, wi, day, ts, bi) {
+      document.querySelectorAll('.teacher-picker').forEach(p => p.remove());
+      const assigned = getAssignedTeachers(wi, day);
+      const available = getAvailableTeachers(wi, day);
+      const unassigned = available.filter(t => !assigned.has(t));
+      const picker = document.createElement('div'); picker.className = 'teacher-picker';
+      if (unassigned.length) {
+        const hdr = document.createElement('div'); hdr.className = 'tp-hdr'; hdr.textContent = '出勤中（未配置）'; picker.appendChild(hdr);
+        unassigned.forEach(t => {
+          const opt = document.createElement('div'); opt.className = 'tp-opt tp-new'; opt.textContent = t;
+          opt.onclick = e => { e.stopPropagation(); replaceTeacher(wi, day, bi, t); picker.remove(); }; picker.appendChild(opt);
+        });
+      }
+      const others = available.filter(t => assigned.has(t));
+      if (others.length) {
+        const hdr2 = document.createElement('div'); hdr2.className = 'tp-hdr'; hdr2.textContent = '配置済み（入替）'; picker.appendChild(hdr2);
+        others.forEach(t => {
+          const opt = document.createElement('div'); opt.className = 'tp-opt tp-swap'; opt.textContent = t;
+          opt.onclick = e => { e.stopPropagation(); swapTeacherFull(wi, day, bi, t); picker.remove(); }; picker.appendChild(opt);
+        });
+      }
+      if (!unassigned.length && !others.length) { picker.remove(); return; }
+      cell.style.position = 'relative'; cell.appendChild(picker);
+      const close = e => { if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); } };
+      setTimeout(() => document.addEventListener('click', close), 0);
+    }
+    function replaceTeacher(wi, day, bi, newT) {
+      const ws = R.schedule[wi], times = day === '土' ? ['14', '16', '17', '18'] : ['16', '17', '18', '19', '20'];
+      const wt = R.weeklyTeachers;
+      // 出勤範囲（最初〜最後の出勤コマ）を計算して補間する
+      let first = 99, last = -1;
+      if (wt && wt[wi] && wt[wi][day]) {
+        const tsOrd = { '14': 0, '16': 1, '17': 2, '18': 3, '19': 4, '20': 5 };
+        for (const t of times) { if ((wt[wi][day][t] || []).includes(newT)) { const o = tsOrd[t]; if (o < first) first = o; if (o > last) last = o; } }
+      }
+      const tsOrd = { '14': 0, '16': 1, '17': 2, '18': 3, '19': 4, '20': 5 };
+      for (const t of times) {
+        const bs = ws[day]?.[t]; if (!bs || !bs[bi]) continue;
+        const o = tsOrd[t]; bs[bi].teacher = (first <= o && o <= last) ? newT : '';
+      }
+      edited = true; rR();
+    }
+    function swapTeacherFull(wi, day, bi, targetT) {
+      const ws = R.schedule[wi], times = day === '土' ? ['14', '16', '17', '18'] : ['16', '17', '18', '19', '20'];
+      // targetTのブースインデックスを探す
+      let tbi = null; for (const t of times) { const bs = ws[day]?.[t]; if (!bs) continue; for (let i = 0; i < bs.length; i++) { if (bs[i].teacher === targetT) { tbi = i; break; } } if (tbi !== null) break; }
+      if (tbi === null || tbi === bi) return;
+      for (const t of times) { const bs = ws[day]?.[t]; if (!bs) continue; const s = bs[bi], g = bs[tbi]; if (s && g) { const tmp = s.teacher; s.teacher = g.teacher; g.teacher = tmp; } }
+      edited = true; rR();
+    }
+    function removeTeacher(wi, day, bi) {
+      const ws = R.schedule[wi], times = day === '土' ? ['14', '16', '17', '18'] : ['16', '17', '18', '19', '20'];
+      for (const t of times) {
+        const bs = ws[day]?.[t]; if (!bs || !bs[bi]) continue;
+        // 生徒が配置されている場合は未配置に戻す
+        bs[bi].slots.forEach(sl => {
+          const existing = R.unplaced.find(u => u.name === sl[1] && u.subject === sl[2]);
+          if (existing) existing.count++; else R.unplaced.push({ grade: sl[0], name: sl[1], subject: sl[2], count: 1, reason: '講師削除' });
+        });
+        bs[bi].slots = []; bs[bi].teacher = '';
+      }
+      edited = true; rR();
+    }
+    function doTeacherSwap(wi, day, ts, tbi) {
+      if (!dragData || dragData.type !== 'teacher' || dragData.wi !== wi || dragData.day !== day || dragData.ts !== ts || dragData.bi === tbi) return;
+      const ws = R.schedule[wi], times = day === '土' ? ['14', '16', '17', '18'] : ['16', '17', '18', '19', '20'];
+      for (const t of times) { const bs = ws[day]?.[t]; if (!bs) continue; const s = bs[dragData.bi], g = bs[tbi]; if (s && g) { const tmp = s.teacher; s.teacher = g.teacher; g.teacher = tmp; } }
+      edited = true; dragData = null; rR();
+    }
 
-// === Teacher selection modal ===
-function showTeacherModal(targetWi,targetDay,dd){
-  const ws=R.schedule[targetWi];
-  const dayData=ws[targetDay]||{};
-  // Collect available booths with space
-  const times=targetDay==='土'?['14','16','17','18']:['16','17','18','19','20'];
-  const options=[];// {ts, bi, teacher, slots_count}
-  for(const ts of times){
-    const booths=dayData[ts]||[];
-    for(let bi=0;bi<booths.length;bi++){
-      if(booths[bi].slots.length<2){
-        options.push({ts,bi,teacher:booths[bi].teacher,cnt:booths[bi].slots.length,time:TSR[ts]||ts});
+    // === Student slot ===
+    function mkChip(slot, wi, day, ts, bi, si, teacher) {
+      const el = document.createElement('div'); const ngT = isNg(slot[1], teacher); const ngS = isAdjacentNg(wi, day, ts, bi, slot[1]); const warn = ngT || ngS;
+      el.className = 'slot-chip' + (warn ? ' ng' : ''); el.draggable = true;
+      let wt = ngT ? 'NG講師:' + teacher : ''; if (ngS) wt += (wt ? ' / ' : '') + 'NG生徒が隣接';
+      const gSpan = '<span class="g">' + slot[0] + '</span>';
+      const sSpan = '<span class="s">' + slot[1] + '</span>';
+      const jSpan = '<span class="j">' + slot[2] + '</span>';
+      el.innerHTML = gSpan + sSpan + jSpan + (warn ? '<span style="color:var(--red);font-size:9px">⚠</span>' : '');
+      el.title = wt;
+      let dragged = false;
+      el.addEventListener('dragstart', e => { dragged = true; dragData = { type: 'booth', wi, day, ts, bi, si, slot }; el.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
+      el.addEventListener('dragend', () => { el.style.opacity = '1'; dragData = null; });
+      el.addEventListener('click', e => { if (!dragged) { e.stopPropagation(); goStudent(slot[1]); } dragged = false; }); return el;
+    }
+
+    function mkUnChip(u, ui) {
+      const el = document.createElement('div'); el.className = 'slot-chip'; el.draggable = true;
+      el.innerHTML = '<span class="g">' + u.grade + '</span><span class="s">' + u.name + '</span><span class="j">' + u.subject + '</span>' + (u.reason ? '<span style="font-size:9px;color:var(--orange);margin-left:3px">' + u.reason + '</span>' : '');
+      if (u.reason) el.title = u.reason;
+      let dragged = false;
+      el.addEventListener('dragstart', e => { dragged = true; dragData = { type: 'unplaced', ui, slot: [u.grade, u.name, u.subject] }; el.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
+      el.addEventListener('dragend', () => { el.style.opacity = '1'; dragData = null; });
+      el.addEventListener('click', e => { if (!dragged) { e.stopPropagation(); goStudent(u.name); } dragged = false; }); return el;
+    }
+
+    function doBooth(wi, day, ts, bi) {
+      if (!dragData) return; const ws = R.schedule[wi], booth = ws[day][ts][bi];
+      if (booth.slots.length < 2) {
+        // 空きあり: 通常の移動
+        if (dragData.type === 'booth') {
+          if (dragData.wi !== wi || dragData.ts !== ts) return; if (dragData.day === day && dragData.bi === bi) return;
+          ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si, 1); booth.slots.push(dragData.slot);
+        }
+        else if (dragData.type === 'unplaced') { const u = R.unplaced[dragData.ui]; if (!u || u.count <= 0) return; booth.slots.push(dragData.slot); u.count--; if (u.count <= 0) R.unplaced.splice(dragData.ui, 1); }
+        else if (dragData.type === 'calSlot') { const src = R.schedule[dragData.wi][dragData.day][dragData.ts][dragData.bi]; src.slots.splice(dragData.si, 1); booth.slots.push(dragData.slot); }
+        edited = true; dragData = null; rR(); return;
+      }
+      // 満席: スワップモード（booth/calSlotのみ）
+      if (dragData.type === 'booth' || dragData.type === 'calSlot') {
+        if (dragData.type === 'booth' && (dragData.wi !== wi || dragData.ts !== ts)) return;
+        if (dragData.day === day && dragData.bi === bi) return;
+        if (booth.slots.length === 1) { doSwapExec(wi, day, ts, bi, 0); }
+        else { showSwapModal(wi, day, ts, bi, booth); }
       }
     }
-  }
-  if(!options.length){alert('この曜日に空きブースがありません');return;}
-  const root=document.getElementById('modalRoot');
-  const bg=document.createElement('div');bg.className='modal-bg';
-  const modal=document.createElement('div');modal.className='modal';
-  modal.innerHTML='<h3>📍 W'+(targetWi+1)+' '+targetDay+'曜 - 配置先を選択</h3>';
-  const opts=document.createElement('div');opts.className='modal-opts';
-  // Group by teacher
-  const byTeacher={};options.forEach(o=>{if(!byTeacher[o.teacher])byTeacher[o.teacher]=[];byTeacher[o.teacher].push(o);});
-  for(const[teacher,tOpts]of Object.entries(byTeacher)){
-    const timesList=tOpts.map(o=>o.time.slice(0,5)+'('+o.cnt+'/2)').join(', ');
-    const btn=document.createElement('div');btn.className='modal-opt';
-    const ngMark=dd.slot?isNg(dd.slot[1],teacher):'';
-    btn.innerHTML='<span class="t-name" style="'+(ngMark?'color:var(--red)':'')+'">'+(ngMark?'⚠ ':'')+teacher+'</span><span class="t-info">'+timesList+'</span>';
-    btn.onclick=()=>{
-      const pick=tOpts[0];
-      if(dd.type==='unplaced'){const u=R.unplaced[dd.ui];if(u){u.count--;if(u.count<=0)R.unplaced.splice(dd.ui,1);}}
-      else{const srcWs=R.schedule[dd.wi];srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si,1);}
-      ws[targetDay][pick.ts][pick.bi].slots.push(dd.slot);
-      edited=true;dragData=null;root.innerHTML='';rR();
-    };
-    opts.appendChild(btn);
-    // Show individual time slots if multiple
-    if(tOpts.length>1){
-      for(const o of tOpts){
-        const sub=document.createElement('div');sub.className='modal-opt';sub.style.paddingLeft='28px';
-        sub.innerHTML='<span class="t-info">└ '+o.time+' ('+o.cnt+'/2)</span>';
-        sub.onclick=()=>{
-          if(dd.type==='unplaced'){const u=R.unplaced[dd.ui];if(u){u.count--;if(u.count<=0)R.unplaced.splice(dd.ui,1);}}
-          else{const srcWs=R.schedule[dd.wi];srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si,1);}
-          ws[targetDay][o.ts][o.bi].slots.push(dd.slot);
-          edited=true;dragData=null;root.innerHTML='';rR();
+
+    function doUnplaced() {
+      if (!dragData || (dragData.type !== 'booth' && dragData.type !== 'calSlot')) return;
+      const wi = dragData.wi, ws = R.schedule[wi], slot = ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si, 1)[0];
+      const ex = R.unplaced.find(u => u.name === slot[1] && u.subject === slot[2]); if (ex) ex.count++; else R.unplaced.push({ grade: slot[0], name: slot[1], subject: slot[2], count: 1, reason: '' });
+      edited = true; dragData = null; rR();
+    }
+
+    function showSwapModal(wi, day, ts, bi, booth) {
+      const saved = { ...dragData };
+      const root = document.getElementById('modalRoot');
+      const bg = document.createElement('div'); bg.className = 'modal-bg';
+      const modal = document.createElement('div'); modal.className = 'modal';
+      modal.innerHTML = '<h3>🔄 交換する生徒を選択</h3><p style="font-size:12px;color:var(--ink3);margin-bottom:10px">ドラッグ中の生徒と入れ替えます</p>';
+      const opts = document.createElement('div'); opts.className = 'modal-opts';
+      booth.slots.forEach((sl, si) => {
+        const btn = document.createElement('div'); btn.className = 'modal-opt';
+        btn.innerHTML = '<span class="t-name">' + sl[0] + ' ' + sl[1] + '</span><span class="t-info">' + sl[2] + '</span>';
+        btn.onclick = () => { root.innerHTML = ''; dragData = saved; doSwapExec(wi, day, ts, bi, si); };
+        opts.appendChild(btn);
+      });
+      modal.appendChild(opts);
+      const cancel = document.createElement('div'); cancel.className = 'modal-cancel';
+      cancel.innerHTML = '<button class="btn btn-o" style="padding:6px 16px;font-size:12px">キャンセル</button>';
+      cancel.querySelector('button').onclick = () => { root.innerHTML = ''; dragData = null; };
+      modal.appendChild(cancel); bg.appendChild(modal); root.appendChild(bg);
+      bg.addEventListener('click', e => { if (e.target === bg) { root.innerHTML = ''; dragData = null; } });
+    }
+
+    function doSwapExec(wi, day, ts, bi, targetSi) {
+      if (!dragData) return;
+      const ws = R.schedule[wi];
+      const targetBooth = ws[day][ts][bi];
+      const swappedOut = targetBooth.slots[targetSi];
+      if (dragData.type === 'booth' || dragData.type === 'calSlot') {
+        const srcBooth = R.schedule[dragData.wi][dragData.day][dragData.ts][dragData.bi];
+        srcBooth.slots.splice(dragData.si, 1);
+        srcBooth.slots.push(swappedOut);
+        targetBooth.slots[targetSi] = dragData.slot;
+      }
+      edited = true; dragData = null; rR();
+    }
+
+    function rW(wrap, wi) {
+      const ws = R.schedule[wi];
+      // デバッグ: 各曜日・時間帯のブース数をコンソールに出力
+      console.log('=== 週' + wi + ' スケジュールデータ ===');
+      for (const d of D) { const dayData = ws[d] || {}; const summary = {}; for (const [t, bs] of Object.entries(dayData)) summary[t] = bs.length + 'ブース(生徒:' + bs.reduce((s, b) => s + b.slots.length, 0) + ')'; console.log(d + '曜:', summary); }
+      const tbl = document.createElement('table'); tbl.className = 'sch';
+      let hd = '<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>'; for (const d of D) { const dl = getDateLabel(wi, d); hd += '<th style="width:calc((100% - 82px)/6)' + (d === '土' ? ';background:#edf2f7' : '') + '">' + d + (dl ? '<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">' + dl + '</span>' : '') + '</th>'; }
+      hd += '</tr><tr class="or"><td colspan="2">教室業務</td>'; for (const d of D) { const ov = (R.officeTeachers[wi] || {})[d] || ''; if (ov === '休塾日') hd += '<td><span class="holiday-cell">休塾日</span></td>'; else hd += '<td>' + ov + '</td>'; } hd += '</tr></thead>'; tbl.innerHTML = hd;
+      const tbody = document.createElement('tbody');
+      const MX = 6;// 常に6ブース行を表示
+      for (const tl of TL) {
+        const ts = TS[tl];
+        for (let bi = 0; bi < MX; bi++) {
+          const tr = document.createElement('tr'); if (!(bi % 2)) tr.className = 'er'; if (!bi) tr.style.borderTop = '2px solid #b8c5d4';
+          if (!bi) { const td = document.createElement('td'); td.className = 'tc'; td.rowSpan = MX; td.textContent = tl; tr.appendChild(td); }
+          const btd = document.createElement('td'); btd.className = 'bc'; btd.textContent = BL[bi] || ''; tr.appendChild(btd);
+          for (const d of D) {
+            const dt = d === '土' ? ST : WT; const td = document.createElement('td');
+            if (!dt.includes(tl)) { td.className = 'cd'; td.textContent = '-'; tr.appendChild(td); continue; }
+            td.className = 'booth-cell'; const bs = ws[d]?.[ts] || [], b = bs[bi];
+            if (b && b.teacher) {
+              if (b.slots.length === 0) td.classList.add('empty-booth');
+              td.appendChild(mkTeacher(b.teacher, wi, d, ts, bi));
+              b.slots.forEach((sl, si) => { td.appendChild(mkChip(sl, wi, d, ts, bi, si, b.teacher)); }); if (b.slots.length >= 2) td.classList.add('full');
+            }
+            else {
+              td.classList.add('empty-booth'); td.style.cursor = 'pointer';
+              const dash = document.createElement('span'); dash.className = 'tn'; dash.textContent = '-'; dash.style.opacity = '.4'; dash.style.cursor = 'pointer';
+              td.appendChild(dash);
+              td.addEventListener('click', e => { e.stopPropagation(); showEmptyBoothPicker(td, wi, d, ts, bi); });
+            }
+            td.addEventListener('dragover', e => {
+              e.preventDefault(); if (!dragData) return; const bth = bs[bi];
+              if (dragData.type === 'teacher') { if (dragData.wi === wi && dragData.day === d && dragData.ts === ts && dragData.bi !== bi) { td.classList.add('drag-over'); } return; }
+              if (!bth || !bth.teacher) return;
+              if (dragData.type === 'booth' && (dragData.wi !== wi || dragData.ts !== ts)) return;
+              if (dragData.type === 'unplaced' && bth.slots.length >= 2) return;
+              td.classList.add('drag-over');
+            });
+            td.addEventListener('dragleave', () => { td.classList.remove('drag-over'); });
+            td.addEventListener('drop', e => {
+              e.preventDefault(); td.classList.remove('drag-over');
+              if (dragData && dragData.type === 'teacher') { doTeacherSwap(wi, d, ts, bi); return; }
+              if (dragData && dragData.type !== 'teacher') doBooth(wi, d, ts, bi);
+            });
+            tr.appendChild(td);
+          } tbody.appendChild(tr);
+        }
+      }
+      tbl.appendChild(tbody); wrap.appendChild(tbl);
+      const lbl = document.createElement('div'); lbl.className = 'unplaced-label'; lbl.textContent = '📦 未配置コマ'; wrap.appendChild(lbl);
+      const zone = document.createElement('div'); zone.className = 'unplaced-zone';
+      R.unplaced.forEach((u, ui) => { for (let i = 0; i < u.count; i++)zone.appendChild(mkUnChip(u, ui)); });
+      if (!R.unplaced.length) zone.innerHTML = '<span style="color:var(--ink3);font-size:11px">✅ 全コマ配置済み</span>';
+      zone.addEventListener('dragover', e => { e.preventDefault(); if (dragData && (dragData.type === 'booth' || dragData.type === 'calSlot')) zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave', () => { zone.classList.remove('drag-over'); });
+      zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); doUnplaced(); });
+      wrap.appendChild(zone);
+    }
+
+    function rU(wrap) {
+      if (!R.unplaced.length) { wrap.innerHTML = '<p class="ap">✅ 全コマ配置済み</p>'; return; }
+      let h = '<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th><th>理由</th></tr></thead><tbody>';
+      for (const u of R.unplaced) h += '<tr><td>' + u.grade + '</td><td>' + u.name + '</td><td>' + u.subject + '</td><td class="ct">' + u.count + '</td><td style="font-size:11px;color:var(--orange)">' + (u.reason || '') + '</td></tr>'; h += '</tbody></table>'; wrap.innerHTML = h;
+    }
+
+    // === Student Calendar ===
+    function rCal(wrap) {
+      if (!R || !R.students || !R.students.length) { wrap.innerHTML = '<p>生徒データがありません</p>'; return; }
+      const sel = document.createElement('div'); sel.className = 'cal-sel';
+      const lb = document.createElement('span'); lb.textContent = '生徒:'; lb.style.fontWeight = '600'; sel.appendChild(lb);
+      const dd = document.createElement('select'); dd.id = 'calSel';
+      R.students.forEach((s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = s.grade + ' ' + s.name; if (calStudent === i) o.selected = true; dd.appendChild(o); });
+      dd.onchange = () => { calStudent = parseInt(dd.value); renderStudentCal(); };
+      sel.appendChild(dd); wrap.appendChild(sel);
+      const cw = document.createElement('div'); cw.id = 'calWrap'; wrap.appendChild(cw);
+      if (calStudent === null) calStudent = 0;
+      renderStudentCal();
+    }
+
+    function getStudentSlots(name) {
+      const slots = [];
+      for (let wi = 0; wi < R.schedule.length; wi++) {
+        for (const day of D) {
+          for (const [ts, booths] of Object.entries(R.schedule[wi][day] || {})) {
+            for (let bi = 0; bi < booths.length; bi++) {
+              const b = booths[bi]; for (let si = 0; si < b.slots.length; si++) {
+                if (b.slots[si][1] === name) slots.push({ wi, day, ts, bi, si, grade: b.slots[si][0], subj: b.slots[si][2], teacher: b.teacher });
+              }
+            }
+          }
+        }
+      }
+      return slots;
+    }
+
+    function fmtAvail(avail) {
+      if (!avail || !avail.length) return '-';
+      const dayMap = {};
+      avail.forEach(a => { const d = a[0], t = a[1]; if (!dayMap[d]) dayMap[d] = []; dayMap[d].push(t); });
+      return Object.entries(dayMap).map(([d, ts]) => d + ts.sort().join(',')).join(' / ');
+    }
+    function fmtFixed(fixed) {
+      if (!fixed || !fixed.length) return '-';
+      return fixed.map(f => f[0] + f[1] + ':' + f[2]).join(', ');
+    }
+    function renderStudentInfo(s, slots) {
+      const panel = document.createElement('div'); panel.className = 'stu-info-panel';
+      const totalNeeds = Object.values(s.needs || {}).reduce((a, b) => a + b, 0);
+      const placedCount = slots.length;
+      const unplacedForStudent = R.unplaced.filter(u => u.name === s.name).reduce((a, u) => a + u.count, 0);
+      let needsHtml = Object.entries(s.needs || {}).map(([subj, cnt]) => '<span class="stu-tag subj">' + subj + ' <b>' + cnt + '</b></span>').join('');
+      if (!needsHtml) needsHtml = '<span style="color:var(--ink3)">-</span>';
+      let availHtml = fmtAvail(s.avail);
+      let backupHtml = fmtAvail(s.backup_avail);
+      let fixedHtml = fmtFixed(s.fixed);
+      let wishHtml = (s.wish_teachers || []).map(t => '<span class="stu-tag wish">' + t + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
+      let ngTHtml = (s.ng_teachers || []).map(t => '<span class="stu-tag ng">' + t + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
+      let ngSHtml = (s.ng_students || []).map(t => '<span class="stu-tag ngs">' + t + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
+
+      let html = '<h4>' + s.grade + ' ' + s.name + ' <span style="font-size:12px;font-weight:400;color:var(--ink3)">配置: ' + placedCount + '/' + totalNeeds + 'コマ';
+      if (unplacedForStudent > 0) html += ' <span style="color:var(--red)">未配置:' + unplacedForStudent + '</span>';
+      html += '</span></h4>';
+      html += '<div class="stu-info-grid">';
+      html += '<div class="stu-info-item"><span class="label">必要コマ数</span><div class="value">' + needsHtml + '</div></div>';
+      html += '<div class="stu-info-item"><span class="label">希望時間</span><div class="value" style="font-size:11px">' + availHtml + '</div></div>';
+      html += '<div class="stu-info-item"><span class="label">通常授業</span><div class="value"><span class="stu-tag fixed" style="font-size:11px">' + fixedHtml + '</span></div></div>';
+      html += '<div class="stu-info-item"><span class="label">予備時間</span><div class="value" style="font-size:11px">' + backupHtml + '</div></div>';
+      html += '<div class="stu-info-item"><span class="label">希望講師</span><div class="value">' + wishHtml + '</div></div>';
+      html += '<div class="stu-info-item"><span class="label">NG講師</span><div class="value">' + ngTHtml + '</div></div>';
+      html += '<div class="stu-info-item"><span class="label">NG生徒</span><div class="value">' + ngSHtml + '</div></div>';
+      if (s.notes) { html += '<div class="stu-info-notes">備考: ' + s.notes + '</div>'; }
+      html += '</div>';
+      panel.innerHTML = html;
+      return panel;
+    }
+
+    function getDateLabel(wi, day) {
+      const wd = R.weekDates;
+      if (!wd || !wd.weeks || !wd.weeks[wi]) return '';
+      const d = wd.weeks[wi][day];
+      return d ? wd.month + '/' + d : '';
+    }
+    function getWeekRange(wi) {
+      const wd = R.weekDates;
+      if (!wd || !wd.weeks || !wd.weeks[wi]) return 'W' + (wi + 1);
+      const wk = wd.weeks[wi];
+      const days = Object.values(wk).sort((a, b) => a - b);
+      if (!days.length) return 'W' + (wi + 1);
+      return wd.month + '/' + days[0] + '~' + days[days.length - 1];
+    }
+
+    function renderStudentCal() {
+      try {
+        const s = R.students[calStudent]; if (!s) return;
+        const cw = document.getElementById('calWrap'); if (!cw) return;
+        const slots = getStudentSlots(s.name);
+        const grid = {}; slots.forEach(sl => { const k = sl.wi + '_' + sl.day; if (!grid[k]) grid[k] = []; grid[k].push(sl); });
+
+        cw.innerHTML = '';
+        // Student info panel
+        cw.appendChild(renderStudentInfo(s, slots));
+
+        const tbl = document.createElement('table'); tbl.className = 'cal-tbl';
+        let hd = '<thead><tr><th style="width:70px">日程</th>'; for (const d of D) hd += '<th>' + d + '</th>'; hd += '</tr></thead>';
+        tbl.innerHTML = hd;
+        const tbody = document.createElement('tbody');
+        for (let wi = 0; wi < R.schedule.length; wi++) {
+          const tr = document.createElement('tr');
+          const wTd = document.createElement('td'); wTd.style.cssText = 'text-align:center;font-weight:700;font-size:11px;line-height:1.4'; wTd.innerHTML = getWeekRange(wi); tr.appendChild(wTd);
+          for (const day of D) {
+            const td = document.createElement('td'); td.className = 'cal-drop';
+            // 日付ラベル
+            const dl = getDateLabel(wi, day);
+            if (dl) { const dateEl = document.createElement('div'); dateEl.className = 'cal-date'; dateEl.textContent = dl; td.appendChild(dateEl); }
+            const items = grid[wi + '_' + day] || [];
+            items.sort((a, b) => (TSR[a.ts] || '').localeCompare(TSR[b.ts] || ''));
+            for (const it of items) {
+              const chip = document.createElement('div');
+              const ng = isNg(s.name, it.teacher);
+              chip.className = 'cal-slot' + (ng ? ' ng' : ''); chip.draggable = true;
+              chip.innerHTML = (TSR[it.ts] || it.ts).slice(0, 5) + ' ' + it.subj + ' <span style="font-size:9px;color:' + (ng ? '#c62828' : '#666') + '">' + it.teacher + '</span>';
+              chip.addEventListener('dragstart', e => { dragData = { type: 'calSlot', wi: it.wi, day: it.day, ts: it.ts, bi: it.bi, si: it.si, slot: [it.grade, s.name, it.subj] }; chip.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
+              chip.addEventListener('dragend', () => { chip.style.opacity = '1'; dragData = null; });
+              ((it_) => { chip.addEventListener('click', e => { e.stopPropagation(); showSlotEditModal(s, it_); }); })(it);
+              td.appendChild(chip);
+            }
+            if (!items.length && !dl) { const em = document.createElement('span'); em.className = 'cal-empty'; em.textContent = '-'; td.appendChild(em); }
+            // Drop: move into this day/week with teacher selection
+            td.addEventListener('dragover', e => { e.preventDefault(); if (dragData && (dragData.type === 'calSlot' || dragData.type === 'booth' || dragData.type === 'unplaced')) td.classList.add('drag-over'); });
+            td.addEventListener('dragleave', () => { td.classList.remove('drag-over'); });
+            ((wi_, day_) => {
+              td.addEventListener('drop', e => {
+                e.preventDefault(); td.classList.remove('drag-over');
+                if (!dragData || (dragData.type !== 'calSlot' && dragData.type !== 'booth' && dragData.type !== 'unplaced')) return;
+                showTeacherModal(wi_, day_, dragData);
+              });
+            })(wi, day);
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+        tbl.appendChild(tbody);
+        cw.appendChild(tbl);
+        const info = document.createElement('div'); info.style.cssText = 'margin-top:8px;font-size:12px;color:var(--ink2)';
+        info.innerHTML = '合計: <b>' + slots.length + 'コマ</b>　<span style="font-size:11px;color:var(--orange)">✋ クリックで講師/時間変更、ドラッグで別の日に移動</span>';
+        cw.appendChild(info);
+
+        // 対象生徒の未配置コマ表示
+        const stuUnplaced = R.unplaced.filter(u => u.name === s.name);
+        if (stuUnplaced.length) {
+          const upLabel = document.createElement('div'); upLabel.className = 'unplaced-label';
+          upLabel.textContent = '📦 未配置コマ（カレンダーにドラッグして配置）';
+          cw.appendChild(upLabel);
+          const upZone = document.createElement('div'); upZone.className = 'unplaced-zone';
+          stuUnplaced.forEach(u => {
+            const gi = R.unplaced.indexOf(u);
+            for (let i = 0; i < u.count; i++) {
+              const chip = document.createElement('div'); chip.className = 'slot-chip'; chip.draggable = true;
+              chip.innerHTML = '<span class="g">' + u.grade + '</span><span class="s">' + u.name + '</span><span class="j">' + u.subject + '</span>'
+                + (u.reason ? '<span style="font-size:9px;color:var(--orange);margin-left:4px">' + u.reason + '</span>' : '');
+              chip.title = u.reason || '未配置';
+              ((gi_) => {
+                chip.addEventListener('dragstart', e => { dragData = { type: 'unplaced', ui: gi_, slot: [u.grade, u.name, u.subject] }; chip.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
+              })(gi);
+              chip.addEventListener('dragend', () => { chip.style.opacity = '1'; dragData = null; });
+              upZone.appendChild(chip);
+            }
+          });
+          cw.appendChild(upZone);
+        }
+      } catch (e) {
+        console.error('Error rendering student calendar:', e);
+        const cw = document.getElementById('calWrap');
+        if (cw) cw.innerHTML = '<div style="color:var(--red);padding:20px;">カレンダー表示エラー: ' + e.message + '</div>';
+      }
+    }
+
+    // === Teacher selection modal ===
+    function showTeacherModal(targetWi, targetDay, dd) {
+      const ws = R.schedule[targetWi];
+      const dayData = ws[targetDay] || {};
+      // Collect available booths with space
+      const times = targetDay === '土' ? ['14', '16', '17', '18'] : ['16', '17', '18', '19', '20'];
+      const options = [];// {ts, bi, teacher, slots_count}
+      for (const ts of times) {
+        const booths = dayData[ts] || [];
+        for (let bi = 0; bi < booths.length; bi++) {
+          if (booths[bi].slots.length < 2) {
+            options.push({ ts, bi, teacher: booths[bi].teacher, cnt: booths[bi].slots.length, time: TSR[ts] || ts });
+          }
+        }
+      }
+      if (!options.length) { alert('この曜日に空きブースがありません'); return; }
+      const root = document.getElementById('modalRoot');
+      const bg = document.createElement('div'); bg.className = 'modal-bg';
+      const modal = document.createElement('div'); modal.className = 'modal';
+      modal.innerHTML = '<h3>📍 W' + (targetWi + 1) + ' ' + targetDay + '曜 - 配置先を選択</h3>';
+      const opts = document.createElement('div'); opts.className = 'modal-opts';
+      // Group by teacher
+      const byTeacher = {}; options.forEach(o => { if (!byTeacher[o.teacher]) byTeacher[o.teacher] = []; byTeacher[o.teacher].push(o); });
+      for (const [teacher, tOpts] of Object.entries(byTeacher)) {
+        const timesList = tOpts.map(o => o.time.slice(0, 5) + '(' + o.cnt + '/2)').join(', ');
+        const btn = document.createElement('div'); btn.className = 'modal-opt';
+        const ngMark = dd.slot ? isNg(dd.slot[1], teacher) : '';
+        btn.innerHTML = '<span class="t-name" style="' + (ngMark ? 'color:var(--red)' : '') + '">' + (ngMark ? '⚠ ' : '') + teacher + '</span><span class="t-info">' + timesList + '</span>';
+        btn.onclick = () => {
+          const pick = tOpts[0];
+          if (dd.type === 'unplaced') { const u = R.unplaced[dd.ui]; if (u) { u.count--; if (u.count <= 0) R.unplaced.splice(dd.ui, 1); } }
+          else { const srcWs = R.schedule[dd.wi]; srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si, 1); }
+          ws[targetDay][pick.ts][pick.bi].slots.push(dd.slot);
+          edited = true; dragData = null; root.innerHTML = ''; rR();
         };
-        opts.appendChild(sub);
+        opts.appendChild(btn);
+        // Show individual time slots if multiple
+        if (tOpts.length > 1) {
+          for (const o of tOpts) {
+            const sub = document.createElement('div'); sub.className = 'modal-opt'; sub.style.paddingLeft = '28px';
+            sub.innerHTML = '<span class="t-info">└ ' + o.time + ' (' + o.cnt + '/2)</span>';
+            sub.onclick = () => {
+              if (dd.type === 'unplaced') { const u = R.unplaced[dd.ui]; if (u) { u.count--; if (u.count <= 0) R.unplaced.splice(dd.ui, 1); } }
+              else { const srcWs = R.schedule[dd.wi]; srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si, 1); }
+              ws[targetDay][o.ts][o.bi].slots.push(dd.slot);
+              edited = true; dragData = null; root.innerHTML = ''; rR();
+            };
+            opts.appendChild(sub);
+          }
+        }
       }
+      modal.appendChild(opts);
+      const cancel = document.createElement('div'); cancel.className = 'modal-cancel';
+      cancel.innerHTML = '<button class="btn btn-o" style="padding:6px 16px;font-size:12px">キャンセル</button>';
+      cancel.querySelector('button').onclick = () => { root.innerHTML = ''; dragData = null; };
+      modal.appendChild(cancel); bg.appendChild(modal); root.appendChild(bg);
+      bg.addEventListener('click', e => { if (e.target === bg) { root.innerHTML = ''; dragData = null; } });
     }
-  }
-  modal.appendChild(opts);
-  const cancel=document.createElement('div');cancel.className='modal-cancel';
-  cancel.innerHTML='<button class="btn btn-o" style="padding:6px 16px;font-size:12px">キャンセル</button>';
-  cancel.querySelector('button').onclick=()=>{root.innerHTML='';dragData=null;};
-  modal.appendChild(cancel);bg.appendChild(modal);root.appendChild(bg);
-  bg.addEventListener('click',e=>{if(e.target===bg){root.innerHTML='';dragData=null;}});
-}
 
-// === Slot Edit Modal (click on calendar slot) ===
-function showSlotEditModal(student,it){
-  const root=document.getElementById('modalRoot');
-  const ws=R.schedule[it.wi];
-  const dayData=ws[it.day]||{};
-  const sName=student.name;
-  const curTime=TSR[it.ts]||it.ts;
-  const curTeacher=it.teacher;
+    // === Slot Edit Modal (click on calendar slot) ===
+    function showSlotEditModal(student, it) {
+      const root = document.getElementById('modalRoot');
+      const ws = R.schedule[it.wi];
+      const dayData = ws[it.day] || {};
+      const sName = student.name;
+      const curTime = TSR[it.ts] || it.ts;
+      const curTeacher = it.teacher;
 
-  // Collect all available slots for this day (same week)
-  const times=it.day==='土'?['14','16','17','18']:['16','17','18','19','20'];
-  const options=[];// {ts,bi,teacher,cnt,time}
-  for(const ts of times){
-    const booths=dayData[ts]||[];
-    for(let bi=0;bi<booths.length;bi++){
-      const b=booths[bi];
-      if(!b||!b.teacher)continue;
-      // Skip current position
-      const isCurrent=(ts===it.ts&&bi===it.bi);
-      // Available if: current position OR has space (<2) OR can swap (has 1 student)
-      const hasSpace=b.slots.length<2||isCurrent;
-      if(hasSpace){
-        options.push({ts,bi,teacher:b.teacher,cnt:b.slots.length,time:TSR[ts]||ts,isCurrent});
+      // Collect all available slots for this day (same week)
+      const times = it.day === '土' ? ['14', '16', '17', '18'] : ['16', '17', '18', '19', '20'];
+      const options = [];// {ts,bi,teacher,cnt,time}
+      for (const ts of times) {
+        const booths = dayData[ts] || [];
+        for (let bi = 0; bi < booths.length; bi++) {
+          const b = booths[bi];
+          if (!b || !b.teacher) continue;
+          // Skip current position
+          const isCurrent = (ts === it.ts && bi === it.bi);
+          // Available if: current position OR has space (<2) OR can swap (has 1 student)
+          const hasSpace = b.slots.length < 2 || isCurrent;
+          if (hasSpace) {
+            options.push({ ts, bi, teacher: b.teacher, cnt: b.slots.length, time: TSR[ts] || ts, isCurrent });
+          }
+        }
       }
-    }
-  }
 
-  const bg=document.createElement('div');bg.className='modal-bg';
-  const modal=document.createElement('div');modal.className='modal';
-  modal.style.minWidth='340px';
-  modal.innerHTML='<h3>✏️ 授業を変更</h3>'
-    +'<p style="font-size:12px;color:var(--ink3);margin-bottom:6px">'+student.grade+' '+sName+' — '+it.subj+'</p>'
-    +'<p style="font-size:11px;color:var(--ink3);margin-bottom:12px">現在: '+curTime.slice(0,5)+' / '+curTeacher+'</p>';
+      const bg = document.createElement('div'); bg.className = 'modal-bg';
+      const modal = document.createElement('div'); modal.className = 'modal';
+      modal.style.minWidth = '340px';
+      modal.innerHTML = '<h3>✏️ 授業を変更</h3>'
+        + '<p style="font-size:12px;color:var(--ink3);margin-bottom:6px">' + student.grade + ' ' + sName + ' — ' + it.subj + '</p>'
+        + '<p style="font-size:11px;color:var(--ink3);margin-bottom:12px">現在: ' + curTime.slice(0, 5) + ' / ' + curTeacher + '</p>';
 
-  const opts=document.createElement('div');opts.className='modal-opts';
+      const opts = document.createElement('div'); opts.className = 'modal-opts';
 
-  // Group by time slot
-  for(const ts of times){
-    const tsOpts=options.filter(o=>o.ts===ts);
-    if(!tsOpts.length)continue;
-    for(const o of tsOpts){
-      const btn=document.createElement('div');btn.className='modal-opt';
-      const ng=isNg(sName,o.teacher);
-      const isCur=o.isCurrent;
-      btn.style.cssText=isCur?'background:#f0f5ff;border-color:var(--accent)':'';
-      btn.innerHTML='<div><span class="t-name" style="'+(ng?'color:var(--red)':'')+'">'
-        +(ng?'⚠ ':'')+o.teacher+'</span>'
-        +'<span style="font-size:10px;color:var(--ink3);margin-left:6px">'+o.time.slice(0,5)+'</span></div>'
-        +'<span class="t-info">'+(isCur?'📍 現在':'空き '+o.cnt+'/2')+'</span>';
-      if(!isCur){
-        ((o_)=>{btn.onclick=()=>{
-          // Move student from current booth to new booth
-          const srcBooth=ws[it.day][it.ts][it.bi];
-          const si=srcBooth.slots.findIndex(sl=>sl[1]===sName&&sl[2]===it.subj);
-          if(si<0){root.innerHTML='';return;}
-          const slot=srcBooth.slots.splice(si,1)[0];
-          const tgtBooth=ws[it.day][o_.ts][o_.bi];
-          tgtBooth.slots.push(slot);
-          edited=true;root.innerHTML='';rR();
-        };})(o);
+      // Group by time slot
+      for (const ts of times) {
+        const tsOpts = options.filter(o => o.ts === ts);
+        if (!tsOpts.length) continue;
+        for (const o of tsOpts) {
+          const btn = document.createElement('div'); btn.className = 'modal-opt';
+          const ng = isNg(sName, o.teacher);
+          const isCur = o.isCurrent;
+          btn.style.cssText = isCur ? 'background:#f0f5ff;border-color:var(--accent)' : '';
+          btn.innerHTML = '<div><span class="t-name" style="' + (ng ? 'color:var(--red)' : '') + '">'
+            + (ng ? '⚠ ' : '') + o.teacher + '</span>'
+            + '<span style="font-size:10px;color:var(--ink3);margin-left:6px">' + o.time.slice(0, 5) + '</span></div>'
+            + '<span class="t-info">' + (isCur ? '📍 現在' : '空き ' + o.cnt + '/2') + '</span>';
+          if (!isCur) {
+            ((o_) => {
+              btn.onclick = () => {
+                // Move student from current booth to new booth
+                const srcBooth = ws[it.day][it.ts][it.bi];
+                const si = srcBooth.slots.findIndex(sl => sl[1] === sName && sl[2] === it.subj);
+                if (si < 0) { root.innerHTML = ''; return; }
+                const slot = srcBooth.slots.splice(si, 1)[0];
+                const tgtBooth = ws[it.day][o_.ts][o_.bi];
+                tgtBooth.slots.push(slot);
+                edited = true; root.innerHTML = ''; rR();
+              };
+            })(o);
+          }
+          opts.appendChild(btn);
+        }
       }
-      opts.appendChild(btn);
+
+      // Option to remove (send to unplaced)
+      const rmBtn = document.createElement('div'); rmBtn.className = 'modal-opt';
+      rmBtn.style.cssText = 'border-color:#fca5a5;color:var(--red)';
+      rmBtn.innerHTML = '<span class="t-name" style="color:var(--red)">🗑 未配置に戻す</span><span class="t-info">ブースから外す</span>';
+      rmBtn.onclick = () => {
+        const srcBooth = ws[it.day][it.ts][it.bi];
+        const si = srcBooth.slots.findIndex(sl => sl[1] === sName && sl[2] === it.subj);
+        if (si < 0) { root.innerHTML = ''; return; }
+        const slot = srcBooth.slots.splice(si, 1)[0];
+        const ex = R.unplaced.find(u => u.name === slot[1] && u.subject === slot[2]);
+        if (ex) ex.count++; else R.unplaced.push({ grade: slot[0], name: slot[1], subject: slot[2], count: 1, reason: '' });
+        edited = true; root.innerHTML = ''; rR();
+      };
+      opts.appendChild(rmBtn);
+
+      modal.appendChild(opts);
+      const cancel = document.createElement('div'); cancel.className = 'modal-cancel';
+      cancel.innerHTML = '<button class="btn btn-o" style="padding:6px 16px;font-size:12px">キャンセル</button>';
+      cancel.querySelector('button').onclick = () => { root.innerHTML = ''; };
+      modal.appendChild(cancel); bg.appendChild(modal); root.appendChild(bg);
+      bg.addEventListener('click', e => { if (e.target === bg) root.innerHTML = ''; });
     }
-  }
-
-  // Option to remove (send to unplaced)
-  const rmBtn=document.createElement('div');rmBtn.className='modal-opt';
-  rmBtn.style.cssText='border-color:#fca5a5;color:var(--red)';
-  rmBtn.innerHTML='<span class="t-name" style="color:var(--red)">🗑 未配置に戻す</span><span class="t-info">ブースから外す</span>';
-  rmBtn.onclick=()=>{
-    const srcBooth=ws[it.day][it.ts][it.bi];
-    const si=srcBooth.slots.findIndex(sl=>sl[1]===sName&&sl[2]===it.subj);
-    if(si<0){root.innerHTML='';return;}
-    const slot=srcBooth.slots.splice(si,1)[0];
-    const ex=R.unplaced.find(u=>u.name===slot[1]&&u.subject===slot[2]);
-    if(ex)ex.count++;else R.unplaced.push({grade:slot[0],name:slot[1],subject:slot[2],count:1,reason:''});
-    edited=true;root.innerHTML='';rR();
-  };
-  opts.appendChild(rmBtn);
-
-  modal.appendChild(opts);
-  const cancel=document.createElement('div');cancel.className='modal-cancel';
-  cancel.innerHTML='<button class="btn btn-o" style="padding:6px 16px;font-size:12px">キャンセル</button>';
-  cancel.querySelector('button').onclick=()=>{root.innerHTML='';};
-  modal.appendChild(cancel);bg.appendChild(modal);root.appendChild(bg);
-  bg.addEventListener('click',e=>{if(e.target===bg)root.innerHTML='';});
-}
-</script>
+  </script>
 </body>
+
 </html>
