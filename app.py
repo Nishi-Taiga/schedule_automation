@@ -1712,77 +1712,113 @@ def load_saved():
         for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
             if row[0] is not None:
                 chunks.append(str(row[0]))
-        wb.close()
         data_str = ''.join(chunks)
         state = json.loads(data_str)
+
+        # ======== 生徒データを保存済みExcelのシートから再取得 ========
+        # 保存済みExcelは write_excel によりブース表のシートを含んでいるため
+        # 別途ブース表アップロードが不要になる。
+        wd = state.get('weekDates') or {}
+        year = wd.get('year', 2026)
+        month = wd.get('month', 3)
+
+        # set→list変換ヘルパー
+        def serialize_student(s):
+            avail = s.get('avail')
+            backup = s.get('backup_avail')
+            ng_dates = s.get('ng_dates')
+            fixed = s.get('fixed')
+            return {
+                **s,
+                'avail': sorted([list(a) for a in avail]) if isinstance(avail, set) else (avail or []),
+                'backup_avail': sorted([list(a) for a in backup]) if isinstance(backup, set) else (backup or []),
+                'ng_dates': [list(d) for d in ng_dates] if isinstance(ng_dates, set) else (ng_dates or []),
+                'fixed': [list(f) for f in fixed] if fixed and isinstance(next(iter(fixed), None), (list, tuple)) else (fixed or []),
+            }
+
+        if '必要コマ数' in wb.sheetnames:
+            # 保存済みExcel自体から生徒データを取得（別途ブース表不要）
+            fresh_students = load_students_from_wb(wb, year, month)
+            fresh_booth_pref = load_booth_pref(wb) or dict(DEFAULT_BOOTH_PREF)
+            state['students'] = [serialize_student(s) for s in fresh_students]
+            state['boothPref'] = fresh_booth_pref
+        else:
+            # 必要コマ数シートがない場合は旧来の fallback（別途ブース表から取得）
+            students = state.get('students', [])
+            is_complete = students and 'needs' in students[0] and students[0]['needs']
+            if not is_complete:
+                files = sd.get('files', {})
+                booth_path = files.get('booth')
+                if booth_path and os.path.exists(booth_path):
+                    try:
+                        wb_booth = openpyxl.load_workbook(booth_path, data_only=True)
+                        fresh_students = load_students_from_wb(wb_booth, year, month)
+                        fresh_booth_pref = load_booth_pref(wb_booth) or dict(DEFAULT_BOOTH_PREF)
+                        wb_booth.close()
+                        state['students'] = [serialize_student(s) for s in fresh_students]
+                        state['boothPref'] = fresh_booth_pref
+                    except Exception as e:
+                        wb.close()
+                        return jsonify({'error': f'アップロードされたブース表からのデータ復元に失敗しました: {e}'}), 400
+                else:
+                    wb.close()
+                    return jsonify({'error': '生徒データの詳細(必要コマ数等)が不足しています。\n先に「ファイル」画面で「ブース表 (.xlsx)」をアップロードしてから、保存済みファイルを読み込んでください。'}), 400
+        wb.close()
+
+        # ======== placed / total / unplaced を最新データで再計算 ========
+        schedule = state.get('schedule', [])
+        fresh_students_data = state.get('students', [])
+
+        # 実際に配置されているコマ数
+        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+
+        # 全必要コマ数を fresh_students から計算
+        total = sum(sum(s.get('needs', {}).values()) for s in fresh_students_data)
+
+        # 未配置コマを再計算
+        # schedule 内に配置されている (name, subject) の数を集計
+        placed_count = {}  # {(name, subj): count}
+        for week in schedule:
+            for day_slots in week.values():
+                for booths in day_slots.values():
+                    for b in booths:
+                        for slot in b.get('slots', []):
+                            key = (slot[1], slot[2])  # (name, subject)
+                            placed_count[key] = placed_count.get(key, 0) + 1
+
+        unplaced = []
+        for s in fresh_students_data:
+            name = s['name']
+            grade = s.get('grade', '')
+            for subj, need in s.get('needs', {}).items():
+                done = placed_count.get((name, subj), 0)
+                if done < need:
+                    unplaced.append({
+                        'grade': grade,
+                        'name': name,
+                        'subject': subj,
+                        'count': need - done,
+                        'reason': '保存済みファイルから復元'
+                    })
+
+        state['placed'] = placed
+        state['total'] = total
+        state['unplaced'] = unplaced
+
+        # 安全策: weekDatesがない場合のデフォルト
+        if not state.get('weekDates'):
+            state['weekDates'] = {'year': year, 'month': month, 'weeks': []}
+
     except json.JSONDecodeError as e:
         return jsonify({'error': f'スケジュールデータの解析に失敗: {e}'}), 500
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-    # 生徒データの完全性チェック (needsが含まれているか)
-    students = state.get('students', [])
-    is_complete = False
-    if students:
-        if 'needs' in students[0] and students[0]['needs']:
-            is_complete = True
-            
-    # 不完全かつ、補完が必要な場合
-    if not is_complete:
-        # セッションにアップロード済みのブース表があるか確認
-        files = sd.get('files', {})
-        booth_path = files.get('booth')
-        
-        # booth_pathがあり、かつそれが今アップロードしたファイル(path)と異なる場合 (念のため)
-        # ※ load_savedの最後で 'booth' を path で上書きするが、ここはまだ上書き前
-        if booth_path and os.path.exists(booth_path):
-            try:
-                # ブース表からデータを再読み込み
-                wb_booth = openpyxl.load_workbook(booth_path, data_only=True)
-                
-                wd = state.get('weekDates') or {}
-                year = wd.get('year', 2026)
-                month = wd.get('month', 3)
-                
-                fresh_students = load_students_from_wb(wb_booth, year, month)
-                fresh_booth_pref = load_booth_pref(wb_booth) or dict(DEFAULT_BOOTH_PREF)
-                wb_booth.close()
-                
-                # set型フィールドをJSONシリアライズ可能なリストに変換
-                def serialize_student(s):
-                    avail = s.get('avail')
-                    backup = s.get('backup_avail')
-                    ng_dates = s.get('ng_dates')
-                    fixed = s.get('fixed')
-                    return {
-                        **s,
-                        'avail': sorted([list(a) for a in avail]) if isinstance(avail, set) else (avail or []),
-                        'backup_avail': sorted([list(a) for a in backup]) if isinstance(backup, set) else (backup or []),
-                        'ng_dates': [list(d) for d in ng_dates] if isinstance(ng_dates, set) else (ng_dates or []),
-                        'fixed': [list(f) for f in fixed] if fixed and isinstance(next(iter(fixed), None), (list, tuple)) else (fixed or []),
-                    }
-                
-                state['students'] = [serialize_student(s) for s in fresh_students]
-                state['boothPref'] = fresh_booth_pref
-                
-            except Exception as e:
-                # 読み込み失敗時はエラーにせず、不完全なまま返すか、エラーにするか
-                # ここでは試行してダメならエラーを返す
-                return jsonify({'error': f'アップロードされたブース表からのデータ復元に失敗しました: {e}'}), 400
-        else:
-            # ブース表がない -> エラーで再アップロードを促す
-            return jsonify({'error': '生徒データの詳細(必要コマ数等)が不足しています。\n先に「ファイル」画面で「ブース表 (.xlsx)」をアップロードしてから、保存済みファイルを読み込んでください。'}), 400
-
-    # ブース表として保存（再ダウンロード用）
-    # ※ これにより次回以降は今読み込んだ saved_xxx が 'booth' として扱われる
+    # 保存済みファイル自体をブース表として登録（再ダウンロード用）
     sd['files'] = {**sd.get('files', {}), 'booth': path}
     save_session_files(sd)
-    
-    # 安全策: weekDatesがない場合のデフォルト
-    if 'weekDates' not in state or not state['weekDates']:
-            state['weekDates'] = {'year': 2026, 'month': 3, 'weeks': []}
-    
+
     return jsonify({'ok': True, **state})
 
 # ========== Schedule update API ==========
