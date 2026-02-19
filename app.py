@@ -1749,11 +1749,21 @@ def load_saved():
                 fresh_booth_pref = load_booth_pref(wb_booth) or dict(DEFAULT_BOOTH_PREF)
                 wb_booth.close()
                 
-                # 生徒データのマージ (名前でマッチングすべきだが、順序が変わると危険)
-                # ここでは「ブース表」が正として、リストごと置き換える
-                # ※ 保存済みスケジュール内の names と一致している前提
-                # 名前不一致のリスクはあるが、再アップロード運用なら整合しているはず
-                state['students'] = fresh_students
+                # set型フィールドをJSONシリアライズ可能なリストに変換
+                def serialize_student(s):
+                    avail = s.get('avail')
+                    backup = s.get('backup_avail')
+                    ng_dates = s.get('ng_dates')
+                    fixed = s.get('fixed')
+                    return {
+                        **s,
+                        'avail': sorted([list(a) for a in avail]) if isinstance(avail, set) else (avail or []),
+                        'backup_avail': sorted([list(a) for a in backup]) if isinstance(backup, set) else (backup or []),
+                        'ng_dates': [list(d) for d in ng_dates] if isinstance(ng_dates, set) else (ng_dates or []),
+                        'fixed': [list(f) for f in fixed] if fixed and isinstance(next(iter(fixed), None), (list, tuple)) else (fixed or []),
+                    }
+                
+                state['students'] = [serialize_student(s) for s in fresh_students]
                 state['boothPref'] = fresh_booth_pref
                 
             except Exception as e:
