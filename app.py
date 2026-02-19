@@ -943,20 +943,8 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
             if sn2 in s['ng_students']: return False
             other = smap.get(sn2)
             if other and s['name'] in other.get('ng_students',[]): return False
-        # 隣接ブース(bi-1, bi+1)のNG生徒チェック
-        booths_in_ts = ws.get(day,{}).get(
-            next((ts for ts, bs in ws.get(day,{}).items() if any(b is booth for b in bs)), None), [])
-        # ts特定のため別アプローチ
-        for ts_key, bs in ws.get(day,{}).items():
-            if bi < len(bs) and bs[bi] is booth:
-                for adj_bi in [bi-1, bi+1]:
-                    if 0 <= adj_bi < len(bs):
-                        adj_booth = bs[adj_bi]
-                        for g2,sn2,sb2 in adj_booth['slots']:
-                            if sn2 in s['ng_students']: return False
-                            other = smap.get(sn2)
-                            if other and s['name'] in other.get('ng_students',[]): return False
-                break
+        # 隣接ブースチェックは廃止（同一ブースのみNGとする要望により）
+        
         eb = get_teacher_booth(ws, day, t)
         if eb is not None and eb != bi: return False
         return True
@@ -984,8 +972,9 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         reject_other = 0
         for day in DAYS:
             if day in placed_days: continue  # 同一科目の同曜日配置を防止
-            # NG日程チェック
-            if (wi, day) in s.get('ng_dates', set()): continue
+            # NG日程チェック: 配置自体は許可するがペナルティ
+            is_ng_date = (wi, day) in s.get('ng_dates', set())
+            
             times = SATURDAY_TIMES if day=='土' else WEEKDAY_TIMES
             for tl in times:
                 ts = TIME_SHORT[tl]
@@ -1011,6 +1000,8 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                         reject_other += 1
                         continue
                     sc = 0
+                    # NG日程は大きくペナルティ（配置は可能）
+                    if is_ng_date: sc -= 5000
                     # 予備時間はペナルティ（希望時間を優先）
                     if is_backup: sc -= 150
                     # 同曜日に既に別科目が配置されている場合はやや優先（ただし集中しすぎを防止）

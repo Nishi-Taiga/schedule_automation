@@ -1511,7 +1511,7 @@
     function buildNgMap() { ngMap = {}; ngStudentMap = {}; if (!R || !R.students) return; R.students.forEach(s => { ngMap[s.name] = new Set(s.ng_teachers || []); ngStudentMap[s.name] = new Set(s.ng_students || []) }); }
     function isNg(n, t) { return ngMap[n] && ngMap[n].has(t); }
     function isNgStudent(a, b) { return (ngStudentMap[a] && ngStudentMap[a].has(b)) || (ngStudentMap[b] && ngStudentMap[b].has(a)); }
-    function isAdjacentNg(wi, day, ts, bi, sn) { const bs = R.schedule[wi]?.[day]?.[ts]; if (!bs) return false; for (const a of [bi - 1, bi + 1]) { if (a < 0 || a >= bs.length) continue; for (const sl of bs[a].slots) { if (isNgStudent(sn, sl[1])) return true; } } return false; }
+    function isAdjacentNg(wi, day, ts, bi, sn) { return false; }
 
     // === Auto-save/restore ===
     function showSaveIndicator(msg) { const el = document.getElementById('saveIndicator'); el.textContent = msg || '保存しました'; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
@@ -2259,6 +2259,12 @@
         const slots = getStudentSlots(s.name);
         const grid = {}; slots.forEach(sl => { const k = sl.wi + '_' + sl.day; if (!grid[k]) grid[k] = []; grid[k].push(sl); });
 
+        // NG日程セット作成 (効率化のため)
+        const ngDateSet = new Set();
+        if (s.ng_dates && Array.isArray(s.ng_dates)) {
+          s.ng_dates.forEach(d => ngDateSet.add(d[0] + '_' + d[1]));
+        }
+
         cw.innerHTML = '';
         // Student info panel
         cw.appendChild(renderStudentInfo(s, slots));
@@ -2269,12 +2275,48 @@
         const tbody = document.createElement('tbody');
         for (let wi = 0; wi < R.schedule.length; wi++) {
           const tr = document.createElement('tr');
-          const wTd = document.createElement('td'); wTd.style.cssText = 'text-align:center;font-weight:700;font-size:11px;line-height:1.4'; wTd.innerHTML = getWeekRange(wi); tr.appendChild(wTd);
+          const wTd = document.createElement('td');
+          wTd.style.cssText = 'text-align:center;font-weight:700;font-size:11px;line-height:1.4;cursor:pointer;color:var(--accent)';
+          wTd.title = '全体スケジュールへ移動';
+          wTd.innerHTML = getWeekRange(wi);
+          wTd.onclick = () => { PW = wi; rR(); };
+          tr.appendChild(wTd);
+
           for (const day of D) {
             const td = document.createElement('td'); td.className = 'cal-drop';
+
+            // 休塾日チェック
+            const isHoliday = (R.officeTeachers[wi] && R.officeTeachers[wi][day] === '休塾日');
+            if (isHoliday) {
+              td.classList.add('holiday');
+              td.style.background = '#ffebee';
+            }
+            // NG日程チェック
+            const isNgDate = ngDateSet.has(wi + '_' + day);
+            if (isNgDate) {
+              td.style.background = '#fff8e1'; // 薄い黄色
+            }
+
             // 日付ラベル
             const dl = getDateLabel(wi, day);
-            if (dl) { const dateEl = document.createElement('div'); dateEl.className = 'cal-date'; dateEl.textContent = dl; td.appendChild(dateEl); }
+            if (dl || isHoliday || isNgDate) {
+              const dateEl = document.createElement('div');
+              dateEl.className = 'cal-date';
+              let label = dl || '';
+              if (isHoliday) label = (label ? label + ' ' : '') + '🎌休塾日';
+              else if (isNgDate) label = (label ? label + ' ' : '') + '❌NG';
+
+              dateEl.textContent = label;
+              if (isHoliday) dateEl.style.color = '#c62828';
+              if (isNgDate) dateEl.style.color = '#ef6c00';
+
+              // 日付クリックで全体スケジュールへ移動
+              dateEl.style.cursor = 'pointer';
+              dateEl.onclick = (e) => { e.stopPropagation(); PW = wi; rR(); };
+
+              td.appendChild(dateEl);
+            }
+
             const items = grid[wi + '_' + day] || [];
             items.sort((a, b) => (TSR[a.ts] || '').localeCompare(TSR[b.ts] || ''));
             for (const it of items) {
@@ -2287,7 +2329,7 @@
               ((it_) => { chip.addEventListener('click', e => { e.stopPropagation(); showSlotEditModal(s, it_); }); })(it);
               td.appendChild(chip);
             }
-            if (!items.length && !dl) { const em = document.createElement('span'); em.className = 'cal-empty'; em.textContent = '-'; td.appendChild(em); }
+            if (!items.length && !dl && !isHoliday && !isNgDate) { const em = document.createElement('span'); em.className = 'cal-empty'; em.textContent = '-'; td.appendChild(em); }
             // Drop: move into this day/week with teacher selection
             td.addEventListener('dragover', e => { e.preventDefault(); if (dragData && (dragData.type === 'calSlot' || dragData.type === 'booth' || dragData.type === 'unplaced')) td.classList.add('drag-over'); });
             td.addEventListener('dragleave', () => { td.classList.remove('drag-over'); });
