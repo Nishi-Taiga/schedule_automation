@@ -2042,7 +2042,7 @@
       if (booth.slots.length < 2) {
         // 空きあり: 通常の移動
         if (dragData.type === 'booth') {
-          if (dragData.wi !== wi || dragData.ts !== ts) return; if (dragData.day === day && dragData.bi === bi) return;
+          if (dragData.wi !== wi) return; if (dragData.day === day && dragData.bi === bi && dragData.ts === ts) return;
           ws[dragData.day][dragData.ts][dragData.bi].slots.splice(dragData.si, 1); booth.slots.push(dragData.slot);
         }
         else if (dragData.type === 'unplaced') { const u = R.unplaced[dragData.ui]; if (!u || u.count <= 0) return; booth.slots.push(dragData.slot); u.count--; if (u.count <= 0) R.unplaced.splice(dragData.ui, 1); }
@@ -2051,8 +2051,8 @@
       }
       // 満席: スワップモード（booth/calSlotのみ）
       if (dragData.type === 'booth' || dragData.type === 'calSlot') {
-        if (dragData.type === 'booth' && (dragData.wi !== wi || dragData.ts !== ts)) return;
-        if (dragData.day === day && dragData.bi === bi) return;
+        if (dragData.type === 'booth' && (dragData.wi !== wi)) return;
+        if (dragData.day === day && dragData.bi === bi && dragData.ts === ts) return;
         if (booth.slots.length === 1) { doSwapExec(wi, day, ts, bi, 0); }
         else { showSwapModal(wi, day, ts, bi, booth); }
       }
@@ -2135,7 +2135,7 @@
               e.preventDefault(); if (!dragData) return; const bth = bs[bi];
               if (dragData.type === 'teacher') { if (dragData.wi === wi && dragData.day === d && dragData.ts === ts && dragData.bi !== bi) { td.classList.add('drag-over'); } return; }
               if (!bth || !bth.teacher) return;
-              if (dragData.type === 'booth' && (dragData.wi !== wi || dragData.ts !== ts)) return;
+              if (dragData.type === 'booth' && (dragData.wi !== wi)) return;
               if (dragData.type === 'unplaced' && bth.slots.length >= 2) return;
               td.classList.add('drag-over');
             });
