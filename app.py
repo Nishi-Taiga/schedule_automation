@@ -1688,6 +1688,81 @@ def download():
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+
+def parse_schedule_from_wb(wb):
+    """保存済みExcelの視覚シートからスケジュール配置を再構築する。
+    Returns: (schedule, office_teachers) or (None, None) if no valid week sheets found.
+    """
+    meta_sheets = set(sn for sn in wb.sheetnames if any(k in sn for k in META_KEYWORDS))
+    week_sheets = [sn for sn in wb.sheetnames
+                   if sn not in meta_sheets and sn != '_schedule_data' and sn != '未配置コマ']
+    if not week_sheets:
+        return None, None
+
+    schedule = []
+    office_teachers = []
+    
+    # シート名に日付が含まれることが多いので、それを使ってソートしたほうが安全だが
+    # write_excelでは week_sheets 順で書き込んでいるため、ここでは単純にリスト順とする
+
+    for sn in week_sheets:
+        ws = wb[sn]
+        week = {}
+        ot = {}
+        # 教室業務（行5）
+        for day, vals in DAY_COLS.items():
+            bc = vals[0]
+            val = ws.cell(5, bc).value
+            ot[day] = str(val).strip() if val else ''
+        
+        # 配置データ
+        for tl, (sr, nb) in LAYOUT.items():
+            ts = TIME_SHORT[tl]
+            
+            for day, vals in DAY_COLS.items():
+                if day not in week:
+                    week[day] = {}
+                
+                lc, gc, sc, sjc = vals[1], vals[2], vals[3], vals[4]
+                
+                booths = []
+                # 表示上のブース数 (nb) まで読むが、データ構造としては MAX_BOOTHS 分確保する
+                for bi in range(MAX_BOOTHS):
+                    if bi >= nb:
+                        # LAYOUTで定義されたブース数を超えた分は空データ
+                        booths.append({'teacher': '', 'slots': []})
+                        continue
+
+                    r1 = sr + bi * 2
+                    r2 = r1 + 1
+                    
+                    teacher = ws.cell(r1, lc).value
+                    teacher = str(teacher).strip() if teacher else ''
+                    
+                    slots = []
+                    # 生徒1
+                    g1 = ws.cell(r1, gc).value
+                    s1 = ws.cell(r1, sc).value
+                    j1 = ws.cell(r1, sjc).value
+                    if s1:
+                        slots.append([str(g1 or ''), str(s1), str(j1 or '')])
+                    
+                    # 生徒2
+                    g2 = ws.cell(r2, gc).value
+                    s2 = ws.cell(r2, sc).value
+                    j2 = ws.cell(r2, sjc).value
+                    if s2:
+                        slots.append([str(g2 or ''), str(s2), str(j2 or '')])
+                        
+                    booths.append({'teacher': teacher, 'slots': slots})
+                
+                week[day][ts] = booths
+        
+        schedule.append(week)
+        office_teachers.append(ot)
+        
+    return schedule, office_teachers
+
 @app.route('/api/load_saved', methods=['POST'])
 @login_required
 def load_saved():
@@ -1703,21 +1778,42 @@ def load_saved():
     f.save(path)
     try:
         wb = openpyxl.load_workbook(path, data_only=True)
-        if '_schedule_data' not in wb.sheetnames:
+        
+        state = {'schedule': [], 'officeTeachers': [], 'weekDates': None, 'students': []}
+        
+        # 1. 隠しJSONシートがあれば読み込む（weekDates, students, boothPref等のため）
+        if '_schedule_data' in wb.sheetnames:
+            ws = wb['_schedule_data']
+            chunks = []
+            for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
+                if row[0] is not None:
+                    chunks.append(str(row[0]))
+            data_str = ''.join(chunks)
+            try:
+                state = json.loads(data_str)
+            except:
+                pass # JSON破損時は無視して視覚シートに頼る
+
+        # 2. 視覚シートからスケジュール配置を上書き/復元（こちらを正とする）
+        vis_schedule, vis_ot = parse_schedule_from_wb(wb)
+        if vis_schedule:
+            state['schedule'] = vis_schedule
+            state['officeTeachers'] = vis_ot
+        elif not state.get('schedule'):
+             # JSONもなく視覚シートも解析できない場合
             wb.close()
             return jsonify({'error': 'このファイルには保存済みスケジュールが含まれていません。\nブース表DLしたファイルを選択してください。'}), 400
-        ws = wb['_schedule_data']
-        # チャンク化されたJSONを結合
-        chunks = []
-        for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
-            if row[0] is not None:
-                chunks.append(str(row[0]))
-        data_str = ''.join(chunks)
-        state = json.loads(data_str)
 
         # ======== 生徒データを保存済みExcelのシートから再取得 ========
         # 保存済みExcelは write_excel によりブース表のシートを含んでいるため
         # 別途ブース表アップロードが不要になる。
+        if not state.get('weekDates'):
+            # JSONがなくてweekDatesが不明な場合は、シート名から推測する
+            num_weeks = len(state.get('schedule', []))
+            extracted_wd = extract_week_dates(wb, num_weeks)
+            if extracted_wd:
+                state['weekDates'] = extracted_wd
+
         wd = state.get('weekDates') or {}
         year = wd.get('year', 2026)
         month = wd.get('month', 3)
@@ -1766,8 +1862,7 @@ def load_saved():
         wb.close()
 
         # ======== スケジュールの時間キー正規化 ========
-        # 古い保存ファイルは '16:00' 形式のキーを使っている場合があるため
-        # rW() が期待する短縮形 '16' に変換する
+        # 視覚シートから読んだ場合は既に正規化済みだが、古いJSON由来の場合は必要
         _time_normalize = {
             '14:55': '14', '16:00': '16', '17:05': '17',
             '18:10': '18', '19:15': '19', '20:20': '20',
