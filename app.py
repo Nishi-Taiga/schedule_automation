@@ -1741,7 +1741,7 @@ def load_saved():
                 # ブース表からデータを再読み込み
                 wb_booth = openpyxl.load_workbook(booth_path, data_only=True)
                 
-                wd = state.get('weekDates', {})
+                wd = state.get('weekDates') or {}
                 year = wd.get('year', 2026)
                 month = wd.get('month', 3)
                 
