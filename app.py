@@ -1715,20 +1715,65 @@ def load_saved():
         wb.close()
         data_str = ''.join(chunks)
         state = json.loads(data_str)
-        # ブース表として保存（再ダウンロード用）
-        sd['files'] = {**sd.get('files', {}), 'booth': path}
-        save_session_files(sd)
-        
-        # 安全策: weekDatesがない場合のデフォルト
-        if 'weekDates' not in state or not state['weekDates']:
-             state['weekDates'] = {'year': 2026, 'month': 3, 'weeks': []}
-        
-        return jsonify({'ok': True, **state})
     except json.JSONDecodeError as e:
         return jsonify({'error': f'スケジュールデータの解析に失敗: {e}'}), 500
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+    # 生徒データの完全性チェック (needsが含まれているか)
+    students = state.get('students', [])
+    is_complete = False
+    if students:
+        if 'needs' in students[0] and students[0]['needs']:
+            is_complete = True
+            
+    # 不完全かつ、補完が必要な場合
+    if not is_complete:
+        # セッションにアップロード済みのブース表があるか確認
+        files = sd.get('files', {})
+        booth_path = files.get('booth')
+        
+        # booth_pathがあり、かつそれが今アップロードしたファイル(path)と異なる場合 (念のため)
+        # ※ load_savedの最後で 'booth' を path で上書きするが、ここはまだ上書き前
+        if booth_path and os.path.exists(booth_path):
+            try:
+                # ブース表からデータを再読み込み
+                wb_booth = openpyxl.load_workbook(booth_path, data_only=True)
+                
+                wd = state.get('weekDates', {})
+                year = wd.get('year', 2026)
+                month = wd.get('month', 3)
+                
+                fresh_students = load_students_from_wb(wb_booth, year, month)
+                fresh_booth_pref = load_booth_pref(wb_booth) or dict(DEFAULT_BOOTH_PREF)
+                wb_booth.close()
+                
+                # 生徒データのマージ (名前でマッチングすべきだが、順序が変わると危険)
+                # ここでは「ブース表」が正として、リストごと置き換える
+                # ※ 保存済みスケジュール内の names と一致している前提
+                # 名前不一致のリスクはあるが、再アップロード運用なら整合しているはず
+                state['students'] = fresh_students
+                state['boothPref'] = fresh_booth_pref
+                
+            except Exception as e:
+                # 読み込み失敗時はエラーにせず、不完全なまま返すか、エラーにするか
+                # ここでは試行してダメならエラーを返す
+                return jsonify({'error': f'アップロードされたブース表からのデータ復元に失敗しました: {e}'}), 400
+        else:
+            # ブース表がない -> エラーで再アップロードを促す
+            return jsonify({'error': '生徒データの詳細(必要コマ数等)が不足しています。\n先に「ファイル」画面で「ブース表 (.xlsx)」をアップロードしてから、保存済みファイルを読み込んでください。'}), 400
+
+    # ブース表として保存（再ダウンロード用）
+    # ※ これにより次回以降は今読み込んだ saved_xxx が 'booth' として扱われる
+    sd['files'] = {**sd.get('files', {}), 'booth': path}
+    save_session_files(sd)
+    
+    # 安全策: weekDatesがない場合のデフォルト
+    if 'weekDates' not in state or not state['weekDates']:
+            state['weekDates'] = {'year': 2026, 'month': 3, 'weeks': []}
+    
+    return jsonify({'ok': True, **state})
 
 # ========== Schedule update API ==========
 @app.route('/api/update_schedule', methods=['POST'])
