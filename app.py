@@ -1213,7 +1213,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
                             cell.alignment = data_align
 
         # 教室業務・チューター
-        ot = office_teachers[wi]
+        ot = office_teachers[wi] if wi < len(office_teachers) else {}
         holiday_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
         holiday_font = Font(name='MS PGothic', color='FFFFFF', bold=True, size=11)
         for day in DAYS:
@@ -1568,6 +1568,7 @@ def generate():
             'schedule_json': schedule_json,
             'unplaced': unplaced,
             'office_teachers': office_teachers,
+            'office_rule': office_rule,
             'booth_pref': booth_pref,
             'students': students,
             'week_dates': week_dates,
@@ -1643,13 +1644,15 @@ def download():
                 'ng_dates': [list(d) for d in s.get('ng_dates', set())],
             })
         state_json['students'] = students_json
-        # weeklyTeachers
+        # weeklyTeachers: srcファイルがあれば再取得、なければresultのキャッシュを利用
         wt = None
         if 'src' in sd.get('files', {}):
             try:
                 wt = load_weekly_teachers(sd['files']['src'])
             except Exception:
                 pass
+        if not wt:
+            wt = res.get('weekly_teachers')
         if wt:
             state_json['weeklyTeachers'] = wt
         # placed count
@@ -1661,10 +1664,21 @@ def download():
                         placed += len(b['slots'])
         state_json['placed'] = placed
 
+        # office_teachers が不足している場合（古いバックアップ等）、デフォルト設定で補完
+        _DEFAULT_RULE = {'月':['石川T'],'火':['石川T'],'水':['西T'],'木':['石川T'],'金':['石川T'],'土':['越智T']}
+        ot_list = list(res.get('office_teachers', []))
+        rule = res.get('office_rule') or _DEFAULT_RULE
+        num_sched_weeks = len(res.get('schedule', []))
+        while len(ot_list) < num_sched_weeks:
+            if ot_list:
+                ot_list.append(dict(ot_list[-1]))
+            else:
+                ot_list.append({d: rule[d][0] for d in DAYS if rule.get(d)})
+
         write_excel(
             res['schedule'],
             res['unplaced'],
-            res['office_teachers'],
+            ot_list,
             sd['files']['booth'],
             output_path,
             state_json=state_json
@@ -1748,6 +1762,92 @@ def update_schedule():
 
     placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     return jsonify({'ok': True, 'placed': placed})
+
+# ========== JSON restore API ==========
+@app.route('/api/restore_json', methods=['POST'])
+@login_required
+def restore_json():
+    """JSONバックアップ + 既存ファイルからスケジュール状態を復元する"""
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'ファイルが選択されていません'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext != '.json':
+        return jsonify({'error': f'JSONファイルを選択してください（選択: {ext}）'}), 400
+
+    sd = get_session_data()
+    try:
+        raw = f.read().decode('utf-8')
+        state = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        return jsonify({'error': f'JSONの解析に失敗しました: {e}'}), 400
+
+    schedule = state.get('schedule') or state.get('schedule_json')
+    if not schedule:
+        return jsonify({'error': 'スケジュールデータが含まれていません'}), 400
+
+    unplaced = state.get('unplaced', [])
+    office_teachers = state.get('officeTeachers') or state.get('office_teachers', [])
+    booth_pref = state.get('boothPref') or state.get('booth_pref', {})
+    students = state.get('students', [])
+    week_dates = state.get('weekDates') or state.get('week_dates')
+    weekly_teachers = state.get('weeklyTeachers') or state.get('weekly_teachers')
+    placed = state.get('placed', 0)
+    total = state.get('total', 0)
+
+    if not placed:
+        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+    if not total and students:
+        total = sum(sum(s.get('needs', {}).values()) for s in students)
+
+    # booth / src ファイルが同時にアップロードされた場合はセッションに保存
+    files = dict(sd.get('files', {}))
+    for key in ['booth', 'src']:
+        fx = request.files.get(key)
+        if fx and fx.filename:
+            ok, err = validate_file(fx)
+            if not ok:
+                return jsonify({'error': f'{key}ファイル: {err}'}), 400
+            path = os.path.join(sd['dir'], key + '_' + fx.filename)
+            fx.save(path)
+            files[key] = path
+    sd['files'] = files
+    save_session_files(sd)
+
+    # srcがあればweeklyTeachersを再取得（最新化）
+    if 'src' in files:
+        try:
+            weekly_teachers = load_weekly_teachers(files['src'])
+        except Exception:
+            pass
+
+    sd['result'] = {
+        'schedule_json': schedule,
+        'schedule': schedule,
+        'unplaced': unplaced,
+        'office_teachers': office_teachers,
+        'booth_pref': booth_pref,
+        'students': students,
+        'week_dates': week_dates,
+        'weekly_teachers': weekly_teachers,  # ダウンロード時のフォールバック用
+    }
+    save_session_result(sd)
+
+    resp = {
+        'ok': True,
+        'placed': placed,
+        'total': total,
+        'schedule': schedule,
+        'unplaced': unplaced,
+        'officeTeachers': office_teachers,
+        'boothPref': booth_pref,
+        'students': students,
+        'weekDates': week_dates,
+        'hasBooth': 'booth' in files,
+    }
+    if weekly_teachers:
+        resp['weeklyTeachers'] = weekly_teachers
+    return jsonify(resp)
 
 # ========== State persistence API ==========
 @app.route('/api/state')
