@@ -1765,8 +1765,28 @@ def load_saved():
                     return jsonify({'error': '生徒データの詳細(必要コマ数等)が不足しています。\n先に「ファイル」画面で「ブース表 (.xlsx)」をアップロードしてから、保存済みファイルを読み込んでください。'}), 400
         wb.close()
 
+        # ======== スケジュールの時間キー正規化 ========
+        # 古い保存ファイルは '16:00' 形式のキーを使っている場合があるため
+        # rW() が期待する短縮形 '16' に変換する
+        _time_normalize = {
+            '14:55': '14', '16:00': '16', '17:05': '17',
+            '18:10': '18', '19:15': '19', '20:20': '20',
+        }
+        raw_schedule = state.get('schedule', [])
+        normalized_schedule = []
+        for week in raw_schedule:
+            nw = {}
+            for day, day_data in week.items():
+                nd = {}
+                for ts_key, booths in day_data.items():
+                    short_key = _time_normalize.get(ts_key, ts_key)
+                    nd[short_key] = booths
+                nw[day] = nd
+            normalized_schedule.append(nw)
+        state['schedule'] = normalized_schedule
+
         # ======== placed / total / unplaced を最新データで再計算 ========
-        schedule = state.get('schedule', [])
+        schedule = state['schedule']
         fresh_students_data = state.get('students', [])
 
         # 実際に配置されているコマ数
@@ -1774,6 +1794,9 @@ def load_saved():
 
         # 全必要コマ数を fresh_students から計算
         total = sum(sum(s.get('needs', {}).values()) for s in fresh_students_data)
+        # total が 0 の場合は placed を使用（表示上の Infinity% を防ぐ）
+        if total == 0:
+            total = placed
 
         # 未配置コマを再計算
         # schedule 内に配置されている (name, subject) の数を集計

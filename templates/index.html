@@ -1836,8 +1836,38 @@
     // Navigate to student calendar
     function goStudent(name) { const idx = R.students.findIndex(s => s.name === name); if (idx < 0) return; calStudent = idx; PW = -2; rR(); }
 
+    // 時間キーを短縮形に正規化（古い保存ファイル対応: '16:00' → '16'）
+    const _TIME_NORMALIZE = { '14:55': '14', '16:00': '16', '17:05': '17', '18:10': '18', '19:15': '19', '20:20': '20' };
+    function normalizeScheduleKeys(schedule) {
+      if (!schedule) return schedule;
+      return schedule.map(week => {
+        const nw = {};
+        for (const [day, dayData] of Object.entries(week)) {
+          const nd = {};
+          for (const [ts, booths] of Object.entries(dayData)) {
+            nd[_TIME_NORMALIZE[ts] || ts] = booths;
+          }
+          nw[day] = nd;
+        }
+        return nw;
+      });
+    }
     function rR() {
-      if (edited) scheduleAutoSave(); const p = countPlaced(); document.getElementById('pNum').innerHTML = p + '<span>/' + R.total + 'コマ</span>'; document.getElementById('rTxt').textContent = '配置率 ' + (p / R.total * 100).toFixed(1) + '%';
+      // 時間キーを正規化（古いファイルの '16:00' 形式 → '16' 形式）
+      if (R.schedule && R.schedule.length > 0 && R.schedule[0]) {
+        const firstWeek = R.schedule[0];
+        const firstDay = Object.values(firstWeek)[0] || {};
+        const tsKeys = Object.keys(firstDay);
+        if (tsKeys.length > 0 && tsKeys[0].includes(':')) {
+          R.schedule = normalizeScheduleKeys(R.schedule);
+        }
+      }
+      if (edited) scheduleAutoSave();
+      const p = countPlaced();
+      const tot = R.total || 0;
+      document.getElementById('pNum').innerHTML = p + '<span>/' + tot + 'コマ</span>';
+      const rate = tot > 0 ? (p / tot * 100).toFixed(1) : (p > 0 ? '100.0' : '0.0');
+      document.getElementById('rTxt').textContent = '配置率 ' + rate + '%';
       const ub = document.getElementById('uBadge'), uT = R.unplaced.reduce((s, u) => s + u.count, 0); if (uT > 0) { ub.style.display = ''; ub.textContent = '⚠️ 未配置: ' + uT + 'コマ'; } else ub.style.display = 'none';
       const mb = document.getElementById('mBadge'); if (edited) { mb.style.display = ''; mb.textContent = '✏️ 手動編集あり'; } else mb.style.display = 'none';
       const tabs = document.getElementById('wTabs'); tabs.innerHTML = '';
