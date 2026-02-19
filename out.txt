@@ -1,0 +1,12 @@
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+OK
+
+--- Testing Consecutive Slots Logic ---
+S1 Placed at: [('金', '16'), ('金', '17')]
+PASS: Slots are consecutive.
+
+--- Testing load_holidays (hidden sheet filtering) ---
+PASS: load_holidays filtered hidden/metadata sheets correctly.

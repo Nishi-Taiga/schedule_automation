@@ -442,8 +442,20 @@ def load_weekly_teachers(path):
     """元シートから各週・曜日・時間帯の出勤講師を読み取る（全講師、絞り込み前）"""
     wb = openpyxl.load_workbook(path)
     weeks = []
-    for wi in range(len(wb.sheetnames)):
-        ws = wb[wb.sheetnames[wi]]
+    
+    # シート名でフィルタリング（メタデータシートを除外）
+    target_sheets = []
+    for sn in wb.sheetnames:
+        # メタデータキーワードが含まれるシートはスキップ
+        if any(k in sn for k in META_KEYWORDS):
+            continue
+        # 非表示シートはスキップ
+        if wb[sn].sheet_state != 'visible':
+            continue
+        target_sheets.append(sn)
+
+    for sn in target_sheets:
+        ws = wb[sn]
         week = {}
         for day in DAYS:
             col = SRC_DAY_COLS[day]
@@ -839,8 +851,13 @@ def load_holidays(booth_wb, num_weeks):
     """ブース表の教室業務行(row 5)から休塾日を検出する。
     Returns: [{day: True, ...}, ...] 各週の休塾日マップ
     """
-    meta_sheets = [sn for sn in booth_wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
-    week_sheets = [sn for sn in booth_wb.sheetnames if sn not in meta_sheets]
+    # 隠しシートとメタデータシートを除外
+    week_sheets = []
+    for sn in booth_wb.sheetnames:
+        if any(k in sn for k in META_KEYWORDS): continue
+        if booth_wb[sn].sheet_state != 'visible': continue
+        week_sheets.append(sn)
+
     holidays = []
     for wi in range(min(num_weeks, len(week_sheets))):
         ws = booth_wb[week_sheets[wi]]
@@ -1004,13 +1021,46 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                     if is_ng_date: sc -= 5000
                     # 予備時間はペナルティ（希望時間を優先）
                     if is_backup: sc -= 150
-                    # 同曜日に既に別科目が配置されている場合はやや優先（ただし集中しすぎを防止）
-                    day_count = sum(1 for d_,_ in existing if d_==day)
+                    # 同曜日に既に別科目が配置されている場合
+                    # 連続コマを強く推奨（+2000）、飛び石は回避（-200）
+                    existing_on_day = [t_ for d_, t_ in existing if d_ == day]
+                    if existing_on_day:
+                        # 現在の時刻のインデックスを取得
+                        try:
+                            # timesは '16:00' 等の形式リスト
+                            # tl は現在ループ中の時刻文字列 ('16:00')
+                            curr_idx = times.index(tl)
+                            
+                            is_continuous = False
+                            for et_short in existing_on_day:
+                                # existingは '16' 形式の場合と '16:00' 形式の場合があるため正規化が必要
+                                # TIME_SHORTの逆マッピングまたはループで探す
+                                # ここでは existing が (day, ts_short) で入っている前提
+                                # ts_short ('16') -> tl_long ('16:00')
+                                et_long = TSR.get(et_short) if 'TSR' in globals() else None
+                                if not et_long:
+                                    # TSRがない場合は自力で探す (TIME_SHORTの逆)
+                                    for k, v in TIME_SHORT.items():
+                                        if v == et_short:
+                                            et_long = k
+                                            break
+                                if et_long in times:
+                                    ex_idx = times.index(et_long)
+                                    diff = abs(curr_idx - ex_idx)
+                                    if diff == 1:
+                                        sc += 2000  # 連続コマは最優先
+                                        is_continuous = True
+                                    elif diff > 1:
+                                        sc -= 200   # 飛び石はペナルティ
+                        except ValueError:
+                            pass
+                    
                     if day in any_placed_days:
+                        day_count = len(existing_on_day)
                         if day_count < 2:
-                            sc += 50   # 2コマ目まではやや優先
+                            sc += 50   # 2コマ目までは曜日優先（連続ボーナスと累積）
                         else:
-                            sc -= 80   # 3コマ目以降はペナルティ（分散を促す）
+                            sc -= 80   # 3コマ目以降は分散推奨
                     if b['teacher'] in s['wish_teachers']: sc += 500
                     if t in booth_pref and booth_pref[t]==bi+1: sc += 10
                     if len(b['slots'])==0: sc += 20
