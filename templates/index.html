@@ -2211,12 +2211,22 @@
     }
     function saveSlotEdit(wi, day, ts, bi) {
       const t = document.getElementById('seTeacher').value;
-      const slots = R.schedule[wi][day][ts][bi].slots;
-      slots.forEach((s, idx) => {
+      // オブジェクトの参照共有を切るためのディープコピー（安全策）
+      let booth = R.schedule[wi][day][ts][bi];
+      const newBooth = JSON.parse(JSON.stringify(booth));
+
+      // スロット内の科目変更を適用
+      newBooth.slots.forEach((s, idx) => {
         const sel = document.getElementById('seSubj_' + idx);
         if (sel) s[2] = sel.value;
       });
-      R.schedule[wi][day][ts][bi].teacher = t;
+
+      // 講師を変更
+      newBooth.teacher = t;
+
+      // 更新（参照を置き換え）
+      R.schedule[wi][day][ts][bi] = newBooth;
+
       edited = true; closeSlotEditModal(); rR();
     }
     function closeSlotEditModal() { const m = document.querySelector('.modal-overlay'); if (m) m.remove(); }
