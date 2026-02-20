@@ -443,16 +443,15 @@ def load_weekly_teachers(path):
     wb = openpyxl.load_workbook(path)
     weeks = []
     
-    # シート名でフィルタリング（メタデータシートを除外）
+    # シート名でフィルタリング（「ブース表」を含むシートのみ対象）
     target_sheets = []
     for sn in wb.sheetnames:
-        # メタデータキーワードが含まれるシートはスキップ
-        if any(k in sn for k in META_KEYWORDS):
-            continue
         # 非表示シートはスキップ
         if wb[sn].sheet_state != 'visible':
             continue
-        target_sheets.append(sn)
+        # 「ブース表」が含まれるシートのみ対象
+        if 'ブース表' in sn:
+            target_sheets.append(sn)
 
     for sn in target_sheets:
         ws = wb[sn]
@@ -1473,8 +1472,11 @@ def consolidate_booth():
             week_wb = openpyxl.load_workbook(week_path)
 
             for sn in week_wb.sheetnames:
-                # 週ファイル内のメタシートはスキップ
-                if any(k in sn for k in META_KEYWORDS):
+                # 「ブース表」が含まれるシートのみ対象
+                if 'ブース表' not in sn:
+                    continue
+                # 非表示シートはスキップ（念のため）
+                if week_wb[sn].sheet_state != 'visible':
                     continue
 
                 src_ws = week_wb[sn]
