@@ -291,9 +291,14 @@ def get_skill_keys(grade, subject):
 def can_teach(teacher, grade, subject, skills):
     keys = get_skill_keys(grade, subject)
     if not skills:
-        return True  # スキルデータ自体がない場合は全員可
+        return True
     if teacher not in skills:
-        return False  # スキルシートに未登録の講師は配置不可
+        return False
+        
+    # 英検対応: 「英」を含むスキル（小英、中英、高英など）があれば可
+    if subject == '英検':
+        return any('英' in k for k in skills[teacher])
+        
     return any(k in skills[teacher] for k in keys)
 
 def load_teacher_skills(wb):
@@ -1607,6 +1612,12 @@ def generate():
         booth_pref = {**file_booth_pref, **booth_pref_ui}
 
         wt = load_weekly_teachers(files['src'])
+
+        # ブース表シート数に合わせて週数を制限（メタシートを除外）
+        valid_booth_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
+        if len(wt) > len(valid_booth_sheets):
+            print(f"[generate] Truncating weeks from {len(wt)} to {len(valid_booth_sheets)} (based on booth sheets)", flush=True)
+            wt = wt[:len(valid_booth_sheets)]
         total = sum(sum(s['needs'].values()) for s in students)
 
         # 休塾日検出
