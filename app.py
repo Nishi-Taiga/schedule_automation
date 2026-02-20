@@ -468,7 +468,18 @@ def load_weekly_teachers(path):
                         teachers.append(t)
                 dt[ts] = teachers
             week[day] = dt
-        weeks.append(week)
+        
+        # 週全体で講師が一人もいない場合はスキップ（空のシートを除外）
+        has_teachers = False
+        for d_data in week.values():
+            for t_list in d_data.values():
+                if t_list:
+                    has_teachers = True
+                    break
+            if has_teachers: break
+        
+        if has_teachers:
+            weeks.append(week)
     return weeks
 
 # ========== 元シート集約（講師回答ファイル → 週別出勤データ） ==========
@@ -1480,6 +1491,23 @@ def consolidate_booth():
                     continue
 
                 src_ws = week_wb[sn]
+                
+                # シートが空かチェック（簡易チェック: 講師名セルにデータがあるか）
+                has_data = False
+                for day in DAYS:
+                    col = SRC_DAY_COLS[day]
+                    for start, tl, nb in SRC_TIME_SLOTS:
+                        for b in range(nb):
+                            if src_ws.cell(start+b*2, col).value:
+                                has_data = True
+                                break
+                        if has_data: break
+                    if has_data: break
+                
+                if not has_data:
+                    print(f"[consolidate] 空の週シートをスキップ: {sn}", flush=True)
+                    continue
+
                 week_count += 1
 
                 # シート名の重複を回避
