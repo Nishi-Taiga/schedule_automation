@@ -1853,32 +1853,45 @@
       });
     }
     // 生徒ごとの配置数カウント
+    // 生徒ごとの配置数カウント (引数なし=全体数, 引数あり=科目別オブジェクト)
     function countPlaced(studentName) {
-      if (!R || !R.schedule) return 0;
-      let c = 0;
+      if (!R || !R.schedule) return studentName ? {} : 0;
+      if (!studentName) {
+        let c = 0;
+        R.schedule.forEach(w => {
+          Object.values(w).forEach(d => {
+            Object.values(d).forEach(bs => {
+              bs.forEach(b => { c += b.slots.length; });
+            });
+          });
+        });
+        return c;
+      }
+      // 科目別集計
+      const counts = {};
       R.schedule.forEach(w => {
         Object.values(w).forEach(d => {
           Object.values(d).forEach(bs => {
             bs.forEach(b => {
-              if (studentName) {
-                b.slots.forEach(s => {
-                  if (s[1] === studentName) c++;
-                });
-              } else {
-                c += b.slots.length;
-              }
+              b.slots.forEach(s => {
+                if (s[1] === studentName) {
+                  const subj = s[2];
+                  counts[subj] = (counts[subj] || 0) + 1;
+                }
+              });
             });
           });
         });
       });
-      return c;
+      return counts;
     }
     // 生徒ごとの必要コマ数取得
+    // 生徒ごとの必要コマ数取得 (引数あり=needsオブジェクト)
     function getStudentNeeds(name) {
-      if (!R || !R.students) return 0;
+      if (!R || !R.students) return {};
       const s = R.students.find(st => st.name === name);
-      if (!s || !s.needs) return 0;
-      return Object.values(s.needs).reduce((a, b) => a + b, 0);
+      if (!s || !s.needs) return {};
+      return s.needs;
     }
 
     function rR() {
@@ -2289,15 +2302,32 @@
       // 配置数表示
       if (calStudent !== null && R.students[calStudent]) {
         const sName = R.students[calStudent].name;
-        const placed = countPlaced(sName);
-        const needs = getStudentNeeds(sName);
+        const placed = countPlaced(sName); // {subj: count}
+        const needs = getStudentNeeds(sName); // {subj: need}
+
+        // 科目の和集合を取得
+        const allSubjs = new Set([...Object.keys(placed), ...Object.keys(needs)]);
+        const details = [];
+        let totalPlaced = 0;
+        let totalNeeds = 0;
+
+        allSubjs.forEach(sb => {
+          const p = placed[sb] || 0;
+          const n = needs[sb] || 0;
+          totalPlaced += p;
+          totalNeeds += n;
+          // 表示: "英:1/2"
+          details.push(sb + ':' + p + '/' + n);
+        });
+
         const info = document.createElement('span');
         info.style.marginLeft = '12px';
         info.style.fontSize = '12px';
         info.style.fontWeight = 'bold';
-        // 色分け: 足りない=赤, 超過=オレンジ, ちょうど=緑
-        info.style.color = (placed < needs) ? 'var(--red)' : ((placed > needs) ? 'var(--orange)' : 'var(--green)');
-        info.textContent = `(配置: ${placed} / 必要: ${needs})`;
+
+        // 色分け
+        info.style.color = (totalPlaced < totalNeeds) ? 'var(--red)' : ((totalPlaced > totalNeeds) ? 'var(--orange)' : 'var(--green)');
+        info.textContent = `(${details.join(', ')})`;
         selDiv.appendChild(info);
       }
 
