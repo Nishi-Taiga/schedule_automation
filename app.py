@@ -847,15 +847,12 @@ def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office
 
 def resolve_office_teacher(day, candidates, day_data):
     """教室業務担当を優先順位リストから決定する。
-    - 石川Tは出勤チェック不要で即確定
-    - それ以外は day_data（その週・その曜日の出勤講師データ）で出勤確認
+    - day_data（その週・その曜日の出勤講師データ）で出勤確認
     - 誰も出勤していなければ None（教室業務なし）
     """
     if isinstance(candidates, str):
         candidates = [candidates]
     for candidate in candidates:
-        if candidate == '石川T':
-            return candidate
         # day_data: {ts: [teacher, ...]} — いずれかの時間帯に出勤していれば可
         for ts, teachers in day_data.items():
             if candidate in teachers:

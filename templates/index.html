@@ -477,6 +477,11 @@
       border-color: var(--accent)
     }
 
+    .tn.dup {
+      color: var(--red) !important;
+      font-weight: 800 !important;
+    }
+
     .teacher-picker {
       position: absolute;
       top: 100%;
@@ -1920,8 +1925,10 @@
     }
 
     // === Teacher D&D ===
-    function mkTeacher(t, wi, day, ts, bi) {
-      const el = document.createElement('span'); el.className = 'tn'; el.textContent = t; el.draggable = true;
+    function mkTeacher(t, wi, day, ts, bi, isDup = false) {
+      const el = document.createElement('span'); el.className = 'tn';
+      if (isDup) el.classList.add('dup');
+      el.textContent = t; el.draggable = true;
       el.addEventListener('dragstart', e => { dragData = { type: 'teacher', wi, day, ts, bi, teacher: t }; el.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
       el.addEventListener('dragend', () => { el.style.opacity = '1'; dragData = null; });
       el.addEventListener('dragover', e => { if (dragData && dragData.type === 'teacher' && dragData.wi === wi && dragData.day === day && dragData.ts === ts) { e.preventDefault(); el.classList.add('drag-over-t'); } });
@@ -2238,11 +2245,37 @@
       for (const d of D) { const dayData = ws[d] || {}; const summary = {}; for (const [t, bs] of Object.entries(dayData)) summary[t] = bs.length + 'ブース(生徒:' + bs.reduce((s, b) => s + b.slots.length, 0) + ')'; console.log(d + '曜:', summary); }
       const tbl = document.createElement('table'); tbl.className = 'sch';
       let hd = '<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>'; for (const d of D) { const dl = getDateLabel(wi, d); hd += '<th style="width:calc((100% - 82px)/6)' + (d === '土' ? ';background:#edf2f7' : '') + '">' + d + (dl ? '<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">' + dl + '</span>' : '') + '</th>'; }
-      hd += '</tr><tr class="or"><td colspan="2">教室業務</td>'; for (const d of D) { const ov = (R.officeTeachers[wi] || {})[d] || ''; if (ov === '休塾日') hd += '<td><span class="holiday-cell">休塾日</span></td>'; else hd += '<td>' + ov + '</td>'; } hd += '</tr></thead>'; tbl.innerHTML = hd;
+      hd += '</tr><tr class="or"><td colspan="2">教室業務</td>';
+      for (const d of D) {
+        const ov = (R.officeTeachers[wi] || {})[d] || '';
+        if (ov === '休塾日') hd += '<td><span class="holiday-cell">休塾日</span></td>';
+        else {
+          // 教室業務の重複チェック（その曜日のいずれかの時間帯で講師として入っているか...ではなく同一時間帯でのチェックが必要）
+          // ただし教室業務は「日単位」なので、全時間帯との重複をチェックするか、あるいは「時間帯ごと」のレンダリング時に判定するか？
+          // ユーザーの要望は「同一時間に2回名前が存在してはいけない」なので、時間帯ごとの tbody 内でのチェックが主。
+          // 教室業務は全時間帯に渡るので、もしその日のいずれかの時間帯のブースにその講師がいたら赤くする、という仕様にする。
+          const assignedInDay = getAssignedTeachers(wi, d);
+          const isDup = assignedInDay.has(ov);
+          hd += '<td><span class="' + (isDup ? 'tn dup' : '') + '">' + ov + '</span></td>';
+        }
+      }
+      hd += '</tr></thead>'; tbl.innerHTML = hd;
       const tbody = document.createElement('tbody');
       const MX = 6;// 常に6ブース行を表示
       for (const tl of TL) {
         const ts = TS[tl];
+        // 重複チェック用のカウント
+        const tCounts = {};
+        for (const d of D) {
+          tCounts[d] = {};
+          // 教室業務
+          const ot = (R.officeTeachers[wi] || {})[d];
+          if (ot && ot !== '休塾日') tCounts[d][ot] = (tCounts[d][ot] || 0) + 1;
+          // 各ブース
+          const bs = ws[d]?.[ts] || [];
+          bs.forEach(b => { if (b.teacher) tCounts[d][b.teacher] = (tCounts[d][b.teacher] || 0) + 1; });
+        }
+
         for (let bi = 0; bi < MX; bi++) {
           const tr = document.createElement('tr'); if (!(bi % 2)) tr.className = 'er'; if (!bi) tr.style.borderTop = '2px solid #b8c5d4';
           if (!bi) { const td = document.createElement('td'); td.className = 'tc'; td.rowSpan = MX; td.textContent = tl; tr.appendChild(td); }
@@ -2253,7 +2286,8 @@
             td.className = 'booth-cell'; const bs = ws[d]?.[ts] || [], b = bs[bi];
             if (b && b.teacher) {
               if (b.slots.length === 0) td.classList.add('empty-booth');
-              td.appendChild(mkTeacher(b.teacher, wi, d, ts, bi));
+              const isDup = (tCounts[d][b.teacher] > 1);
+              td.appendChild(mkTeacher(b.teacher, wi, d, ts, bi, isDup));
               b.slots.forEach((sl, si) => { td.appendChild(mkChip(sl, wi, d, ts, bi, si, b.teacher)); }); if (b.slots.length >= 2) td.classList.add('full');
             }
             else {
