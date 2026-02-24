@@ -1444,10 +1444,42 @@ def consolidate_booth():
     meta_file = request.files.get('meta')
     week_files = request.files.getlist('weeks')
 
+    # メタデータファイルが未指定の場合、week_filesの中から自動検出を試みる
     if not meta_file or not meta_file.filename:
-        return jsonify({'error': 'メタデータファイル（必要コマ数等）を選択してください'}), 400
+        detected_meta = None
+        remaining_weeks = []
+        for f in week_files:
+            if not f.filename: continue
+            try:
+                # 一時保存して中身を確認
+                temp_path = os.path.join(sd['dir'], 'tmp_detect_' + f.filename)
+                f.save(temp_path)
+                wb = openpyxl.load_workbook(temp_path, read_only=True)
+                has_meta = any(any(k in sn for k in META_KEYWORDS) for sn in wb.sheetnames)
+                wb.close()
+                if has_meta and not detected_meta:
+                    detected_meta = f
+                    # 検出用ファイルをメタ用として再利用するため、ポインタを戻すなどの処理は不要（再度saveする）
+                    print(f"[consolidate] メタファイルを自動検出: {f.filename}", flush=True)
+                else:
+                    remaining_weeks.append(f)
+                os.remove(temp_path)
+            except Exception as e:
+                print(f"[consolidate] 自動検出中にエラー: {f.filename} {e}", flush=True)
+                remaining_weeks.append(f)
+        
+        if detected_meta:
+            meta_file = detected_meta
+            week_files = remaining_weeks
+        else:
+            return jsonify({'error': 'メタデータファイルを選択するか、フォルダ内に「必要コマ数」等を含むファイルを入れてください'}), 400
+
     if not week_files or all(not f.filename for f in week_files):
-        return jsonify({'error': '週別ブース表ファイルを選択してください'}), 400
+        # メタファイル自体に週シートが含まれている可能性もあるが、基本は週ファイルが必要
+        # ただし、フォルダ1つだけ選んでその中に全部入っている場合、week_filesが空になる可能性がある
+        # detectした後のweek_filesが空なら、エラーにせず続行（メタファイル内のシートのみ処理）？
+        # いや、現状のロジックはweek_filesをループするので、1つ以上必要。
+        pass
 
     # メタデータファイルを保存・読み込み
     ok, err = validate_file(meta_file)

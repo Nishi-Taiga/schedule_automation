@@ -1436,7 +1436,8 @@
           <div class="consol-desc" id="consolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx"
             multiple onchange="onConsolWeeks(this)">
           <div style="margin-top:6px"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂
-              フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderWeeks(this)">
+              メタデータも含めてフォルダから一括選択</button><input type="file" webkitdirectory style="display:none"
+              onchange="onFolderWeeks(this)">
           </div>
           <div class="consol-files" id="consolWeekList"></div>
         </div>
@@ -1648,7 +1649,8 @@
       document.getElementById('consolWeekDesc').textContent = files.length + '件のファイルを選択';
       const flist = document.getElementById('consolWeekList');
       flist.innerHTML = files.map(f => '<span class="cf-item">' + f.name + '</span>').join('');
-      document.getElementById('consolBtn').disabled = !(consolMeta && consolWeeks);
+      // フォルダ選択の場合はメタファイルがなくても（後で自動判定されるので）ボタンを有効化する
+      document.getElementById('consolBtn').disabled = !consolWeeks;
     }
 
     // === Survey upload ===
@@ -1721,7 +1723,8 @@
       const btn = document.getElementById('consolBtn'); btn.disabled = true; btn.textContent = '集約中...';
       document.getElementById('consolResult').innerHTML = ''; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
       showProgress(20, 'ブース表を集約しています...', 'ブース表集約中'); startProgressAnim(20, p => 'ファイルを処理しています...');
-      const fd = new FormData(); fd.append('meta', consolMeta);
+      const fd = new FormData();
+      if (consolMeta) fd.append('meta', consolMeta);
       for (let i = 0; i < consolWeeks.length; i++)fd.append('weeks', consolWeeks[i]);
       try {
         const res = await fetch('/api/consolidate_booth', { method: 'POST', body: fd }); const d = await res.json();
