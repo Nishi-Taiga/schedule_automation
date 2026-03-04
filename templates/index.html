@@ -1380,7 +1380,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.7.1</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.8.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1490,6 +1490,10 @@
       <div class="bp-grid" id="bpGrid"></div>
       <div style="margin-top:8px"><button class="btn btn-s" onclick="addBP()">＋ 講師追加</button></div>
       <div class="note">※ ブース⑥まで。教室業務担当はブースから除外。NG講師はプレビューで赤く表示。</div>
+      <h3 style="margin-top:18px">👤 講師手動追加（シフト未提出）</h3>
+      <p style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">シフト未提出の講師を追加すると、全週・全時間帯で配置可能になります。</p>
+      <div id="manualTeacherList" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;align-items:center"><input type="text" id="manualTeacherInput" placeholder="講師名（例: 山田T）" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;width:180px" onkeydown="if(event.key==='Enter'){addManualTeacher();event.preventDefault()}"><button class="btn btn-s" onclick="addManualTeacher()">＋ 追加</button></div>
       <div class="bg">
         <button class="btn btn-o" onclick="go('upload')">← 戻る</button>
         <button class="btn btn-g" id="genBtn" onclick="gen()">🚀 スケジュール生成</button>
@@ -1530,7 +1534,7 @@
     const D = ['月', '火', '水', '木', '金', '土'], WT = ['16:00', '17:05', '18:10', '19:15', '20:20'], ST = ['14:55', '16:00', '17:05', '18:10'];
     const TL = ['14:55', '16:00', '17:05', '18:10', '19:15', '20:20'], TS = { '14:55': '14', '16:00': '16', '17:05': '17', '18:10': '18', '19:15': '19', '20:20': '20' }, TSR = { '14': '14:55', '16': '16:00', '17': '17:05', '18': '18:10', '19': '19:15', '20': '20:20' }, BL = ['①', '②', '③', '④', '⑤', '⑥'];
     let OR = { 月: [], 火: [], 水: [], 木: [], 金: [], 土: [] };
-    let BP = [], R = null, PW = 0, uploaded = {}, edited = false, dragData = null, calStudent = null, teacherList = [];
+    let BP = [], R = null, PW = 0, uploaded = {}, edited = false, dragData = null, calStudent = null, teacherList = [], manualTeachers = [];
     let ngMap = {}, ngStudentMap = {};
     function buildNgMap() { ngMap = {}; ngStudentMap = {}; if (!R || !R.students) return; R.students.forEach(s => { ngMap[s.name] = new Set(s.ng_teachers || []); ngStudentMap[s.name] = new Set(s.ng_students || []) }); }
     function isNg(n, t) { return ngMap[n] && ngMap[n].has(t); }
@@ -1563,11 +1567,9 @@
     async function onLoadSaved(inp) {
       const f = inp.files[0]; if (!f) return;
       const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
-      showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
       const fd = new FormData(); fd.append('file', f);
       try {
         const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json();
-        hideProgress();
         if (res.ok && d.ok) {
           row.classList.add('done'); row.querySelector('.icon').textContent = '✅';
           row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
@@ -1577,16 +1579,14 @@
         }
         else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
       }
-      catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
+      catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
     async function onLoadJson(inp) {
       const f = inp.files[0]; if (!f) return;
       const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
-      showProgress(20, 'JSONバックアップを読み込んでいます...', '読み込み中');
       const fd = new FormData(); fd.append('file', f);
       try {
         const res = await fetch('/api/restore_json', { method: 'POST', body: fd }); const d = await res.json();
-        hideProgress();
         if (res.ok && d.ok) {
           row.classList.add('done'); row.querySelector('.icon').textContent = '✅';
           row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
@@ -1596,7 +1596,7 @@
         }
         else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
       }
-      catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
+      catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
     window.addEventListener('DOMContentLoaded', () => { checkSavedState(); });
 
@@ -1610,17 +1610,16 @@
       const f = files[0];
       if (key === 'saved') {
         const row = document.getElementById('uSaved'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
-        showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
         const fd = new FormData(); fd.append('file', f);
         try {
-          const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json(); hideProgress();
+          const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json();
           if (res.ok && d.ok) {
             row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
             R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); go('result'); rR(); showSaveIndicator('スケジュールを復元しました');
           }
           else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
         }
-        catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; }
+        catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; }
         return;
       }
       // src or booth
@@ -1634,9 +1633,9 @@
       catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; uploaded[key] = false; }
       const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = true;
       if (ready) {
-        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        hideProgress(); btn.textContent = '次へ: 設定 →';
+        btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !ready;
     }
@@ -1644,7 +1643,6 @@
       const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
       const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
       desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
-      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
       const fd = new FormData(); files.forEach(f => fd.append('surveys', f));
       try {
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
@@ -1655,11 +1653,11 @@
         else { console.error('[survey] error:', JSON.stringify(d)); desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false; }
       }
       catch (e) { console.error('[survey] exception:', e); desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
-      hideProgress(); document.getElementById('toS').disabled = true;
+      document.getElementById('toS').disabled = true;
       if (uploaded.src && uploaded.booth) {
-        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        hideProgress(); btn.textContent = '次へ: 設定 →';
+        btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
     }
@@ -1690,7 +1688,6 @@
       const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
       desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
       document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
-      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
       const fd = new FormData(); for (let i = 0; i < files.length; i++)fd.append('surveys', files[i]);
       try {
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
@@ -1704,13 +1701,11 @@
           if (d.details) document.getElementById('upSt').innerHTML = d.details.map(e => '<div>' + escHtml(e) + '</div>').join(''); document.getElementById('upSt').className = 'status err';
         }
       } catch (e) { desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
-      hideProgress();
       document.getElementById('toS').disabled = true;
       if (uploaded.src && uploaded.booth) {
         const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
-        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        hideProgress(); btn.textContent = '次へ: 設定 →';
+        btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
     }
@@ -1743,7 +1738,6 @@
       if (!consolWeeks) return;
       const btn = document.getElementById('consolBtn'); btn.disabled = true; btn.textContent = '集約中...';
       document.getElementById('consolResult').innerHTML = ''; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
-      showProgress(20, 'ブース表を集約しています...', 'ブース表集約中'); startProgressAnim(20, p => 'ファイルを処理しています...');
       const fd = new FormData();
       if (consolMeta) fd.append('meta', consolMeta);
       for (let i = 0; i < consolWeeks.length; i++)fd.append('weeks', consolWeeks[i]);
@@ -1755,14 +1749,12 @@
           if (d.errors && d.errors.length) { document.getElementById('upSt').textContent = '一部エラー: ' + d.errors.join(', '); document.getElementById('upSt').className = 'status err'; }
         } else { document.getElementById('upSt').textContent = 'エラー: ' + (d.error || '不明'); document.getElementById('upSt').className = 'status err'; uploaded.booth = false; }
       } catch (e) { document.getElementById('upSt').textContent = '通信エラー: ' + e.message; document.getElementById('upSt').className = 'status err'; uploaded.booth = false; }
-      hideProgress();
       btn.disabled = false; btn.textContent = '集約して統合';
       document.getElementById('toS').disabled = true;
       if (uploaded.src && uploaded.booth) {
         const toS = document.getElementById('toS'); toS.textContent = '読み込み中...';
-        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        hideProgress(); toS.textContent = '次へ: 設定 →';
+        toS.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
     }
@@ -1781,9 +1773,8 @@
       document.getElementById('toS').disabled = true;
       if (ready) {
         const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
-        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        hideProgress(); btn.textContent = '次へ: 設定 →';
+        btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !ready;
     }
@@ -1795,7 +1786,9 @@
     function buildSettingsUI() {
       const g = document.getElementById('oGrid'); g.innerHTML = '';
       const opts = [...teacherList];
-      const optSet = new Set(opts); for (const d of D) { (OR[d] || []).forEach(c => { if (c && !optSet.has(c)) { opts.push(c); optSet.add(c); } }); }
+      const optSet = new Set(opts);
+      manualTeachers.forEach(t => { if (!optSet.has(t)) { opts.push(t); optSet.add(t); } });
+      for (const d of D) { (OR[d] || []).forEach(c => { if (c && !optSet.has(c)) { opts.push(c); optSet.add(c); } }); }
       for (const d of D) {
         const div = document.createElement('div'); div.className = 'si';
         if (!Array.isArray(OR[d])) OR[d] = OR[d] ? [OR[d]] : [''];
@@ -1806,7 +1799,7 @@
         });
         html += '<button type="button" style="background:#7c3aed;color:#fff;font-size:11px;padding:3px 8px;border:none;border-radius:4px;cursor:pointer;margin-top:2px" onclick="OR[\'' + d + '\'].push(\'\');buildSettingsUI()">＋ 追加</button>';
         div.innerHTML = html; g.appendChild(div);
-      } renderBP();
+      } renderBP(); renderManualTeachers();
     }
     function renderBP() {
       const g = document.getElementById('bpGrid'); g.innerHTML = ''; BP.forEach((bp, i) => {
@@ -1817,6 +1810,26 @@
       });
     }
     function addBP() { BP.push({ teacher: '', booth: 0 }); renderBP(); }
+    function addManualTeacher() {
+      const inp = document.getElementById('manualTeacherInput'); const name = inp.value.trim(); if (!name) return;
+      if (manualTeachers.includes(name)) { inp.value = ''; return; }
+      manualTeachers.push(name);
+      if (!teacherList.includes(name)) teacherList.push(name);
+      inp.value = ''; renderManualTeachers(); buildSettingsUI();
+    }
+    function removeManualTeacher(i) {
+      const name = manualTeachers[i]; manualTeachers.splice(i, 1);
+      renderManualTeachers(); buildSettingsUI();
+    }
+    function renderManualTeachers() {
+      const el = document.getElementById('manualTeacherList'); if (!el) return; el.innerHTML = '';
+      manualTeachers.forEach((t, i) => {
+        const tag = document.createElement('span');
+        tag.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#e8f5e9;border-radius:16px;font-size:13px;font-weight:500';
+        tag.innerHTML = escHtml(t) + '<button style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px;padding:0;line-height:1" onclick="removeManualTeacher(' + i + ')">✕</button>';
+        el.appendChild(tag);
+      });
+    }
 
     let progTimer = null;
     function showProgress(pct, msg, title) {
@@ -1845,7 +1858,7 @@
       showProgress(5, 'データを読み込んでいます', 'スケジュール生成中'); startProgressAnim();
       const bpObj = {}; BP.forEach(bp => { if (bp.teacher && bp.booth) bpObj[bp.teacher] = bp.booth; });
       try {
-        const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ officeRule: OR, boothPref: bpObj }) }); const d = await res.json();
+        const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ officeRule: OR, boothPref: bpObj, manualTeachers: manualTeachers }) }); const d = await res.json();
         if (d.error) {
           hideProgress(); st.textContent = 'エラー: ' + d.error; st.className = 'status err';
           if (d.error.includes('アップロード') || d.error.includes('不足') || d.error.includes('見つかりません')) { st.textContent += ' ファイルを再アップロードしてください。'; setTimeout(() => go('upload'), 2000); } return;
@@ -2369,6 +2382,7 @@
               const dash = document.createElement('span'); dash.className = 'tn'; dash.textContent = '-'; dash.style.opacity = '.4'; dash.style.cursor = 'pointer';
               td.appendChild(dash);
               td.addEventListener('click', e => { e.stopPropagation(); showEmptyBoothPicker(td, wi, d, ts, bi); });
+              if (b && b.slots && b.slots.length) { b.slots.forEach((sl, si) => { td.appendChild(mkChip(sl, wi, d, ts, bi, si, b.teacher || '')); }); }
             }
             td.addEventListener('dragover', e => {
               e.preventDefault(); if (!dragData) return; const bth = bs[bi];
@@ -2600,7 +2614,9 @@
               const chip = document.createElement('div');
               const ng = isNg(s.name, it.teacher);
               chip.className = 'cal-slot' + (ng ? ' ng' : ''); chip.draggable = true;
-              chip.innerHTML = escHtml((TSR[it.ts] || it.ts).slice(0, 5)) + ' ' + escHtml(it.subj) + ' <span style="font-size:9px;color:' + (ng ? '#c62828' : '#666') + '">' + escHtml(it.teacher) + '</span>';
+              const tName = it.teacher || '未配置';
+              chip.innerHTML = escHtml((TSR[it.ts] || it.ts).slice(0, 5)) + ' ' + escHtml(it.subj) + ' <span style="font-size:9px;color:' + (ng ? '#c62828' : (it.teacher ? '#666' : '#ea580c')) + '">' + escHtml(tName) + '</span>';
+              if (!it.teacher) chip.classList.add('no-teacher');
               chip.addEventListener('dragstart', e => { dragData = { type: 'calSlot', wi: it.wi, day: it.day, ts: it.ts, bi: it.bi, si: it.si, slot: [it.grade, s.name, it.subj] }; chip.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
               chip.addEventListener('dragend', () => { chip.style.opacity = '1'; dragData = null; });
               ((it_) => { chip.addEventListener('click', e => { e.stopPropagation(); showSlotEditModal(s, it_); }); })(it);

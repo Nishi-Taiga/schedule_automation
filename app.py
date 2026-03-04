@@ -595,18 +595,22 @@ def parse_survey_file(file_path):
                         break
             if raw_name:
                 break
+    # ファイル名からもフルネームを抽出（例: survey_井上 玲也クリスチャン_202603シート.xlsx）
+    basename = os.path.basename(file_path)
+    if basename.startswith('survey_'):
+        basename = basename[7:]
+    filename_name = basename.split('_')[0].strip()
+
+    # セルの名前が単一語（名前のみ）でファイル名に姓名がある場合、ファイル名を優先
+    if raw_name and filename_name:
+        cell_parts = str(raw_name).replace('\u3000', ' ').split()
+        fn_parts = filename_name.replace('\u3000', ' ').split()
+        if len(cell_parts) == 1 and len(fn_parts) >= 2:
+            raw_name = filename_name
+    elif not raw_name and filename_name:
+        raw_name = filename_name
+
     teacher_name = to_short(raw_name) if raw_name else None
-    if not teacher_name:
-        # ファイル名から講師名を推定（例: 飯村　定子_202603シート.xlsx）
-        basename = os.path.basename(file_path)
-        if basename.startswith('survey_'):
-            basename = basename[7:]  # 'survey_' プレフィックスを除去
-        name_part = basename.split('_')[0].strip()
-        if name_part:
-            teacher_name = to_short(name_part)
-            if teacher_name:
-                raw_name = name_part
-                print(f"[survey] ファイル名から講師名を推定: {teacher_name} (from {os.path.basename(file_path)})", flush=True)
     if not teacher_name:
         print(f"[survey] 講師名を検出できません: {file_path}", flush=True)
         return None
@@ -1652,6 +1656,7 @@ def generate():
     office_rule = data.get('officeRule', {d: [] for d in DAYS})
     booth_pref_ui = data.get('boothPref', {})
     booth_pref_ui = {k: int(v) for k, v in booth_pref_ui.items() if v}
+    manual_teachers = data.get('manualTeachers', [])
 
     try:
         # ブース表xlsxから全データを読み込み
@@ -1666,6 +1671,22 @@ def generate():
         wt = load_weekly_teachers(files['src'])
         if not wt:
             return jsonify({'error': '元シートから出勤講師データを読み取れませんでした。シートに講師データが含まれているか確認してください。'}), 400
+
+        # 手動追加講師を全週・全時間帯に追加
+        if manual_teachers:
+            print(f"[generate] manual teachers: {manual_teachers}", flush=True)
+            for wi in range(len(wt)):
+                for day in DAYS:
+                    if day not in wt[wi]:
+                        wt[wi][day] = {}
+                    day_times = SATURDAY_TIMES if day == '土' else WEEKDAY_TIMES
+                    for tl in day_times:
+                        ts = TIME_SHORT[tl]
+                        if ts not in wt[wi][day]:
+                            wt[wi][day][ts] = []
+                        for t in manual_teachers:
+                            if t not in wt[wi][day][ts]:
+                                wt[wi][day][ts].append(t)
 
         # ブース表シート数に合わせて週数を制限（メタシートを除外）
         valid_booth_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
