@@ -1368,7 +1368,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.10</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.11</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1586,6 +1586,9 @@
     function filterXlsx(fileList) { return Array.from(fileList).filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$')); }
     async function onFolderSingle(inp, key) {
       const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      // 複数ファイル: 自動でバッチモードに切り替え
+      if (files.length > 1 && key === 'src') { setSrcMode('survey'); await onFolderSurvey(inp); return; }
+      if (files.length > 1 && key === 'booth') { setBoothMode('consolidate'); consolMeta = null; onFolderWeeks(inp); await doConsolidate(); return; }
       const f = files[0];
       if (key === 'saved') {
         const row = document.getElementById('uSaved'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
@@ -1719,7 +1722,7 @@
       document.getElementById('consolBtn').disabled = !(consolMeta && consolWeeks);
     }
     async function doConsolidate() {
-      if (!consolMeta || !consolWeeks) return;
+      if (!consolWeeks) return;
       const btn = document.getElementById('consolBtn'); btn.disabled = true; btn.textContent = '集約中...';
       document.getElementById('consolResult').innerHTML = ''; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
       showProgress(20, 'ブース表を集約しています...', 'ブース表集約中'); startProgressAnim(20, p => 'ファイルを処理しています...');

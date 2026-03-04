@@ -458,6 +458,15 @@ def load_weekly_teachers(path):
         if 'ブース表' in sn:
             target_sheets.append(sn)
 
+    # フォールバック: 「ブース表」を含むシートがなければメタシート以外の全可視シートを対象
+    if not target_sheets:
+        for sn in wb.sheetnames:
+            if wb[sn].sheet_state != 'visible':
+                continue
+            if any(k in sn for k in META_KEYWORDS):
+                continue
+            target_sheets.append(sn)
+
     for sn in target_sheets:
         ws = wb[sn]
         week = {}
@@ -1098,6 +1107,8 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         return (ch[1], ch[2], ch[3]), None
 
     def distribute(total, weeks):
+        if weeks <= 0:
+            return []
         t = [total//weeks]*weeks
         for i in range(total%weeks): t[i] += 1
         random.shuffle(t)
@@ -1641,6 +1652,8 @@ def generate():
         booth_pref = {**file_booth_pref, **booth_pref_ui}
 
         wt = load_weekly_teachers(files['src'])
+        if not wt:
+            return jsonify({'error': '元シートから出勤講師データを読み取れませんでした。シートに講師データが含まれているか確認してください。'}), 400
 
         # ブース表シート数に合わせて週数を制限（メタシートを除外）
         valid_booth_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
