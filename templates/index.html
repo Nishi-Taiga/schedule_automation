@@ -1380,7 +1380,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.8.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.8.1</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1567,9 +1567,11 @@
     async function onLoadSaved(inp) {
       const f = inp.files[0]; if (!f) return;
       const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
+      showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
       const fd = new FormData(); fd.append('file', f);
       try {
         const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json();
+        hideProgress();
         if (res.ok && d.ok) {
           row.classList.add('done'); row.querySelector('.icon').textContent = '✅';
           row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
@@ -1579,14 +1581,16 @@
         }
         else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
       }
-      catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
+      catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
     async function onLoadJson(inp) {
       const f = inp.files[0]; if (!f) return;
       const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
+      showProgress(20, 'JSONバックアップを読み込んでいます...', '読み込み中');
       const fd = new FormData(); fd.append('file', f);
       try {
         const res = await fetch('/api/restore_json', { method: 'POST', body: fd }); const d = await res.json();
+        hideProgress();
         if (res.ok && d.ok) {
           row.classList.add('done'); row.querySelector('.icon').textContent = '✅';
           row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
@@ -1596,30 +1600,31 @@
         }
         else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
       }
-      catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
+      catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
     window.addEventListener('DOMContentLoaded', () => { checkSavedState(); });
 
     // === Folder upload helper ===
     function filterXlsx(fileList) { return Array.from(fileList).filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$')); }
     async function onFolderSingle(inp, key) {
-      const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
       // 複数ファイル: 自動でバッチモードに切り替え
       if (files.length > 1 && key === 'src') { setSrcMode('survey'); await onFolderSurvey(inp); return; }
       if (files.length > 1 && key === 'booth') { setBoothMode('consolidate'); consolMeta = null; onFolderWeeks(inp); await doConsolidate(); return; }
       const f = files[0];
       if (key === 'saved') {
         const row = document.getElementById('uSaved'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
+        showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
         const fd = new FormData(); fd.append('file', f);
         try {
-          const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json();
+          const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json(); hideProgress();
           if (res.ok && d.ok) {
             row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
             R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); go('result'); rR(); showSaveIndicator('スケジュールを復元しました');
           }
           else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
         }
-        catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; }
+        catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; }
         return;
       }
       // src or booth
@@ -1633,16 +1638,17 @@
       catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; uploaded[key] = false; }
       const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = true;
       if (ready) {
-        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        btn.textContent = '次へ: 設定 →';
+        hideProgress(); btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !ready;
     }
     async function onFolderSurvey(inp) {
-      const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
       const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
       desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
+      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
       const fd = new FormData(); files.forEach(f => fd.append('surveys', f));
       try {
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
@@ -1653,16 +1659,16 @@
         else { console.error('[survey] error:', JSON.stringify(d)); desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false; }
       }
       catch (e) { console.error('[survey] exception:', e); desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
-      document.getElementById('toS').disabled = true;
+      hideProgress(); document.getElementById('toS').disabled = true;
       if (uploaded.src && uploaded.booth) {
-        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
+        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        btn.textContent = '次へ: 設定 →';
+        hideProgress(); btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
     }
     function onFolderWeeks(inp) {
-      const files = filterXlsx(inp.files); if (!files.length) { alert('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
       consolWeeks = files;
       document.getElementById('consolWeekZone').classList.add('done');
       document.getElementById('consolWeekDesc').textContent = files.length + '件のファイルを選択';
@@ -1688,6 +1694,7 @@
       const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
       desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
       document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
+      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
       const fd = new FormData(); for (let i = 0; i < files.length; i++)fd.append('surveys', files[i]);
       try {
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
@@ -1701,11 +1708,13 @@
           if (d.details) document.getElementById('upSt').innerHTML = d.details.map(e => '<div>' + escHtml(e) + '</div>').join(''); document.getElementById('upSt').className = 'status err';
         }
       } catch (e) { desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
+      hideProgress();
       document.getElementById('toS').disabled = true;
       if (uploaded.src && uploaded.booth) {
         const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
+        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        btn.textContent = '次へ: 設定 →';
+        hideProgress(); btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
     }
@@ -1738,6 +1747,7 @@
       if (!consolWeeks) return;
       const btn = document.getElementById('consolBtn'); btn.disabled = true; btn.textContent = '集約中...';
       document.getElementById('consolResult').innerHTML = ''; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
+      showProgress(20, 'ブース表を集約しています...', 'ブース表集約中'); startProgressAnim(20, p => 'ファイルを処理しています...');
       const fd = new FormData();
       if (consolMeta) fd.append('meta', consolMeta);
       for (let i = 0; i < consolWeeks.length; i++)fd.append('weeks', consolWeeks[i]);
@@ -1749,12 +1759,14 @@
           if (d.errors && d.errors.length) { document.getElementById('upSt').textContent = '一部エラー: ' + d.errors.join(', '); document.getElementById('upSt').className = 'status err'; }
         } else { document.getElementById('upSt').textContent = 'エラー: ' + (d.error || '不明'); document.getElementById('upSt').className = 'status err'; uploaded.booth = false; }
       } catch (e) { document.getElementById('upSt').textContent = '通信エラー: ' + e.message; document.getElementById('upSt').className = 'status err'; uploaded.booth = false; }
+      hideProgress();
       btn.disabled = false; btn.textContent = '集約して統合';
       document.getElementById('toS').disabled = true;
       if (uploaded.src && uploaded.booth) {
         const toS = document.getElementById('toS'); toS.textContent = '読み込み中...';
+        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        toS.textContent = '次へ: 設定 →';
+        hideProgress(); toS.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !(uploaded.src && uploaded.booth);
     }
@@ -1773,8 +1785,9 @@
       document.getElementById('toS').disabled = true;
       if (ready) {
         const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
+        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
         try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        btn.textContent = '次へ: 設定 →';
+        hideProgress(); btn.textContent = '次へ: 設定 →';
       }
       document.getElementById('toS').disabled = !ready;
     }
@@ -1891,7 +1904,7 @@
         const d = await res.json();
         showCheckResults(d);
       } catch (e) {
-        alert('チェックエラー: ' + e.message);
+        showUpErr('チェックエラー: ' + escHtml(e.message));
       } finally {
         btn.disabled = false; btn.textContent = '🔍 チェック';
       }
@@ -2286,7 +2299,7 @@
     function addSlotManual(wi, day, ts, bi) {
       const name = document.getElementById('newSlotName').value;
       const subj = document.getElementById('newSlotSubj').value;
-      if (!name || !subj) { alert('生徒と科目を入力してください'); return; }
+      if (!name || !subj) { showUpErr('生徒と科目を入力してください'); return; }
       const st = R.students.find(s => s.name === name);
       const grade = st ? st.grade : '?';
       R.schedule[wi][day][ts][bi].slots.push([grade, name, subj]);
@@ -2688,7 +2701,7 @@
           }
         }
       }
-      if (!options.length) { alert('この曜日に空きブースがありません'); return; }
+      if (!options.length) { showUpErr('この曜日に空きブースがありません'); return; }
       const root = document.getElementById('modalRoot');
       const bg = document.createElement('div'); bg.className = 'modal-bg';
       const modal = document.createElement('div'); modal.className = 'modal';

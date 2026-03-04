@@ -227,10 +227,15 @@ def _build_name_map(full_names):
     global NAME_MAP
     NAME_MAP.clear()
     surname_groups = defaultdict(list)
+    seen = set()
     for full in full_names:
-        parts = str(full).replace('\u3000', ' ').split()
+        full_str = str(full).strip()
+        if full_str in seen:
+            continue
+        seen.add(full_str)
+        parts = full_str.replace('\u3000', ' ').split()
         if len(parts) >= 2:
-            surname_groups[parts[0]].append((full, parts))
+            surname_groups[parts[0]].append((full_str, parts))
     for surname, entries in surname_groups.items():
         if len(entries) > 1:
             for full, parts in entries:
