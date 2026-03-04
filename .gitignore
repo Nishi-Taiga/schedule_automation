@@ -1,7 +1,12 @@
-# 除外するファイル
-202511_ブース表元シート_1.xlsx
-ブース表_202511_1_merged.xlsm
+# データファイル（個人情報を含む Excel 等）
+files/
+*.xlsx
+*.xlsm
+
+# テスト・デバッグ出力
+out.txt
 test_output.xlsx
+verify_fixes.py
 
 # 一般的な除外パターン
 *.log
@@ -10,7 +15,21 @@ test_output.xlsx
 .DS_Store
 Thumbs.db
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
 # Node.js
 node_modules/
 package-lock.json
-__pycache__/
+
+# IDE / エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code ローカル設定
+.claude/
