@@ -4,15 +4,26 @@
 Booth Schedule Generator – Cloud Edition (Render)
 Flask + gunicorn + openpyxl
 """
-import os, sys, json, random, threading, tempfile, shutil, time, secrets, atexit, traceback
+import os
+import sys
+import json
+import random
+import re
+import threading
+import tempfile
+import shutil
+import time
+import secrets
+import atexit
+import traceback
+import datetime as _dt
+import calendar
 from copy import copy
 from collections import defaultdict
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
-
-random.seed(42)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB上限
@@ -197,41 +208,36 @@ def validate_file(f):
         return False, f'許可されていないファイル形式です: {ext}'
     return True, None
 
-RESULT = {}  # 後方互換（セッション内に移行済み）
-
 # ========== 定数 ==========
 DAYS = ['月','火','水','木','金','土']
 WEEKDAY_TIMES = ['16:00','17:05','18:10','19:15','20:20']
 SATURDAY_TIMES = ['14:55','16:00','17:05','18:10']
 ALL_TIMES = ['14:55','16:00','17:05','18:10','19:15','20:20']
 TIME_SHORT = {'14:55':'14','16:00':'16','17:05':'17','18:10':'18','19:15':'19','20:20':'20'}
+TIME_SHORT_REV = {v: k for k, v in TIME_SHORT.items()}
 MAX_BOOTHS = 6
 # メタシート判定キーワード（週シートと区別するため）
 # load_teacher_skills の検出キーワードと一致させること
 META_KEYWORDS = ['必要コマ', '一覧', 'ブース希望', '指導可能', 'スキル']
 
-NAME_MAP = {}
-for full, short in [
-    ('寒河江　道也','寒河江T'),('寒河江 道也','寒河江T'),
-    ('若林　鈴華','若林T'),('若林 鈴華','若林T'),
-    ('石川　隆斗','隆斗T'),('石川 隆斗','隆斗T'),
-    ('石川　瑠璃','瑠璃T'),('石川 瑠璃','瑠璃T'),
-    ('田村　倫子','田村T'),('田村 倫子','田村T'),
-    ('平畑　美優奏','平畑T'),('平畑 美優奏','平畑T'),
-    ('粉川　仁','粉川T'),('粉川 仁','粉川T'),
-    ('小山　桜','小山T'),('小山 桜','小山T'),
-    ('橋本　穂果','橋本T'),('橋本 穂果','橋本T'),
-    ('後藤　凜','後藤T'),('後藤 凜','後藤T'),
-    ('渡邉　樹希','渡邉T'),('渡邉 樹希','渡邉T'),
-    ('越智　三佳','越智T'),('越智 三佳','越智T'),
-    ('井上　玲也','井上T'),('井上 玲也','井上T'),
-    ('西　泰我','西T'),('西 泰我','西T'),
-    ('飯村　定子','飯村T'),('飯村 定子','飯村T'),
-]:
-    NAME_MAP[full] = short
+NAME_MAP = {}  # 動的に構築（_build_name_map で同姓講師を自動検出）
 
-# デフォルト講師ブース希望（UI から変更可能）
-DEFAULT_BOOTH_PREF = {'若林T':1, '粉川T':3, '田村T':4}
+def _build_name_map(full_names):
+    """同姓講師を自動検出し、名前（ファーストネーム）+'T' で区別する。"""
+    global NAME_MAP
+    NAME_MAP.clear()
+    surname_groups = defaultdict(list)
+    for full in full_names:
+        parts = str(full).replace('\u3000', ' ').split()
+        if len(parts) >= 2:
+            surname_groups[parts[0]].append((full, parts))
+    for surname, entries in surname_groups.items():
+        if len(entries) > 1:
+            for full, parts in entries:
+                NAME_MAP[full] = parts[1] + 'T'
+
+# デフォルト講師ブース希望（ブース表から読み込み or UIで設定）
+DEFAULT_BOOTH_PREF = {}
 
 SRC_TIME_SLOTS = [
     (6,'14:55',6),(19,'16:00',6),(32,'17:05',6),
@@ -346,7 +352,6 @@ def parse_ng_dates(val, year, month):
     形式例: '2/5', '2/1-2/7', '2/19,2/24,2/25', '12/5'
     """
     if not val: return set()
-    import datetime as _dt
     day_names = ['月','火','水','木','金','土','日']
     result = set()
 
@@ -467,6 +472,20 @@ def load_weekly_teachers(path):
                 continue
             target_sheets.append(sn)
 
+    # Pass 1: 全講師フルネームを収集して同姓検出
+    all_full_names = []
+    for sn in target_sheets:
+        ws = wb[sn]
+        for day in DAYS:
+            col = SRC_DAY_COLS[day]
+            for start, tl, nb in SRC_TIME_SLOTS:
+                for b in range(nb):
+                    v = ws.cell(start+b*2, col).value
+                    if v and str(v).strip():
+                        all_full_names.append(str(v).strip())
+    _build_name_map(all_full_names)
+
+    # Pass 2: 通常パース
     for sn in target_sheets:
         ws = wb[sn]
         week = {}
@@ -510,7 +529,6 @@ WEEKDAY_NORMALIZE = {
 
 def _compute_month_week_map(year, month):
     """月の各日を週インデックス（1始まり）にマッピング。月〜土を1週とする。"""
-    import datetime as _dt, calendar
     last_day = calendar.monthrange(year, month)[1]
     week_map = {}
     current_week = 0
@@ -542,7 +560,6 @@ def _get_merged_cell_value(ws, row, col):
 
 def _excel_serial_to_date(serial):
     """Excel シリアル値を date に変換"""
-    import datetime as _dt
     try:
         return (_dt.datetime(1899, 12, 30) + _dt.timedelta(days=int(serial))).date()
     except Exception:
@@ -550,8 +567,6 @@ def _excel_serial_to_date(serial):
 
 def parse_survey_file(file_path):
     """講師回答xlsxファイルを解析して講師名と出勤可能日時を返す"""
-    import datetime as _dt
-    import re as _re
     wb = openpyxl.load_workbook(file_path, data_only=True)
 
     # データシートを探す（「シート」を含むシート名、なければ先頭シート）
@@ -617,11 +632,11 @@ def parse_survey_file(file_path):
             for c in range(1, ws.max_column + 1):
                 v = _get_merged_cell_value(ws, r, c)
                 if v and isinstance(v, str):
-                    m = _re.search(r'(\d{4})\s*年\s*(\d{1,2})\s*月', v)
+                    m = re.search(r'(\d{4})\s*年\s*(\d{1,2})\s*月', v)
                     if m:
                         year, month = int(m.group(1)), int(m.group(2))
                         break
-                    m2 = _re.search(r'(\d{1,2})\s*月', v)
+                    m2 = re.search(r'(\d{1,2})\s*月', v)
                     if m2 and year is None:
                         month = int(m2.group(1))
                         year = _dt.date.today().year
@@ -913,7 +928,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
             if holidays and wi < len(holidays) and holidays[wi].get(d):
                 ot[d] = '休塾日'
             else:
-                candidates = office_rule.get(d, ['石川T'])
+                candidates = office_rule.get(d, [])
                 d_data = weekly_teachers[wi].get(d, {})
                 ot[d] = resolve_office_teacher(d, candidates, d_data)
         office_teachers.append(ot)
@@ -1054,17 +1069,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                             
                             is_continuous = False
                             for et_short in existing_on_day:
-                                # existingは '16' 形式の場合と '16:00' 形式の場合があるため正規化が必要
-                                # TIME_SHORTの逆マッピングまたはループで探す
-                                # ここでは existing が (day, ts_short) で入っている前提
-                                # ts_short ('16') -> tl_long ('16:00')
-                                et_long = TSR.get(et_short) if 'TSR' in globals() else None
-                                if not et_long:
-                                    # TSRがない場合は自力で探す (TIME_SHORTの逆)
-                                    for k, v in TIME_SHORT.items():
-                                        if v == et_short:
-                                            et_long = k
-                                            break
+                                et_long = TIME_SHORT_REV.get(et_short)
                                 if et_long in times:
                                     ex_idx = times.index(et_long)
                                     diff = abs(curr_idx - ex_idx)
@@ -1180,7 +1185,6 @@ def extract_week_dates(booth_wb, num_weeks):
     _compute_month_week_map を使用して正確な週境界で日付をマッピングする。
     Returns: {'year':int, 'month':int, 'weeks':[ {day_name: day_number, ...}, ... ]}
     """
-    import datetime as _dt, re
     week_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
 
     year, month = None, None
@@ -1428,6 +1432,12 @@ def upload_surveys():
     if not survey_results:
         return jsonify({'error': '有効な講師回答ファイルがありません', 'details': errors}), 400
 
+    # 同姓講師を自動検出し、短縮名を再計算
+    all_full = [sr['full_name'] for sr in survey_results if sr.get('full_name')]
+    _build_name_map(all_full)
+    for sr in survey_results:
+        sr['name'] = to_short(sr.get('full_name', sr['name']))
+
     # 集約して元シートExcelを生成
     weekly_teachers = aggregate_surveys_to_weekly(survey_results)
     src_path = os.path.join(sd['dir'], 'generated_src.xlsx')
@@ -1465,12 +1475,12 @@ def consolidate_booth():
                 # 一時保存して中身を確認
                 temp_path = os.path.join(sd['dir'], 'tmp_detect_' + f.filename)
                 f.save(temp_path)
+                f.stream.seek(0)  # save()でストリームが消費されるため、ポインタを先頭に戻す
                 wb = openpyxl.load_workbook(temp_path, read_only=True)
                 has_meta = any(any(k in sn for k in META_KEYWORDS) for sn in wb.sheetnames)
                 wb.close()
                 if has_meta and not detected_meta:
                     detected_meta = f
-                    # 検出用ファイルをメタ用として再利用するため、ポインタを戻すなどの処理は不要（再度saveする）
                     print(f"[consolidate] メタファイルを自動検出: {f.filename}", flush=True)
                 else:
                     remaining_weeks.append(f)
@@ -1635,9 +1645,7 @@ def generate():
             return jsonify({'error': f'{k}ファイルが見つかりません。再度アップロードしてください。'}), 400
 
     data = request.get_json() or {}
-    office_rule = data.get('officeRule', {
-        '月':['石川T'],'火':['石川T'],'水':['西T'],'木':['石川T'],'金':['石川T'],'土':['越智T']
-    })
+    office_rule = data.get('officeRule', {d: [] for d in DAYS})
     booth_pref_ui = data.get('boothPref', {})
     booth_pref_ui = {k: int(v) for k, v in booth_pref_ui.items() if v}
 
@@ -1789,15 +1797,14 @@ def download():
         state_json['placed'] = placed
 
         # office_teachers が不足している場合（古いバックアップ等）、デフォルト設定で補完
-        _DEFAULT_RULE = {'月':['石川T'],'火':['石川T'],'水':['西T'],'木':['石川T'],'金':['石川T'],'土':['越智T']}
         ot_list = list(res.get('office_teachers', []))
-        rule = res.get('office_rule') or _DEFAULT_RULE
+        rule = res.get('office_rule') or {d: [] for d in DAYS}
         num_sched_weeks = len(res.get('schedule', []))
         while len(ot_list) < num_sched_weeks:
             if ot_list:
                 ot_list.append(dict(ot_list[-1]))
             else:
-                ot_list.append({d: rule[d][0] for d in DAYS if rule.get(d)})
+                ot_list.append({d: rule[d][0] if rule.get(d) else None for d in DAYS})
 
         write_excel(
             res['schedule'],

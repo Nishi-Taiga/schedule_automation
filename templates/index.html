@@ -1368,7 +1368,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.5.11</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.6.1</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1509,9 +1509,14 @@
   <div id="saveIndicator" class="save-indicator">保存しました</div>
   <div id="modalRoot"></div>
   <script>
+    function escHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
     const D = ['月', '火', '水', '木', '金', '土'], WT = ['16:00', '17:05', '18:10', '19:15', '20:20'], ST = ['14:55', '16:00', '17:05', '18:10'];
     const TL = ['14:55', '16:00', '17:05', '18:10', '19:15', '20:20'], TS = { '14:55': '14', '16:00': '16', '17:05': '17', '18:10': '18', '19:15': '19', '20:20': '20' }, TSR = { '14': '14:55', '16': '16:00', '17': '17:05', '18': '18:10', '19': '19:15', '20': '20:20' }, BL = ['①', '②', '③', '④', '⑤', '⑥'];
-    let OR = { 月: ['石川T'], 火: ['石川T'], 水: ['西T'], 木: ['石川T'], 金: ['石川T'], 土: ['越智T', '粉川T'] };
+    let OR = { 月: [], 火: [], 水: [], 木: [], 金: [], 土: [] };
     let BP = [], R = null, PW = 0, uploaded = {}, edited = false, dragData = null, calStudent = null, teacherList = [];
     let ngMap = {}, ngStudentMap = {};
     function buildNgMap() { ngMap = {}; ngStudentMap = {}; if (!R || !R.students) return; R.students.forEach(s => { ngMap[s.name] = new Set(s.ng_teachers || []); ngStudentMap[s.name] = new Set(s.ng_students || []) }); }
@@ -1530,7 +1535,7 @@
         if (d.has_state && d.schedule) {
           const wrap = document.getElementById('pUpload');
           const banner = document.createElement('div'); banner.className = 'restore-banner'; banner.id = 'restoreBanner';
-          banner.innerHTML = '<span class="msg">前回の作業データがあります（' + d.placed + '/' + d.total + 'コマ配置済み）</span><div class="actions"><button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="restoreState()">復元する</button><button class="btn btn-o" style="padding:6px 14px;font-size:12px" onclick="dismissRestore()">新規作成</button></div>';
+          banner.innerHTML = '<span class="msg">前回の作業データがあります（' + escHtml(d.placed) + '/' + escHtml(d.total) + 'コマ配置済み）</span><div class="actions"><button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="restoreState()">復元する</button><button class="btn btn-o" style="padding:6px 14px;font-size:12px" onclick="dismissRestore()">新規作成</button></div>';
           wrap.insertBefore(banner, wrap.firstChild);
           window._savedState = d;
         }
@@ -1632,7 +1637,7 @@
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
         if (res.ok && d.ok) {
           zone.classList.add('done'); desc.textContent = d.teacherCount + '名の講師データを集約（' + d.weeks + '週分）';
-          flist.innerHTML = d.teachers.map(t => '<span class="sf-item">' + t + '</span>').join(''); uploaded.src = true;
+          flist.innerHTML = d.teachers.map(t => '<span class="sf-item">' + escHtml(t) + '</span>').join(''); uploaded.src = true;
         }
         else { desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false; }
       }
@@ -1651,7 +1656,7 @@
       document.getElementById('consolWeekZone').classList.add('done');
       document.getElementById('consolWeekDesc').textContent = files.length + '件のファイルを選択';
       const flist = document.getElementById('consolWeekList');
-      flist.innerHTML = files.map(f => '<span class="cf-item">' + f.name + '</span>').join('');
+      flist.innerHTML = files.map(f => '<span class="cf-item">' + escHtml(f.name) + '</span>').join('');
       // フォルダ選択の場合はメタファイルがなくても（後で自動判定されるので）ボタンを有効化する
       document.getElementById('consolBtn').disabled = !consolWeeks;
     }
@@ -1678,12 +1683,12 @@
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
         if (res.ok && d.ok) {
           zone.classList.add('done'); desc.textContent = d.teacherCount + '名の講師データを集約（' + d.weeks + '週分）';
-          flist.innerHTML = d.teachers.map(t => '<span class="sf-item">' + t + '</span>').join('');
+          flist.innerHTML = d.teachers.map(t => '<span class="sf-item">' + escHtml(t) + '</span>').join('');
           uploaded.src = true;
           if (d.errors && d.errors.length) { document.getElementById('upSt').textContent = '一部エラー: ' + d.errors.join(', '); document.getElementById('upSt').className = 'status err'; }
         } else {
           desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false;
-          if (d.details) document.getElementById('upSt').innerHTML = d.details.map(e => '<div>' + e + '</div>').join(''); document.getElementById('upSt').className = 'status err';
+          if (d.details) document.getElementById('upSt').innerHTML = d.details.map(e => '<div>' + escHtml(e) + '</div>').join(''); document.getElementById('upSt').className = 'status err';
         }
       } catch (e) { desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
       hideProgress();
@@ -1718,7 +1723,7 @@
       document.getElementById('consolWeekZone').classList.add('done');
       document.getElementById('consolWeekDesc').textContent = files.length + '件のファイルを選択';
       const flist = document.getElementById('consolWeekList');
-      flist.innerHTML = Array.from(files).map(f => '<span class="cf-item">' + f.name + '</span>').join('');
+      flist.innerHTML = Array.from(files).map(f => '<span class="cf-item">' + escHtml(f.name) + '</span>').join('');
       document.getElementById('consolBtn').disabled = !(consolMeta && consolWeeks);
     }
     async function doConsolidate() {
@@ -1732,7 +1737,7 @@
       try {
         const res = await fetch('/api/consolidate_booth', { method: 'POST', body: fd }); const d = await res.json();
         if (res.ok && d.ok) {
-          document.getElementById('consolResult').innerHTML = '<div class="consol-result">✅ 統合完了: ' + d.weekCount + '週分のシートを統合<br>メタシート: ' + d.metaSheets.join(', ') + (d.removedSheets.length ? ' / 削除: ' + d.removedSheets.join(', ') : '') + '<br>最終シート構成: ' + d.finalSheets.join(', ') + '</div>';
+          document.getElementById('consolResult').innerHTML = '<div class="consol-result">✅ 統合完了: ' + escHtml(d.weekCount) + '週分のシートを統合<br>メタシート: ' + d.metaSheets.map(s => escHtml(s)).join(', ') + (d.removedSheets.length ? ' / 削除: ' + d.removedSheets.map(s => escHtml(s)).join(', ') : '') + '<br>最終シート構成: ' + d.finalSheets.map(s => escHtml(s)).join(', ') + '</div>';
           uploaded.booth = true;
           if (d.errors && d.errors.length) { document.getElementById('upSt').textContent = '一部エラー: ' + d.errors.join(', '); document.getElementById('upSt').className = 'status err'; }
         } else { document.getElementById('upSt').textContent = 'エラー: ' + (d.error || '不明'); document.getElementById('upSt').className = 'status err'; uploaded.booth = false; }
@@ -1753,12 +1758,12 @@
     function showUpErr(detail) { const st = document.getElementById('upSt'); st.className = 'status err'; st.innerHTML = detail; }
     async function onF(inp, key) {
       const f = inp.files[0]; if (!f) return; const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = 'アップロード中...'; row.classList.remove('done'); row.querySelector('.icon').textContent = '📄'; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
-      const maxSize = 10 * 1024 * 1024; if (f.size > maxSize) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'ファイルサイズ超過'; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ') は上限 10MB を超えています'); uploaded[key] = false; const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = !ready; return; }
+      const maxSize = 10 * 1024 * 1024; if (f.size > maxSize) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'ファイルサイズ超過'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ') は上限 10MB を超えています'); uploaded[key] = false; const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = !ready; return; }
       const fd = new FormData(); fd.append(key, f);
       try {
-        const res = await fetch('/api/upload', { method: 'POST', body: fd }); let d; try { d = await res.json(); } catch (pe) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'サーバーエラー (HTTP ' + res.status + ')'; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ' - レスポンス解析失敗'); uploaded[key] = false; return; }
-        if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; } else { const msg = d.error || '不明なエラー (HTTP ' + res.status + ')'; row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '失敗: ' + msg; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ': ' + msg); uploaded[key] = false; }
-      } catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; showUpErr('[' + key + '] <b>' + f.name + '</b> (' + fmtSize(f.size) + ')<br>通信エラー: ' + e.message + '<br><small>サーバーに接続できませんでした。ネットワーク接続・ファイルサイズを確認してください。</small>'); uploaded[key] = false; }
+        const res = await fetch('/api/upload', { method: 'POST', body: fd }); let d; try { d = await res.json(); } catch (pe) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'サーバーエラー (HTTP ' + res.status + ')'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ' - レスポンス解析失敗'); uploaded[key] = false; return; }
+        if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; } else { const msg = d.error || '不明なエラー (HTTP ' + res.status + ')'; row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '失敗: ' + msg; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ': ' + escHtml(msg)); uploaded[key] = false; }
+      } catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>通信エラー: ' + escHtml(e.message) + '<br><small>サーバーに接続できませんでした。ネットワーク接続・ファイルサイズを確認してください。</small>'); uploaded[key] = false; }
       const ready = uploaded.src && uploaded.booth;
       document.getElementById('toS').disabled = true;
       if (ready) {
@@ -1776,14 +1781,14 @@
     }
     function buildSettingsUI() {
       const g = document.getElementById('oGrid'); g.innerHTML = '';
-      const opts = teacherList.length ? [...teacherList] : ['石川T', '西T', '越智T', '寒河江T', '若林T', '隆斗T', '瑠璃T', '田村T', '粉川T', '平畑T', '後藤T', '渡邉T', '橋本T', '小山T', '井上T', '藤原T', '飯村T'];
+      const opts = [...teacherList];
       const optSet = new Set(opts); for (const d of D) { (OR[d] || []).forEach(c => { if (c && !optSet.has(c)) { opts.push(c); optSet.add(c); } }); }
       for (const d of D) {
         const div = document.createElement('div'); div.className = 'si';
-        if (!Array.isArray(OR[d])) OR[d] = [OR[d] || '石川T'];
+        if (!Array.isArray(OR[d])) OR[d] = OR[d] ? [OR[d]] : [''];
         let html = '<label>' + d + '曜</label>';
         OR[d].forEach((c, i) => {
-          const selHtml = opts.map(t => '<option value="' + t + '"' + (t === c ? ' selected' : '') + '>' + t + '</option>').join('');
+          const selHtml = opts.map(t => '<option value="' + escHtml(t) + '"' + (t === c ? ' selected' : '') + '>' + escHtml(t) + '</option>').join('');
           html += '<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center"><span style="font-size:11px;color:var(--ink3);min-width:16px">' + (i + 1) + '.</span><select style="flex:1" onchange="OR[\'' + d + '\'][' + i + ']=this.value"><option value="">-- 選択 --</option>' + selHtml + '</select>' + (OR[d].length > 1 ? '<button type="button" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px" onclick="OR[\'' + d + '\'].splice(' + i + ',1);buildSettingsUI()">✕</button>' : '') + '</div>';
         });
         html += '<button type="button" style="background:#7c3aed;color:#fff;font-size:11px;padding:3px 8px;border:none;border-radius:4px;cursor:pointer;margin-top:2px" onclick="OR[\'' + d + '\'].push(\'\');buildSettingsUI()">＋ 追加</button>';
@@ -1793,7 +1798,7 @@
     function renderBP() {
       const g = document.getElementById('bpGrid'); g.innerHTML = ''; BP.forEach((bp, i) => {
         const div = document.createElement('div'); div.className = 'bp-item';
-        div.innerHTML = '<input style="min-width:80px;max-width:100px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;font-weight:600" value="' + bp.teacher + '" onchange="BP[' + i + '].teacher=this.value">'
+        div.innerHTML = '<input style="min-width:80px;max-width:100px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;font-weight:600" value="' + escHtml(bp.teacher) + '" onchange="BP[' + i + '].teacher=this.value">'
           + '<select onchange="BP[' + i + '].booth=parseInt(this.value)||0"><option value="0">なし</option>' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (bp.booth === n ? ' selected' : '') + '>' + BL[n - 1] + '</option>').join('') + '</select>'
           + '<button style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--red)" onclick="BP.splice(' + i + ',1);renderBP()">✕</button>'; g.appendChild(div);
       });
@@ -1841,8 +1846,6 @@
     }
 
     async function dlExcel() { if (edited) { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); } window.location.href = '/api/download'; }
-
-    function countPlaced() { let c = 0; for (const w of R.schedule) for (const d of Object.values(w)) for (const bs of Object.values(d)) for (const b of bs) c += b.slots.length; return c; }
 
     // Navigate to student calendar
     function goStudent(name) { const idx = R.students.findIndex(s => s.name === name); if (idx < 0) return; calStudent = idx; PW = -2; rR(); }
@@ -2071,9 +2074,9 @@
       const el = document.createElement('div'); const ngT = isNg(slot[1], teacher); const ngS = isAdjacentNg(wi, day, ts, bi, slot[1]); const warn = ngT || ngS;
       el.className = 'slot-chip' + (warn ? ' ng' : ''); el.draggable = true;
       let wt = ngT ? 'NG講師:' + teacher : ''; if (ngS) wt += (wt ? ' / ' : '') + 'NG生徒が隣接';
-      const gSpan = '<span class="g">' + slot[0] + '</span>';
-      const sSpan = '<span class="s">' + slot[1] + '</span>';
-      const jSpan = '<span class="j">' + slot[2] + '</span>';
+      const gSpan = '<span class="g">' + escHtml(slot[0]) + '</span>';
+      const sSpan = '<span class="s">' + escHtml(slot[1]) + '</span>';
+      const jSpan = '<span class="j">' + escHtml(slot[2]) + '</span>';
       el.innerHTML = gSpan + sSpan + jSpan + (warn ? '<span style="color:var(--red);font-size:9px">⚠</span>' : '');
       el.title = wt;
       let dragged = false;
@@ -2084,7 +2087,7 @@
 
     function mkUnChip(u, ui) {
       const el = document.createElement('div'); el.className = 'slot-chip'; el.draggable = true;
-      el.innerHTML = '<span class="g">' + u.grade + '</span><span class="s">' + u.name + '</span><span class="j">' + u.subject + '</span>' + (u.reason ? '<span style="font-size:9px;color:var(--orange);margin-left:3px">' + u.reason + '</span>' : '');
+      el.innerHTML = '<span class="g">' + escHtml(u.grade) + '</span><span class="s">' + escHtml(u.name) + '</span><span class="j">' + escHtml(u.subject) + '</span>' + (u.reason ? '<span style="font-size:9px;color:var(--orange);margin-left:3px">' + escHtml(u.reason) + '</span>' : '');
       if (u.reason) el.title = u.reason;
       let dragged = false;
       el.addEventListener('dragstart', e => { dragged = true; dragData = { type: 'unplaced', ui, slot: [u.grade, u.name, u.subject] }; el.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
@@ -2246,9 +2249,6 @@
 
     function rW(wrap, wi) {
       const ws = R.schedule[wi];
-      // デバッグ: 各曜日・時間帯のブース数をコンソールに出力
-      console.log('=== 週' + wi + ' スケジュールデータ ===');
-      for (const d of D) { const dayData = ws[d] || {}; const summary = {}; for (const [t, bs] of Object.entries(dayData)) summary[t] = bs.length + 'ブース(生徒:' + bs.reduce((s, b) => s + b.slots.length, 0) + ')'; console.log(d + '曜:', summary); }
       const tbl = document.createElement('table'); tbl.className = 'sch';
       let hd = '<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>'; for (const d of D) { const dl = getDateLabel(wi, d); hd += '<th style="width:calc((100% - 82px)/6)' + (d === '土' ? ';background:#edf2f7' : '') + '">' + d + (dl ? '<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">' + dl + '</span>' : '') + '</th>'; }
       hd += '</tr><tr class="or"><td colspan="2">教室業務</td>';
@@ -2262,7 +2262,7 @@
           // 教室業務は全時間帯に渡るので、もしその日のいずれかの時間帯のブースにその講師がいたら赤くする、という仕様にする。
           const assignedInDay = getAssignedTeachers(wi, d);
           const isDup = assignedInDay.has(ov);
-          hd += '<td><span class="' + (isDup ? 'tn dup' : '') + '">' + ov + '</span></td>';
+          hd += '<td><span class="' + (isDup ? 'tn dup' : '') + '">' + escHtml(ov) + '</span></td>';
         }
       }
       hd += '</tr></thead>'; tbl.innerHTML = hd;
@@ -2334,7 +2334,7 @@
     function rU(wrap) {
       if (!R.unplaced.length) { wrap.innerHTML = '<p class="ap">✅ 全コマ配置済み</p>'; return; }
       let h = '<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th><th>理由</th></tr></thead><tbody>';
-      for (const u of R.unplaced) h += '<tr><td>' + u.grade + '</td><td>' + u.name + '</td><td>' + u.subject + '</td><td class="ct">' + u.count + '</td><td style="font-size:11px;color:var(--orange)">' + (u.reason || '') + '</td></tr>'; h += '</tbody></table>'; wrap.innerHTML = h;
+      for (const u of R.unplaced) h += '<tr><td>' + escHtml(u.grade) + '</td><td>' + escHtml(u.name) + '</td><td>' + escHtml(u.subject) + '</td><td class="ct">' + u.count + '</td><td style="font-size:11px;color:var(--orange)">' + escHtml(u.reason || '') + '</td></tr>'; h += '</tbody></table>'; wrap.innerHTML = h;
     }
 
     // === Student Calendar ===
@@ -2425,11 +2425,11 @@
       let availHtml = fmtAvail(s.avail);
       let backupHtml = fmtAvail(s.backup_avail);
       let fixedHtml = fmtFixed(s.fixed);
-      let wishHtml = (s.wish_teachers || []).map(t => '<span class="stu-tag wish">' + t + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
-      let ngTHtml = (s.ng_teachers || []).map(t => '<span class="stu-tag ng">' + t + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
-      let ngSHtml = (s.ng_students || []).map(t => '<span class="stu-tag ngs">' + t + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
+      let wishHtml = (s.wish_teachers || []).map(t => '<span class="stu-tag wish">' + escHtml(t) + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
+      let ngTHtml = (s.ng_teachers || []).map(t => '<span class="stu-tag ng">' + escHtml(t) + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
+      let ngSHtml = (s.ng_students || []).map(t => '<span class="stu-tag ngs">' + escHtml(t) + '</span>').join('') || '<span style="color:var(--ink3)">-</span>';
 
-      let html = '<h4>' + s.grade + ' ' + s.name + ' <span style="font-size:12px;font-weight:400;color:var(--ink3)">配置: ' + placedCount + '/' + totalNeeds + 'コマ';
+      let html = '<h4>' + escHtml(s.grade) + ' ' + escHtml(s.name) + ' <span style="font-size:12px;font-weight:400;color:var(--ink3)">配置: ' + placedCount + '/' + totalNeeds + 'コマ';
       if (unplacedForStudent > 0) html += ' <span style="color:var(--red)">未配置:' + unplacedForStudent + '</span>';
       html += '</span></h4>';
       html += '<div class="stu-info-grid">';
@@ -2440,7 +2440,7 @@
       html += '<div class="stu-info-item"><span class="label">希望講師</span><div class="value">' + wishHtml + '</div></div>';
       html += '<div class="stu-info-item"><span class="label">NG講師</span><div class="value">' + ngTHtml + '</div></div>';
       html += '<div class="stu-info-item"><span class="label">NG生徒</span><div class="value">' + ngSHtml + '</div></div>';
-      if (s.notes) { html += '<div class="stu-info-notes">備考: ' + s.notes + '</div>'; }
+      if (s.notes) { html += '<div class="stu-info-notes">備考: ' + escHtml(s.notes) + '</div>'; }
       html += '</div>';
       panel.innerHTML = html;
       return panel;
@@ -2532,7 +2532,7 @@
               const chip = document.createElement('div');
               const ng = isNg(s.name, it.teacher);
               chip.className = 'cal-slot' + (ng ? ' ng' : ''); chip.draggable = true;
-              chip.innerHTML = (TSR[it.ts] || it.ts).slice(0, 5) + ' ' + it.subj + ' <span style="font-size:9px;color:' + (ng ? '#c62828' : '#666') + '">' + it.teacher + '</span>';
+              chip.innerHTML = escHtml((TSR[it.ts] || it.ts).slice(0, 5)) + ' ' + escHtml(it.subj) + ' <span style="font-size:9px;color:' + (ng ? '#c62828' : '#666') + '">' + escHtml(it.teacher) + '</span>';
               chip.addEventListener('dragstart', e => { dragData = { type: 'calSlot', wi: it.wi, day: it.day, ts: it.ts, bi: it.bi, si: it.si, slot: [it.grade, s.name, it.subj] }; chip.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
               chip.addEventListener('dragend', () => { chip.style.opacity = '1'; dragData = null; });
               ((it_) => { chip.addEventListener('click', e => { e.stopPropagation(); showSlotEditModal(s, it_); }); })(it);
@@ -2570,8 +2570,8 @@
             const gi = R.unplaced.indexOf(u);
             for (let i = 0; i < u.count; i++) {
               const chip = document.createElement('div'); chip.className = 'slot-chip'; chip.draggable = true;
-              chip.innerHTML = '<span class="g">' + u.grade + '</span><span class="s">' + u.name + '</span><span class="j">' + u.subject + '</span>'
-                + (u.reason ? '<span style="font-size:9px;color:var(--orange);margin-left:4px">' + u.reason + '</span>' : '');
+              chip.innerHTML = '<span class="g">' + escHtml(u.grade) + '</span><span class="s">' + escHtml(u.name) + '</span><span class="j">' + escHtml(u.subject) + '</span>'
+                + (u.reason ? '<span style="font-size:9px;color:var(--orange);margin-left:4px">' + escHtml(u.reason) + '</span>' : '');
               chip.title = u.reason || '未配置';
               ((gi_) => {
                 chip.addEventListener('dragstart', e => { dragData = { type: 'unplaced', ui: gi_, slot: [u.grade, u.name, u.subject] }; chip.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
@@ -2585,7 +2585,7 @@
       } catch (e) {
         console.error('Error rendering student calendar:', e);
         const cw = document.getElementById('calWrap');
-        if (cw) cw.innerHTML = '<div style="color:var(--red);padding:20px;">カレンダー表示エラー: ' + e.message + '</div>';
+        if (cw) cw.innerHTML = '<div style="color:var(--red);padding:20px;">カレンダー表示エラー: ' + escHtml(e.message) + '</div>';
       }
     }
 
@@ -2616,7 +2616,7 @@
         const timesList = tOpts.map(o => o.time.slice(0, 5) + '(' + o.cnt + '/2)').join(', ');
         const btn = document.createElement('div'); btn.className = 'modal-opt';
         const ngMark = dd.slot ? isNg(dd.slot[1], teacher) : '';
-        btn.innerHTML = '<span class="t-name" style="' + (ngMark ? 'color:var(--red)' : '') + '">' + (ngMark ? '⚠ ' : '') + teacher + '</span><span class="t-info">' + timesList + '</span>';
+        btn.innerHTML = '<span class="t-name" style="' + (ngMark ? 'color:var(--red)' : '') + '">' + (ngMark ? '⚠ ' : '') + escHtml(teacher) + '</span><span class="t-info">' + escHtml(timesList) + '</span>';
         btn.onclick = () => {
           const pick = tOpts[0];
           if (dd.type === 'unplaced') { const u = R.unplaced[dd.ui]; if (u) { u.count--; if (u.count <= 0) R.unplaced.splice(dd.ui, 1); } }
@@ -2629,7 +2629,7 @@
         if (tOpts.length > 1) {
           for (const o of tOpts) {
             const sub = document.createElement('div'); sub.className = 'modal-opt'; sub.style.paddingLeft = '28px';
-            sub.innerHTML = '<span class="t-info">└ ' + o.time + ' (' + o.cnt + '/2)</span>';
+            sub.innerHTML = '<span class="t-info">└ ' + escHtml(o.time) + ' (' + o.cnt + '/2)</span>';
             sub.onclick = () => {
               if (dd.type === 'unplaced') { const u = R.unplaced[dd.ui]; if (u) { u.count--; if (u.count <= 0) R.unplaced.splice(dd.ui, 1); } }
               else { const srcWs = R.schedule[dd.wi]; srcWs[dd.day][dd.ts][dd.bi].slots.splice(dd.si, 1); }
@@ -2679,8 +2679,8 @@
       const modal = document.createElement('div'); modal.className = 'modal';
       modal.style.minWidth = '340px';
       modal.innerHTML = '<h3>✏️ 授業を変更</h3>'
-        + '<p style="font-size:12px;color:var(--ink3);margin-bottom:6px">' + student.grade + ' ' + sName + ' — ' + it.subj + '</p>'
-        + '<p style="font-size:11px;color:var(--ink3);margin-bottom:12px">現在: ' + curTime.slice(0, 5) + ' / ' + curTeacher + '</p>';
+        + '<p style="font-size:12px;color:var(--ink3);margin-bottom:6px">' + escHtml(student.grade) + ' ' + escHtml(sName) + ' — ' + escHtml(it.subj) + '</p>'
+        + '<p style="font-size:11px;color:var(--ink3);margin-bottom:12px">現在: ' + escHtml(curTime.slice(0, 5)) + ' / ' + escHtml(curTeacher) + '</p>';
 
       const opts = document.createElement('div'); opts.className = 'modal-opts';
 
@@ -2694,8 +2694,8 @@
           const isCur = o.isCurrent;
           btn.style.cssText = isCur ? 'background:#f0f5ff;border-color:var(--accent)' : '';
           btn.innerHTML = '<div><span class="t-name" style="' + (ng ? 'color:var(--red)' : '') + '">'
-            + (ng ? '⚠ ' : '') + o.teacher + '</span>'
-            + '<span style="font-size:10px;color:var(--ink3);margin-left:6px">' + o.time.slice(0, 5) + '</span></div>'
+            + (ng ? '⚠ ' : '') + escHtml(o.teacher) + '</span>'
+            + '<span style="font-size:10px;color:var(--ink3);margin-left:6px">' + escHtml(o.time.slice(0, 5)) + '</span></div>'
             + '<span class="t-info">' + (isCur ? '📍 現在' : '空き ' + o.cnt + '/2') + '</span>';
           if (!isCur) {
             ((o_) => {
