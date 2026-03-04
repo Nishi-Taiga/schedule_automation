@@ -1361,6 +1361,18 @@
       color: var(--ink3);
       line-height: 1.6
     }
+
+    .check-panel { margin: 12px 0; border-radius: 10px; overflow: hidden; }
+    .check-header { padding: 10px 16px; font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+    .check-header.has-error { background: #fef2f2; color: #b91c1c; }
+    .check-header.has-warn { background: #fffbeb; color: #92400e; }
+    .check-header.all-ok { background: #f0fdf4; color: #166534; }
+    .check-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-top: none; border-radius: 0 0 10px 10px; }
+    .check-item { padding: 8px 16px; font-size: 12px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 8px; }
+    .check-item:last-child { border-bottom: none; }
+    .check-item .badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+    .check-item .badge.err { background: #fecaca; color: #991b1b; }
+    .check-item .badge.wrn { background: #fef3c7; color: #92400e; }
   </style>
 </head>
 
@@ -1368,7 +1380,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.6.1</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.7.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1494,6 +1506,7 @@
           <div id="uBadge" class="badge-w" style="display:none"></div>
           <div id="mBadge" class="badge-m" style="display:none"></div>
           <div style="flex:1"></div>
+          <button class="btn btn-o" id="checkBtn" onclick="runCheck()">🔍 チェック</button>
           <button class="btn btn-p" onclick="dlExcel()">📥 ブース表DL</button>
           <button class="btn btn-o" onclick="go('settings')">↻ 再生成</button>
         </div>
@@ -1639,9 +1652,9 @@
           zone.classList.add('done'); desc.textContent = d.teacherCount + '名の講師データを集約（' + d.weeks + '週分）';
           flist.innerHTML = d.teachers.map(t => '<span class="sf-item">' + escHtml(t) + '</span>').join(''); uploaded.src = true;
         }
-        else { desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false; }
+        else { console.error('[survey] error:', JSON.stringify(d)); desc.textContent = 'エラー: ' + (d.error || '不明'); uploaded.src = false; }
       }
-      catch (e) { desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
+      catch (e) { console.error('[survey] exception:', e); desc.textContent = '通信エラー: ' + e.message; uploaded.src = false; }
       hideProgress(); document.getElementById('toS').disabled = true;
       if (uploaded.src && uploaded.booth) {
         const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
@@ -1847,6 +1860,60 @@
 
     async function dlExcel() { if (edited) { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); } window.location.href = '/api/download'; }
 
+    async function runCheck() {
+      if (!R || !R.schedule) return;
+      const btn = document.getElementById('checkBtn');
+      btn.disabled = true; btn.textContent = '🔍 チェック中...';
+      try {
+        const res = await fetch('/api/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            schedule: R.schedule,
+            officeTeachers: R.officeTeachers,
+            students: R.students,
+            weeklyTeachers: R.weeklyTeachers,
+          })
+        });
+        const d = await res.json();
+        showCheckResults(d);
+      } catch (e) {
+        alert('チェックエラー: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = '🔍 チェック';
+      }
+    }
+
+    function showCheckResults(d) {
+      let panel = document.getElementById('checkPanel');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'checkPanel';
+        const tabs = document.getElementById('wTabs');
+        tabs.parentNode.insertBefore(panel, tabs.nextSibling);
+      }
+      if (!d.issues || !d.issues.length) {
+        panel.innerHTML = '<div class="check-panel"><div class="check-header all-ok">✅ すべてのチェックに合格しました</div></div>';
+        return;
+      }
+      const errors = d.issues.filter(i => i.level === 'error');
+      const warns = d.issues.filter(i => i.level === 'warn');
+      let html = '<div class="check-panel">';
+      html += '<div class="check-header ' + (errors.length ? 'has-error' : 'has-warn') + '" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">';
+      html += (errors.length ? '❌ ' : '⚠️ ');
+      html += escHtml(errors.length + '件のエラー / ' + warns.length + '件の警告');
+      html += ' <span style="font-size:10px;font-weight:400">(クリックで開閉)</span></div>';
+      html += '<div class="check-list">';
+      for (const issue of d.issues) {
+        html += '<div class="check-item">';
+        html += '<span class="badge ' + (issue.level === 'error' ? 'err' : 'wrn') + '">' + escHtml(issue.code) + '</span>';
+        html += '<span>' + escHtml(issue.message) + '</span>';
+        html += '</div>';
+      }
+      html += '</div></div>';
+      panel.innerHTML = html;
+    }
+
     // Navigate to student calendar
     function goStudent(name) { const idx = R.students.findIndex(s => s.name === name); if (idx < 0) return; calStudent = idx; PW = -2; rR(); }
 
@@ -1909,6 +1976,7 @@
     }
 
     function rR() {
+      const cp = document.getElementById('checkPanel'); if (cp) cp.innerHTML = '';
       // 時間キーを正規化（古いファイルの '16:00' 形式 → '16' 形式）
       if (R.schedule && R.schedule.length > 0 && R.schedule[0]) {
         const firstWeek = R.schedule[0];

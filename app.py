@@ -1399,6 +1399,7 @@ def upload_surveys():
     """講師回答ファイル（複数）をアップロード → 集約 → 元シートを自動生成"""
     sd = get_session_data()
     files = request.files.getlist('surveys')
+    print(f"[survey] received {len(files)} files: {[f.filename for f in files]}", flush=True)
     if not files or all(not f.filename for f in files):
         return jsonify({'error': '講師回答ファイルが含まれていません'}), 400
 
@@ -1430,7 +1431,10 @@ def upload_surveys():
             traceback.print_exc()
 
     if not survey_results:
-        return jsonify({'error': '有効な講師回答ファイルがありません', 'details': errors}), 400
+        detail_msg = '有効な講師回答ファイルがありません'
+        if errors:
+            detail_msg += '（' + '; '.join(errors[:5]) + '）'
+        return jsonify({'error': detail_msg, 'details': errors}), 400
 
     # 同姓講師を自動検出し、短縮名を再計算
     all_full = [sr['full_name'] for sr in survey_results if sr.get('full_name')]
@@ -2104,6 +2108,372 @@ def update_schedule():
 
     placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     return jsonify({'ok': True, 'placed': placed})
+
+# ========== スケジュールチェック API ==========
+def _ts_label(ts):
+    """短縮時間 '16' → '16:00' 等に変換"""
+    return TIME_SHORT_REV.get(ts, ts)
+
+_BL = ['①','②','③','④','⑤','⑥']
+
+def _loc(wi, day, ts=None, bi=None):
+    """位置情報文字列を生成"""
+    s = f'第{wi+1}週 {day}曜'
+    if ts is not None:
+        s += f' {_ts_label(ts)}'
+    if bi is not None:
+        s += f' ブース{_BL[bi] if bi < len(_BL) else bi+1}'
+    return s
+
+def check_teacher_availability(schedule, weekly_teachers):
+    """E1: 配置された講師がそのコマに出勤可能か"""
+    issues = []
+    for wi, week in enumerate(schedule):
+        wt = weekly_teachers[wi] if wi < len(weekly_teachers) else {}
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                available = wt.get(day, {}).get(ts, [])
+                for bi, booth in enumerate(booths):
+                    t = booth.get('teacher')
+                    if t and t not in available:
+                        issues.append({
+                            'level': 'error', 'code': 'E1', 'title': '講師未出勤',
+                            'message': f'{_loc(wi, day, ts, bi)} — {t} はこのコマに出勤していません',
+                            'wi': wi, 'day': day, 'ts': ts,
+                        })
+    return issues
+
+def check_office_teacher_availability(office_teachers, weekly_teachers):
+    """E2: 教室業務担当がその日のいずれかのコマに出勤しているか"""
+    issues = []
+    for wi, ot in enumerate(office_teachers):
+        wt = weekly_teachers[wi] if wi < len(weekly_teachers) else {}
+        for day, teacher in ot.items():
+            if not teacher or teacher == '休塾日':
+                continue
+            day_data = wt.get(day, {})
+            found = any(teacher in teachers for teachers in day_data.values())
+            if not found:
+                issues.append({
+                    'level': 'error', 'code': 'E2', 'title': '教室業務講師未出勤',
+                    'message': f'{_loc(wi, day)} — 教室業務担当 {teacher} はこの日に出勤していません',
+                    'wi': wi, 'day': day, 'ts': None,
+                })
+    return issues
+
+def check_ng_teachers(schedule, students):
+    """E3: 生徒がNG講師のブースに配置されていないか"""
+    smap = {s['name']: s for s in students}
+    issues = []
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                for bi, booth in enumerate(booths):
+                    t = booth.get('teacher')
+                    if not t:
+                        continue
+                    for slot in booth.get('slots', []):
+                        sname = slot[1] if len(slot) > 1 else None
+                        if not sname:
+                            continue
+                        s = smap.get(sname)
+                        if s and t in s.get('ng_teachers', []):
+                            issues.append({
+                                'level': 'error', 'code': 'E3', 'title': 'NG講師',
+                                'message': f'{_loc(wi, day, ts, bi)} — {sname} のNG講師 {t} に配置されています',
+                                'wi': wi, 'day': day, 'ts': ts,
+                            })
+    return issues
+
+def check_ng_students(schedule, students):
+    """E4: 同一ブース内にNG生徒ペアがいないか（双方向）"""
+    smap = {s['name']: s for s in students}
+    issues = []
+    seen = set()
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                for bi, booth in enumerate(booths):
+                    names = [slot[1] for slot in booth.get('slots', []) if len(slot) > 1]
+                    for i, a in enumerate(names):
+                        for b in names[i+1:]:
+                            sa = smap.get(a)
+                            sb = smap.get(b)
+                            is_ng = False
+                            if sa and b in sa.get('ng_students', []):
+                                is_ng = True
+                            if sb and a in sb.get('ng_students', []):
+                                is_ng = True
+                            if is_ng:
+                                key = (wi, day, ts, bi, tuple(sorted([a, b])))
+                                if key not in seen:
+                                    seen.add(key)
+                                    issues.append({
+                                        'level': 'error', 'code': 'E4', 'title': 'NG生徒',
+                                        'message': f'{_loc(wi, day, ts, bi)} — {a} と {b} はNG生徒ペアです',
+                                        'wi': wi, 'day': day, 'ts': ts,
+                                    })
+    return issues
+
+def check_booth_capacity(schedule):
+    """E5: 1ブースに3人以上の生徒がいないか"""
+    issues = []
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                for bi, booth in enumerate(booths):
+                    cnt = len(booth.get('slots', []))
+                    if cnt > 2:
+                        issues.append({
+                            'level': 'error', 'code': 'E5', 'title': 'ブース定員超過',
+                            'message': f'{_loc(wi, day, ts, bi)} — {cnt}人の生徒が配置されています（定員2人）',
+                            'wi': wi, 'day': day, 'ts': ts,
+                        })
+    return issues
+
+def check_teacher_duplicate(schedule):
+    """E6: 同一コマに同じ講師が複数ブースに配置されていないか"""
+    issues = []
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                teacher_booths = {}
+                for bi, booth in enumerate(booths):
+                    t = booth.get('teacher')
+                    if t:
+                        teacher_booths.setdefault(t, []).append(bi)
+                for t, bis in teacher_booths.items():
+                    if len(bis) > 1:
+                        bl = ', '.join(_BL[b] if b < len(_BL) else str(b+1) for b in bis)
+                        issues.append({
+                            'level': 'error', 'code': 'E6', 'title': '講師重複',
+                            'message': f'{_loc(wi, day, ts)} — {t} がブース{bl}に重複配置されています',
+                            'wi': wi, 'day': day, 'ts': ts,
+                        })
+    return issues
+
+def check_office_booth_conflict(schedule, office_teachers):
+    """E7: 教室業務担当がブースにも配置されていないか"""
+    issues = []
+    for wi, week in enumerate(schedule):
+        ot = office_teachers[wi] if wi < len(office_teachers) else {}
+        for day, day_data in week.items():
+            ot_teacher = ot.get(day)
+            if not ot_teacher or ot_teacher == '休塾日':
+                continue
+            for ts, booths in day_data.items():
+                for bi, booth in enumerate(booths):
+                    if booth.get('teacher') == ot_teacher:
+                        issues.append({
+                            'level': 'error', 'code': 'E7', 'title': '教室業務重複',
+                            'message': f'{_loc(wi, day, ts, bi)} — 教室業務担当 {ot_teacher} がブースにも配置されています',
+                            'wi': wi, 'day': day, 'ts': ts,
+                        })
+    return issues
+
+def check_student_availability(schedule, students):
+    """W1: 生徒が希望時間にも予備時間にも含まれないコマに配置されていないか"""
+    smap = {s['name']: s for s in students}
+    issues = []
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                for bi, booth in enumerate(booths):
+                    for slot in booth.get('slots', []):
+                        sname = slot[1] if len(slot) > 1 else None
+                        if not sname:
+                            continue
+                        s = smap.get(sname)
+                        if not s:
+                            continue
+                        avail = s.get('avail')
+                        backup = s.get('backup_avail')
+                        if avail is None and backup is None:
+                            continue  # 制約なし = どこでもOK
+                        pair = [day, ts]
+                        in_avail = avail is not None and pair in avail
+                        in_backup = backup is not None and pair in backup
+                        if not in_avail and not in_backup:
+                            issues.append({
+                                'level': 'warn', 'code': 'W1', 'title': '希望時間外',
+                                'message': f'{_loc(wi, day, ts, bi)} — {sname} の希望/予備時間外に配置されています',
+                                'wi': wi, 'day': day, 'ts': ts,
+                            })
+    return issues
+
+def check_ng_dates(schedule, students):
+    """W2: 生徒がNG日程のコマに配置されていないか"""
+    smap = {s['name']: s for s in students}
+    issues = []
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                for bi, booth in enumerate(booths):
+                    for slot in booth.get('slots', []):
+                        sname = slot[1] if len(slot) > 1 else None
+                        if not sname:
+                            continue
+                        s = smap.get(sname)
+                        if not s:
+                            continue
+                        ng_dates = s.get('ng_dates', [])
+                        if [wi, day] in ng_dates:
+                            issues.append({
+                                'level': 'warn', 'code': 'W2', 'title': 'NG日程',
+                                'message': f'{_loc(wi, day, ts, bi)} — {sname} のNG日程に配置されています',
+                                'wi': wi, 'day': day, 'ts': ts,
+                            })
+    return issues
+
+def check_same_day_subject(schedule):
+    """W3: 同一生徒が同じ曜日に同じ科目を2回以上配置されていないか"""
+    issues = []
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            student_subjs = {}  # name → {subj: count}
+            for ts, booths in day_data.items():
+                for booth in booths:
+                    for slot in booth.get('slots', []):
+                        if len(slot) >= 3:
+                            sname, subj = slot[1], slot[2]
+                            student_subjs.setdefault(sname, {})
+                            student_subjs[sname][subj] = student_subjs[sname].get(subj, 0) + 1
+            for sname, subjs in student_subjs.items():
+                for subj, cnt in subjs.items():
+                    if cnt >= 2:
+                        issues.append({
+                            'level': 'warn', 'code': 'W3', 'title': '同日同科目',
+                            'message': f'{_loc(wi, day)} — {sname} の {subj} が同じ曜日に{cnt}回配置されています',
+                            'wi': wi, 'day': day, 'ts': None,
+                        })
+    return issues
+
+def check_teacher_skills(schedule, students, skills):
+    """W4: 講師がその生徒の学年・科目を指導できるか"""
+    if not skills:
+        return []
+    smap = {s['name']: s for s in students}
+    issues = []
+    for wi, week in enumerate(schedule):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                for bi, booth in enumerate(booths):
+                    t = booth.get('teacher')
+                    if not t:
+                        continue
+                    for slot in booth.get('slots', []):
+                        if len(slot) < 3:
+                            continue
+                        grade, sname, subj = slot[0], slot[1], slot[2]
+                        if not can_teach(t, grade, subj, skills):
+                            issues.append({
+                                'level': 'warn', 'code': 'W4', 'title': '指導スキル不足',
+                                'message': f'{_loc(wi, day, ts, bi)} — {t} は {grade} {subj} を指導できません（生徒: {sname}）',
+                                'wi': wi, 'day': day, 'ts': ts,
+                            })
+    return issues
+
+def check_fixed_schedule(schedule, students):
+    """W5: fixed で定義された通常授業が正しく配置されているか"""
+    issues = []
+    for s in students:
+        fixed = s.get('fixed', [])
+        if not fixed:
+            continue
+        sname = s['name']
+        for fix_item in fixed:
+            if len(fix_item) < 3:
+                continue
+            f_day, f_ts, f_subj = fix_item[0], fix_item[1], fix_item[2]
+            # 全週で配置されているかチェック
+            for wi, week in enumerate(schedule):
+                day_data = week.get(f_day, {})
+                booths = day_data.get(f_ts, [])
+                found = False
+                for booth in booths:
+                    for slot in booth.get('slots', []):
+                        if len(slot) >= 3 and slot[1] == sname and slot[2] == f_subj:
+                            found = True
+                            break
+                    if found:
+                        break
+                if not found:
+                    issues.append({
+                        'level': 'warn', 'code': 'W5', 'title': '通常授業欠落',
+                        'message': f'{_loc(wi, f_day, f_ts)} — {sname} の通常授業（{f_subj}）が配置されていません',
+                        'wi': wi, 'day': f_day, 'ts': f_ts,
+                    })
+    return issues
+
+def check_needs_excess(schedule, students):
+    """W6: 各生徒の科目別配置数がneedsを超過していないか"""
+    smap = {s['name']: s for s in students}
+    placed = {}  # name → {subj: count}
+    for week in schedule:
+        for day_data in week.values():
+            for booths in day_data.values():
+                for booth in booths:
+                    for slot in booth.get('slots', []):
+                        if len(slot) >= 3:
+                            sname, subj = slot[1], slot[2]
+                            placed.setdefault(sname, {})
+                            placed[sname][subj] = placed[sname].get(subj, 0) + 1
+    issues = []
+    for s in students:
+        sname = s['name']
+        needs = s.get('needs', {})
+        sp = placed.get(sname, {})
+        for subj, cnt in sp.items():
+            needed = needs.get(subj, 0)
+            if cnt > needed and needed > 0:
+                issues.append({
+                    'level': 'warn', 'code': 'W6', 'title': 'コマ数過剰',
+                    'message': f'{sname} — {subj} が {needed}コマ必要に対して{cnt}コマ配置されています（+{cnt - needed}）',
+                    'wi': None, 'day': None, 'ts': None,
+                })
+    return issues
+
+@app.route('/api/check', methods=['POST'])
+@login_required
+def check_schedule():
+    """スケジュールの制約違反をチェックする"""
+    sd = get_session_data()
+    data = request.get_json() or {}
+    schedule = data.get('schedule', [])
+    office_teachers = data.get('officeTeachers', [])
+    students = data.get('students', [])
+    weekly_teachers = data.get('weeklyTeachers', [])
+
+    # skills はブース表から再ロード
+    booth_path = sd.get('files', {}).get('booth')
+    skills = {}
+    if booth_path and os.path.exists(booth_path):
+        try:
+            booth_wb = openpyxl.load_workbook(booth_path, data_only=True)
+            skills = load_teacher_skills(booth_wb)
+        except Exception:
+            pass
+
+    issues = []
+    issues += check_teacher_availability(schedule, weekly_teachers)
+    issues += check_office_teacher_availability(office_teachers, weekly_teachers)
+    issues += check_ng_teachers(schedule, students)
+    issues += check_ng_students(schedule, students)
+    issues += check_booth_capacity(schedule)
+    issues += check_teacher_duplicate(schedule)
+    issues += check_office_booth_conflict(schedule, office_teachers)
+    issues += check_student_availability(schedule, students)
+    issues += check_ng_dates(schedule, students)
+    issues += check_same_day_subject(schedule)
+    issues += check_teacher_skills(schedule, students, skills)
+    issues += check_fixed_schedule(schedule, students)
+    issues += check_needs_excess(schedule, students)
+
+    return jsonify({
+        'issues': issues,
+        'errorCount': sum(1 for i in issues if i['level'] == 'error'),
+        'warnCount': sum(1 for i in issues if i['level'] == 'warn'),
+    })
 
 # ========== JSON restore API ==========
 @app.route('/api/restore_json', methods=['POST'])
