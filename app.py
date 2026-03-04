@@ -1373,7 +1373,7 @@ def upload():
             if not ok:
                 print(f"[upload] ERROR validation failed: key={key}, filename={f.filename}, error={err}", flush=True)
                 return jsonify({'error': err}), 400
-            path = os.path.join(sd['dir'], key + '_' + f.filename)
+            path = os.path.join(sd['dir'], key + '_' + os.path.basename(f.filename))
             try:
                 f.save(path)
             except Exception as e:
@@ -1412,7 +1412,7 @@ def upload_surveys():
             errors.append(f'{f.filename}: {err}')
             continue
 
-        path = os.path.join(sd['dir'], 'survey_' + f.filename)
+        path = os.path.join(sd['dir'], 'survey_' + os.path.basename(f.filename))
         try:
             f.save(path)
         except Exception as e:
@@ -1477,7 +1477,7 @@ def consolidate_booth():
             if not f.filename: continue
             try:
                 # 一時保存して中身を確認
-                temp_path = os.path.join(sd['dir'], 'tmp_detect_' + f.filename)
+                temp_path = os.path.join(sd['dir'], 'tmp_detect_' + os.path.basename(f.filename))
                 f.save(temp_path)
                 f.stream.seek(0)  # save()でストリームが消費されるため、ポインタを先頭に戻す
                 wb = openpyxl.load_workbook(temp_path, read_only=True)
@@ -1510,7 +1510,7 @@ def consolidate_booth():
     ok, err = validate_file(meta_file)
     if not ok:
         return jsonify({'error': f'メタデータファイル: {err}'}), 400
-    meta_path = os.path.join(sd['dir'], 'meta_' + meta_file.filename)
+    meta_path = os.path.join(sd['dir'], 'meta_' + os.path.basename(meta_file.filename))
     meta_file.save(meta_path)
 
     try:
@@ -1536,7 +1536,7 @@ def consolidate_booth():
             errors.append(f'{f.filename}: {err}')
             continue
 
-        week_path = os.path.join(sd['dir'], 'week_' + f.filename)
+        week_path = os.path.join(sd['dir'], 'week_' + os.path.basename(f.filename))
         try:
             f.save(week_path)
             week_wb = openpyxl.load_workbook(week_path)
@@ -1909,7 +1909,7 @@ def load_saved():
     if not ok:
         return jsonify({'error': err}), 400
     sd = get_session_data()
-    path = os.path.join(sd['dir'], 'saved_' + f.filename)
+    path = os.path.join(sd['dir'], 'saved_' + os.path.basename(f.filename))
     f.save(path)
     try:
         wb = openpyxl.load_workbook(path, data_only=True)
