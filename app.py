@@ -149,6 +149,10 @@ def _save_result_to_disk(sid, result):
             saveable['students'] = stu_save
         if 'week_dates' in result:
             saveable['week_dates'] = result['week_dates']
+        if 'weekly_teachers' in result:
+            saveable['weekly_teachers'] = result['weekly_teachers']
+        if 'skills' in result:
+            saveable['skills'] = result['skills']
         with open(rp, 'w', encoding='utf-8') as f:
             json.dump(saveable, f, ensure_ascii=False)
     except Exception as e:
@@ -940,20 +944,26 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         office_teachers.append(ot)
         ws = {}
         for day in DAYS:
-            # 講師選抜（ブース⑥まで、早い時間帯優先、教室業務担当除外）
-            day_data = weekly_teachers[wi].get(day, {})
-            ot_teacher = ot.get(day)
-            filtered = select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, ot_teacher)
             ds = {}
             times = SATURDAY_TIMES if day=='土' else WEEKDAY_TIMES
-            for tl in times:
-                ts = TIME_SHORT[tl]
-                tlist = filtered.get(ts, [])
-                booths = [{'teacher':t, 'slots':[]} for t in tlist]
-                # 常にMAX_BOOTHS(6)ブース分のデータを確保
-                while len(booths) < MAX_BOOTHS:
-                    booths.append({'teacher':'', 'slots':[]})
-                ds[ts] = booths
+            ot_teacher = ot.get(day)
+            if ot_teacher == '休塾日':
+                # 休塾日は空ブースのみ（講師を配置しない）
+                for tl in times:
+                    ts = TIME_SHORT[tl]
+                    ds[ts] = [{'teacher':'', 'slots':[]} for _ in range(MAX_BOOTHS)]
+            else:
+                # 講師選抜（ブース⑥まで、早い時間帯優先、教室業務担当除外）
+                day_data = weekly_teachers[wi].get(day, {})
+                filtered = select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, ot_teacher)
+                for tl in times:
+                    ts = TIME_SHORT[tl]
+                    tlist = filtered.get(ts, [])
+                    booths = [{'teacher':t, 'slots':[]} for t in tlist]
+                    # 常にMAX_BOOTHS(6)ブース分のデータを確保
+                    while len(booths) < MAX_BOOTHS:
+                        booths.append({'teacher':'', 'slots':[]})
+                    ds[ts] = booths
             ws[day] = ds
         schedule.append(ws)
 
@@ -1286,8 +1296,8 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
 
         # 教室業務・チューター
         ot = office_teachers[wi] if wi < len(office_teachers) else {}
-        holiday_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
-        holiday_font = Font(name='MS PGothic', color='FFFFFF', bold=True, size=11)
+        holiday_fill = PatternFill(start_color='C0C0C0', end_color='C0C0C0', fill_type='solid')
+        holiday_font = Font(name='MS PGothic', color='333333', bold=True, size=11)
         for day in DAYS:
             bc = DAY_COLS[day][0]
             t = ot.get(day)
@@ -1305,6 +1315,18 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
                             c.font = holiday_font
                             c.alignment = Alignment(horizontal='center', vertical='center')
                     except: pass
+                # 休塾日はデータ列もグレーに塗る
+                if t == '休塾日':
+                    all_cols = DAY_COLS[day]  # (bc, lc, gc, sc, sjc)
+                    for tl, (sr, nb) in LAYOUT.items():
+                        for b_i in range(nb):
+                            r1, r2 = sr + b_i * 2, sr + b_i * 2 + 1
+                            for col in all_cols:
+                                for r in [r1, r2]:
+                                    try:
+                                        cell = ws.cell(r, col)
+                                        cell.fill = holiday_fill
+                                    except: pass
 
     # 未配置コマシート
     ws_up = wb.create_sheet('未配置コマ')
@@ -2187,17 +2209,20 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
         for day, day_data in week.items():
             ot_teacher = ot.get(day)
             ot_active = ot_teacher and ot_teacher != '休塾日'
+            # E1用: その日に出勤可能な全講師（時間帯間の補間を考慮）
+            day_all_teachers = set()
+            for ts_teachers in wt.get(day, {}).values():
+                day_all_teachers.update(ts_teachers)
             for ts, booths in day_data.items():
-                available = wt.get(day, {}).get(ts, [])
                 teacher_booths = {}  # E6: teacher → [bi]
                 for bi, booth in enumerate(booths):
                     t = booth.get('teacher')
                     slots = booth.get('slots', [])
 
-                    # E1: 講師未出勤
-                    if t and t not in available:
+                    # E1: 講師未出勤（その日のいずれかの時間帯に出勤可能か）
+                    if t and t not in day_all_teachers:
                         issues.append({'level': 'error', 'code': 'E1', 'title': '講師未出勤',
-                            'message': f'{_loc(wi, day, ts, bi)} — {t} はこのコマに出勤していません',
+                            'message': f'{_loc(wi, day, ts, bi)} — {t} はこの日に出勤していません',
                             'wi': wi, 'day': day, 'ts': ts})
 
                     # E5: ブース定員超過
