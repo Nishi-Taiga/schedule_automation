@@ -413,7 +413,7 @@ def load_students_from_wb(wb, year=2026, month=2):
                  (17,'日'),(18,'地'),(19,'政'),(20,'世')]
     students = []
     for r in range(3, 60):
-        grade, name = ws.cell(r,2).value, ws.cell(r,4).value
+        school, grade, name = ws.cell(r,2).value, ws.cell(r,3).value, ws.cell(r,4).value
         if not name: break
         needs = {}
         for col, subj in subj_cols:
@@ -421,31 +421,56 @@ def load_students_from_wb(wb, year=2026, month=2):
             if v and isinstance(v,(int,float)) and v>0: needs[subj] = int(v)
         parse_list = lambda v: [t.strip() for t in str(v or '').split(',') if t.strip()]
         students.append({
-            'grade':str(grade),'name':str(name),'needs':needs,
-            'wish_teachers':parse_list(ws.cell(r,22).value),
-            'ng_teachers':parse_list(ws.cell(r,23).value),
-            'ng_students':parse_list(ws.cell(r,24).value),
-            'avail':parse_avail(ws.cell(r,25).value),
-            'backup_avail':parse_avail(ws.cell(r,26).value),
-            'ng_dates':parse_ng_dates(ws.cell(r,27).value, year, month),
-            'fixed':parse_regular(ws.cell(r,28).value),
-            'notes':str(ws.cell(r,29).value or '').strip(),
+            'school':str(school or ''),'grade':str(grade),'name':str(name),'needs':needs,
+            'wish_teachers':parse_list(ws.cell(r,21).value),
+            'ng_teachers':parse_list(ws.cell(r,22).value),
+            'ng_students':parse_list(ws.cell(r,23).value),
+            'avail':parse_avail(ws.cell(r,24).value),
+            'backup_avail':parse_avail(ws.cell(r,25).value),
+            'ng_dates':parse_ng_dates(ws.cell(r,26).value, year, month),
+            'fixed':parse_regular(ws.cell(r,27).value),
+            'notes':str(ws.cell(r,28).value or '').strip(),
         })
     return students
 
 def parse_avail(val):
     if not val: return None
+    WEEKDAYS = ['月','火','水','木','金']
+    VALID_DAYS = set(WEEKDAYS + ['土'])
     slots = set()
     for p in str(val).split(','):
         p = p.strip()
         if not p: continue
+        # 「平日XX」「平日XX-YY」→ 月〜金に展開
+        if p.startswith('平日'):
+            rest = p[2:]
+            if not rest: continue
+            try:
+                if '-' in rest:
+                    a, b = rest.split('-')
+                    for d in WEEKDAYS:
+                        for t in range(int(a), int(b)+1): slots.add((d, str(t)))
+                else:
+                    for d in WEEKDAYS:
+                        slots.add((d, rest))
+            except (ValueError, IndexError):
+                pass
+            continue
+        # 先頭1文字が有効な曜日でない場合はスキップ（日付や自由テキスト等）
         d, rest = p[0], p[1:]
-        if '-' in rest:
-            a,b = rest.split('-')
-            for t in range(int(a),int(b)+1): slots.add((d,str(t)))
-        else:
-            slots.add((d,rest))
-    return slots
+        if d not in VALID_DAYS:
+            continue
+        if not rest: continue
+        try:
+            if '-' in rest:
+                a, b = rest.split('-')
+                for t in range(int(a), int(b)+1): slots.add((d, str(t)))
+            else:
+                int(rest)  # 数値チェック
+                slots.add((d, rest))
+        except (ValueError, IndexError):
+            pass
+    return slots if slots else None
 
 def parse_regular(val):
     if not val: return []
@@ -1434,6 +1459,12 @@ def upload_surveys():
     errors = []
 
     for f in files:
+        # 出力ファイルや非講師回答ファイルをスキップ
+        fname = os.path.basename(f.filename or '')
+        if '出力' in fname or 'メタデータ' in fname:
+            print(f"[survey] 非講師回答ファイルをスキップ: {f.filename}", flush=True)
+            continue
+
         ok, err = validate_file(f)
         if not ok:
             errors.append(f'{f.filename}: {err}')
@@ -1502,14 +1533,25 @@ def consolidate_booth():
         remaining_weeks = []
         for f in week_files:
             if not f.filename: continue
+            # ファイル名に「出力」を含むファイルはスキップ（前回出力ファイル）
+            if '出力' in os.path.basename(f.filename):
+                print(f"[consolidate] 出力ファイルをスキップ（ファイル名）: {f.filename}", flush=True)
+                continue
             try:
                 # 一時保存して中身を確認
                 temp_path = os.path.join(sd['dir'], 'tmp_detect_' + os.path.basename(f.filename))
                 f.save(temp_path)
                 f.stream.seek(0)  # save()でストリームが消費されるため、ポインタを先頭に戻す
                 wb = openpyxl.load_workbook(temp_path, read_only=True)
-                has_meta = any(any(k in sn for k in META_KEYWORDS) for sn in wb.sheetnames)
+                sheet_names = wb.sheetnames
+                # _schedule_data シートを含むファイルは出力ファイルなのでスキップ
+                is_output = any(sn.startswith('_schedule_data') for sn in sheet_names)
+                has_meta = any(any(k in sn for k in META_KEYWORDS) for sn in sheet_names)
                 wb.close()
+                if is_output:
+                    print(f"[consolidate] 出力ファイルをスキップ（シート構造）: {f.filename}", flush=True)
+                    os.remove(temp_path)
+                    continue
                 if has_meta and not detected_meta:
                     detected_meta = f
                     print(f"[consolidate] メタファイルを自動検出: {f.filename}", flush=True)
@@ -1567,6 +1609,12 @@ def consolidate_booth():
         try:
             f.save(week_path)
             week_wb = openpyxl.load_workbook(week_path)
+
+            # 出力ファイル（_schedule_dataシートを含む）をスキップ
+            if any(sn.startswith('_schedule_data') for sn in week_wb.sheetnames):
+                print(f"[consolidate] 出力ファイルをスキップ: {f.filename}", flush=True)
+                week_wb.close()
+                continue
 
             for sn in week_wb.sheetnames:
                 # 「ブース表」が含まれるシートのみ対象

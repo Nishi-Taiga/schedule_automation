@@ -1380,7 +1380,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.8.3</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.8.4</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1605,7 +1605,7 @@
     window.addEventListener('DOMContentLoaded', () => { checkSavedState(); });
 
     // === Folder upload helper ===
-    function filterXlsx(fileList) { return Array.from(fileList).filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$')); }
+    function filterXlsx(fileList) { return Array.from(fileList).filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$') && !f.name.includes('出力')); }
     async function onFolderSingle(inp, key) {
       const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
       // 複数ファイル: 自動でバッチモードに切り替え
