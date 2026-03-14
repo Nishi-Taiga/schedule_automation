@@ -1745,21 +1745,9 @@ def generate():
         if not wt:
             return jsonify({'error': '元シートから出勤講師データを読み取れませんでした。シートに講師データが含まれているか確認してください。'}), 400
 
-        # 手動追加講師を全週・全時間帯に追加
+        # 手動追加講師はブースに配置せず候補リストにのみ表示（手動D&D用）
         if manual_teachers:
-            print(f"[generate] manual teachers: {manual_teachers}", flush=True)
-            for wi in range(len(wt)):
-                for day in DAYS:
-                    if day not in wt[wi]:
-                        wt[wi][day] = {}
-                    day_times = SATURDAY_TIMES if day == '土' else WEEKDAY_TIMES
-                    for tl in day_times:
-                        ts = TIME_SHORT[tl]
-                        if ts not in wt[wi][day]:
-                            wt[wi][day][ts] = []
-                        for t in manual_teachers:
-                            if t not in wt[wi][day][ts]:
-                                wt[wi][day][ts].append(t)
+            print(f"[generate] manual teachers (候補のみ): {manual_teachers}", flush=True)
 
         # ブース表シート数に合わせて週数を制限（メタシートを除外）
         valid_booth_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
