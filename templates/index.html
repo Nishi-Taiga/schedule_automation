@@ -1380,7 +1380,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.8.5</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.8.6</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1606,6 +1606,20 @@
 
     // === Folder upload helper ===
     function filterXlsx(fileList) { return Array.from(fileList).filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$') && !f.name.includes('出力')); }
+    async function preloadFile(f) {
+      // Google ドライブストリーム等の仮想ファイルシステム対応:
+      // ファイル内容を事前にメモリに読み込んでから新しいFileオブジェクトを作成
+      const buf = await f.arrayBuffer();
+      return new File([buf], f.name, { type: f.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+    async function preloadFiles(files) {
+      const results = []; const errors = [];
+      for (const f of files) {
+        try { results.push(await preloadFile(f)); }
+        catch (e) { console.warn('[preload] skip:', f.name, e); errors.push(f.name); }
+      }
+      return { files: results, errors };
+    }
     async function onFolderSingle(inp, key) {
       const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
       // 複数ファイル: 自動でバッチモードに切り替え
@@ -1615,7 +1629,7 @@
       if (key === 'saved') {
         const row = document.getElementById('uSaved'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
         showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
-        const fd = new FormData(); fd.append('file', f);
+        const fd = new FormData(); fd.append('file', await preloadFile(f));
         try {
           const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json(); hideProgress();
           if (res.ok && d.ok) {
@@ -1629,7 +1643,7 @@
       }
       // src or booth
       const row = document.getElementById(key === 'src' ? 'uSrc' : 'uBooth'); row.querySelector('.desc').textContent = 'アップロード中...'; row.classList.remove('done'); row.querySelector('.icon').textContent = '📄';
-      const fd = new FormData(); fd.append(key, f);
+      const fd = new FormData(); fd.append(key, await preloadFile(f));
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: fd }); const d = await res.json();
         if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; }
@@ -1647,9 +1661,12 @@
     async function onFolderSurvey(inp) {
       const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
       const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
-      desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
-      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
-      const fd = new FormData(); files.forEach(f => fd.append('surveys', f));
+      desc.textContent = files.length + '件のファイルを読み込み中...'; zone.classList.remove('done');
+      showProgress(10, 'ファイルを読み込んでいます...', '講師回答ファイル集約中');
+      const preloaded = await preloadFiles(files);
+      if (!preloaded.files.length) { desc.textContent = 'ファイルの読み込みに失敗しました'; hideProgress(); return; }
+      desc.textContent = preloaded.files.length + '件のファイルをアップロード中...';
+      const fd = new FormData(); preloaded.files.forEach(f => fd.append('surveys', f));
       try {
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
         if (res.ok && d.ok) {
@@ -1692,10 +1709,13 @@
     async function onSurveyFiles(inp) {
       const files = inp.files; if (!files || !files.length) return;
       const zone = document.getElementById('surveyZone'); const desc = document.getElementById('surveyDesc'); const flist = document.getElementById('surveyFileList');
-      desc.textContent = files.length + '件のファイルをアップロード中...'; zone.classList.remove('done');
+      desc.textContent = files.length + '件のファイルを読み込み中...'; zone.classList.remove('done');
       document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
-      showProgress(10, '講師回答ファイルを集約しています...', '講師回答ファイル集約中');
-      const fd = new FormData(); for (let i = 0; i < files.length; i++)fd.append('surveys', files[i]);
+      showProgress(10, 'ファイルを読み込んでいます...', '講師回答ファイル集約中');
+      const preloaded = await preloadFiles(Array.from(files));
+      if (!preloaded.files.length) { desc.textContent = 'ファイルの読み込みに失敗しました'; hideProgress(); return; }
+      desc.textContent = preloaded.files.length + '件のファイルをアップロード中...';
+      const fd = new FormData(); preloaded.files.forEach(f => fd.append('surveys', f));
       try {
         const res = await fetch('/api/upload_surveys', { method: 'POST', body: fd }); const d = await res.json();
         if (res.ok && d.ok) {
@@ -1747,10 +1767,12 @@
       if (!consolWeeks) return;
       const btn = document.getElementById('consolBtn'); btn.disabled = true; btn.textContent = '集約中...';
       document.getElementById('consolResult').innerHTML = ''; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
-      showProgress(20, 'ブース表を集約しています...', 'ブース表集約中'); startProgressAnim(20, p => 'ファイルを処理しています...');
+      showProgress(10, 'ファイルを読み込んでいます...', 'ブース表集約中');
       const fd = new FormData();
-      if (consolMeta) fd.append('meta', consolMeta);
-      for (let i = 0; i < consolWeeks.length; i++)fd.append('weeks', consolWeeks[i]);
+      if (consolMeta) fd.append('meta', await preloadFile(consolMeta));
+      const preloaded = await preloadFiles(Array.from(consolWeeks));
+      for (const f of preloaded.files) fd.append('weeks', f);
+      showProgress(20, 'ブース表を集約しています...', 'ブース表集約中'); startProgressAnim(20, p => 'ファイルを処理しています...');
       try {
         const res = await fetch('/api/consolidate_booth', { method: 'POST', body: fd }); const d = await res.json();
         if (res.ok && d.ok) {
@@ -1776,7 +1798,8 @@
     async function onF(inp, key) {
       const f = inp.files[0]; if (!f) return; const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = 'アップロード中...'; row.classList.remove('done'); row.querySelector('.icon').textContent = '📄'; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
       const maxSize = 10 * 1024 * 1024; if (f.size > maxSize) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'ファイルサイズ超過'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ') は上限 10MB を超えています'); uploaded[key] = false; const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = !ready; return; }
-      const fd = new FormData(); fd.append(key, f);
+      let pf; try { pf = await preloadFile(f); } catch(e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'ファイル読み込み失敗'; showUpErr('ファイルを読み込めませんでした。ローカルにコピーしてから再度お試しください。'); uploaded[key] = false; return; }
+      const fd = new FormData(); fd.append(key, pf);
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: fd }); let d; try { d = await res.json(); } catch (pe) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'サーバーエラー (HTTP ' + res.status + ')'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ' - レスポンス解析失敗'); uploaded[key] = false; return; }
         if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; } else { const msg = d.error || '不明なエラー (HTTP ' + res.status + ')'; row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '失敗: ' + msg; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ': ' + escHtml(msg)); uploaded[key] = false; }
