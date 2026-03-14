@@ -943,6 +943,64 @@ def load_holidays(booth_wb, num_weeks):
         holidays.append({})
     return holidays
 
+def load_holidays_from_files(week_file_paths):
+    """週ファイルリストから休塾日を検出する。
+    Returns: [{day: True, ...}, ...] 各週の休塾日マップ
+    """
+    holidays = []
+    for wp in week_file_paths:
+        wb = openpyxl.load_workbook(wp, read_only=True)
+        week_sheets = [sn for sn in wb.sheetnames
+                       if 'ブース表' in sn and wb[sn].sheet_state == 'visible']
+        if week_sheets:
+            ws = wb[week_sheets[0]]
+            h = {}
+            for day, cols in DAY_COLS.items():
+                val = ws.cell(5, cols[0]).value
+                if val and '休塾' in str(val):
+                    h[day] = True
+            holidays.append(h)
+        else:
+            holidays.append({})
+        wb.close()
+    return holidays
+
+def extract_week_dates_from_files(week_file_paths):
+    """週ファイルリストからシート名の日付を算出する。
+    Returns: {'year':int, 'month':int, 'weeks':[ {day_name: day_number, ...}, ... ]}
+    """
+    year, month = None, None
+    for wp in week_file_paths:
+        wb = openpyxl.load_workbook(wp, read_only=True)
+        for sn in wb.sheetnames:
+            m = re.search(r'(\d{4})[./](\d{1,2})[./](\d{1,2})', sn)
+            if m:
+                year, month = int(m.group(1)), int(m.group(2))
+                break
+        wb.close()
+        if year:
+            break
+    if not year:
+        return None
+
+    day_names = ['月','火','水','木','金','土']
+    week_map = _compute_month_week_map(year, month)
+
+    by_week = {}
+    for day_num, week_num in week_map.items():
+        dt = _dt.date(year, month, day_num)
+        wd = dt.weekday()
+        if wd < 6:
+            if week_num not in by_week:
+                by_week[week_num] = {}
+            by_week[week_num][day_names[wd]] = day_num
+
+    num_weeks = len(week_file_paths)
+    weeks = []
+    for wi in range(num_weeks):
+        weeks.append(by_week.get(wi + 1, {}))
+    return {'year': year, 'month': month, 'weeks': weeks}
+
 # ========== スケジューラー ==========
 def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None):
     remaining = {s['name']: dict(s['needs']) for s in students}
@@ -1255,103 +1313,152 @@ def extract_week_dates(booth_wb, num_weeks):
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== Excel出力 ==========
-def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None):
-    wb = openpyxl.load_workbook(booth_path)
-    num_weeks = len(schedule)
-    # 週シート以外（必要コマ数、一覧表、ブース希望等）を特定して保持
-    meta_sheets = [sn for sn in wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
-    week_sheets = [sn for sn in wb.sheetnames if sn not in meta_sheets]
-    # 週シート数が足りない場合はそのまま使える分だけ使う
-    num_weeks = min(num_weeks, len(week_sheets))
-
-    # 共通書式
+def _write_schedule_to_ws(ws, wsched, office_data):
+    """1つの週シートにスケジュールデータを書き込む共通処理"""
     teacher_font = Font(name='MS PGothic', size=8)
     teacher_align = Alignment(textRotation=255, vertical='center', horizontal='center')
     data_font = Font(name='MS PGothic', size=11)
     data_align = Alignment(vertical='center', horizontal='center')
 
-    for wi in range(num_weeks):
-        ws = wb[week_sheets[wi]]
-        wsched = schedule[wi]
-
-        # クリア（結合は解除しない）
-        for tl, (sr, nb) in LAYOUT.items():
-            for b in range(nb):
-                r1, r2 = sr+b*2, sr+b*2+1
-                for day in DAYS:
-                    _, lc, gc, sc, sjc = DAY_COLS[day]
-                    try: ws.cell(r1, lc).value = None
-                    except: pass
-                    for c in [gc, sc, sjc]:
-                        for r in [r1, r2]:
-                            try: ws.cell(r, c).value = None
-                            except: pass
-
-        # 書き込み
-        for tl, (sr, nb) in LAYOUT.items():
-            ts = TIME_SHORT[tl]
+    # クリア（結合は解除しない）
+    for tl, (sr, nb) in LAYOUT.items():
+        for b in range(nb):
+            r1, r2 = sr+b*2, sr+b*2+1
             for day in DAYS:
                 _, lc, gc, sc, sjc = DAY_COLS[day]
-                booths = wsched.get(day,{}).get(ts,[])
-                for bi in range(min(nb, len(booths))):
-                    r1, r2 = sr+bi*2, sr+bi*2+1
-                    b = booths[bi]
-                    # 講師名: 結合セルに縦書き + MS PGothic + 中央
-                    if b['teacher']:
-                        cell = ws.cell(r1, lc)
-                        cell.value = b['teacher']
-                        cell.font = teacher_font
-                        cell.alignment = teacher_align
-                    # 生徒1 → 上段
-                    if len(b['slots'])>=1:
-                        g,sn,subj = b['slots'][0]
-                        for c, v in [(gc,g),(sc,sn),(sjc,subj)]:
-                            cell = ws.cell(r1,c)
-                            cell.value = v
-                            cell.font = data_font
-                            cell.alignment = data_align
-                    # 生徒2 → 下段
-                    if len(b['slots'])>=2:
-                        g2,sn2,subj2 = b['slots'][1]
-                        for c, v in [(gc,g2),(sc,sn2),(sjc,subj2)]:
-                            cell = ws.cell(r2,c)
-                            cell.value = v
-                            cell.font = data_font
-                            cell.alignment = data_align
+                try: ws.cell(r1, lc).value = None
+                except: pass
+                for c in [gc, sc, sjc]:
+                    for r in [r1, r2]:
+                        try: ws.cell(r, c).value = None
+                        except: pass
 
-        # 教室業務・チューター
-        ot = office_teachers[wi] if wi < len(office_teachers) else {}
-        holiday_fill = PatternFill(start_color='C0C0C0', end_color='C0C0C0', fill_type='solid')
-        holiday_font = Font(name='MS PGothic', color='333333', bold=True, size=11)
+    # 書き込み
+    for tl, (sr, nb) in LAYOUT.items():
+        ts = TIME_SHORT[tl]
         for day in DAYS:
-            bc = DAY_COLS[day][0]
-            t = ot.get(day)
-            if t:
-                cell = ws.cell(5, bc, t)
-                if t == '休塾日':
-                    cell.fill = holiday_fill
-                    cell.font = holiday_font
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
-                for tr in TUTOR_ROWS:
-                    try:
-                        c = ws.cell(tr, bc, t)
-                        if t == '休塾日':
-                            c.fill = holiday_fill
-                            c.font = holiday_font
-                            c.alignment = Alignment(horizontal='center', vertical='center')
-                    except: pass
-                # 休塾日はデータ列もグレーに塗る
-                if t == '休塾日':
-                    all_cols = DAY_COLS[day]  # (bc, lc, gc, sc, sjc)
-                    for tl, (sr, nb) in LAYOUT.items():
-                        for b_i in range(nb):
-                            r1, r2 = sr + b_i * 2, sr + b_i * 2 + 1
-                            for col in all_cols:
-                                for r in [r1, r2]:
-                                    try:
-                                        cell = ws.cell(r, col)
-                                        cell.fill = holiday_fill
-                                    except: pass
+            _, lc, gc, sc, sjc = DAY_COLS[day]
+            booths = wsched.get(day,{}).get(ts,[])
+            for bi in range(min(nb, len(booths))):
+                r1, r2 = sr+bi*2, sr+bi*2+1
+                b = booths[bi]
+                if b['teacher']:
+                    cell = ws.cell(r1, lc)
+                    cell.value = b['teacher']
+                    cell.font = teacher_font
+                    cell.alignment = teacher_align
+                if len(b['slots'])>=1:
+                    g,sn,subj = b['slots'][0]
+                    for c, v in [(gc,g),(sc,sn),(sjc,subj)]:
+                        cell = ws.cell(r1,c)
+                        cell.value = v
+                        cell.font = data_font
+                        cell.alignment = data_align
+                if len(b['slots'])>=2:
+                    g2,sn2,subj2 = b['slots'][1]
+                    for c, v in [(gc,g2),(sc,sn2),(sjc,subj2)]:
+                        cell = ws.cell(r2,c)
+                        cell.value = v
+                        cell.font = data_font
+                        cell.alignment = data_align
+
+    # 教室業務・チューター
+    holiday_fill = PatternFill(start_color='C0C0C0', end_color='C0C0C0', fill_type='solid')
+    holiday_font = Font(name='MS PGothic', color='333333', bold=True, size=11)
+    for day in DAYS:
+        bc = DAY_COLS[day][0]
+        t = office_data.get(day)
+        if t:
+            cell = ws.cell(5, bc, t)
+            if t == '休塾日':
+                cell.fill = holiday_fill
+                cell.font = holiday_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            for tr in TUTOR_ROWS:
+                try:
+                    c = ws.cell(tr, bc, t)
+                    if t == '休塾日':
+                        c.fill = holiday_fill
+                        c.font = holiday_font
+                        c.alignment = Alignment(horizontal='center', vertical='center')
+                except: pass
+            if t == '休塾日':
+                all_cols = DAY_COLS[day]
+                for tl, (sr, nb) in LAYOUT.items():
+                    for b_i in range(nb):
+                        r1, r2 = sr + b_i * 2, sr + b_i * 2 + 1
+                        for col in all_cols:
+                            for r in [r1, r2]:
+                                try:
+                                    cell = ws.cell(r, col)
+                                    cell.fill = holiday_fill
+                                except: pass
+
+def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None, week_file_paths=None):
+    num_weeks = len(schedule)
+
+    if week_file_paths:
+        # 週ファイルから直接読み込んで出力ブックを構築（週シートのみ、メタなし）
+        wb = openpyxl.Workbook()
+        # デフォルトシートを削除
+        wb.remove(wb.active)
+
+        for wi in range(min(num_weeks, len(week_file_paths))):
+            week_wb = openpyxl.load_workbook(week_file_paths[wi])
+            # ブース表シートを探す
+            src_sn = None
+            for sn in week_wb.sheetnames:
+                if 'ブース表' in sn and week_wb[sn].sheet_state == 'visible':
+                    src_sn = sn
+                    break
+            if not src_sn:
+                week_wb.close()
+                continue
+
+            src_ws = week_wb[src_sn]
+            dst_ws = wb.create_sheet(src_sn)
+
+            # セル・スタイル・結合・列幅・行高さをコピー
+            for row in src_ws.iter_rows():
+                for cell in row:
+                    dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
+                    dst_cell.value = cell.value
+                    if cell.has_style:
+                        dst_cell.font = copy(cell.font)
+                        dst_cell.border = copy(cell.border)
+                        dst_cell.fill = copy(cell.fill)
+                        dst_cell.number_format = cell.number_format
+                        dst_cell.protection = copy(cell.protection)
+                        dst_cell.alignment = copy(cell.alignment)
+            for merged_range in src_ws.merged_cells.ranges:
+                dst_ws.merge_cells(str(merged_range))
+            for col_letter, dim in src_ws.column_dimensions.items():
+                dst_ws.column_dimensions[col_letter].width = dim.width
+            for row_num, dim in src_ws.row_dimensions.items():
+                dst_ws.row_dimensions[row_num].height = dim.height
+
+            week_wb.close()
+
+            # スケジュールデータを書き込み
+            ot = office_teachers[wi] if wi < len(office_teachers) else {}
+            _write_schedule_to_ws(dst_ws, schedule[wi], ot)
+
+        week_sheets = [sn for sn in wb.sheetnames]
+    elif booth_path:
+        # 後方互換: 統合ブックから読み込み
+        wb = openpyxl.load_workbook(booth_path)
+        meta_sheets = [sn for sn in wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
+        week_sheets = [sn for sn in wb.sheetnames if sn not in meta_sheets]
+        num_weeks = min(num_weeks, len(week_sheets))
+
+        for wi in range(num_weeks):
+            ws = wb[week_sheets[wi]]
+            ot = office_teachers[wi] if wi < len(office_teachers) else {}
+            _write_schedule_to_ws(ws, schedule[wi], ot)
+    else:
+        # テンプレートなし: データのみのワークブックを生成
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
 
     # 未配置コマシート
     ws_up = wb.create_sheet('未配置コマ')
@@ -1370,7 +1477,6 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         ws_state = wb.create_sheet('_schedule_data')
         ws_state.sheet_state = 'hidden'
         data_str = json.dumps(state_json, ensure_ascii=False)
-        # Excelセルの文字数上限(32767)を考慮して分割
         CHUNK = 30000
         for i in range(0, len(data_str), CHUNK):
             ws_state.cell(i // CHUNK + 1, 1, data_str[i:i+CHUNK])
@@ -1522,7 +1628,7 @@ def upload_surveys():
 @app.route('/api/consolidate_booth', methods=['POST'])
 @login_required
 def consolidate_booth():
-    """週別ブース表ファイルとメタデータファイル(必要コマ数等)を1つのブックに統合"""
+    """週別ブース表ファイルとメタデータファイルを個別に保存（統合はDL時に実行）"""
     sd = get_session_data()
     meta_file = request.files.get('meta')
     week_files = request.files.getlist('weeks')
@@ -1541,10 +1647,9 @@ def consolidate_booth():
                 # 一時保存して中身を確認
                 temp_path = os.path.join(sd['dir'], 'tmp_detect_' + os.path.basename(f.filename))
                 f.save(temp_path)
-                f.stream.seek(0)  # save()でストリームが消費されるため、ポインタを先頭に戻す
+                f.stream.seek(0)
                 wb = openpyxl.load_workbook(temp_path, read_only=True)
                 sheet_names = wb.sheetnames
-                # _schedule_data シートを含むファイルは出力ファイルなのでスキップ
                 is_output = any(sn.startswith('_schedule_data') for sn in sheet_names)
                 has_meta = any(any(k in sn for k in META_KEYWORDS) for sn in sheet_names)
                 wb.close()
@@ -1561,21 +1666,14 @@ def consolidate_booth():
             except Exception as e:
                 print(f"[consolidate] 自動検出中にエラー: {f.filename} {e}", flush=True)
                 remaining_weeks.append(f)
-        
+
         if detected_meta:
             meta_file = detected_meta
             week_files = remaining_weeks
         else:
             return jsonify({'error': 'メタデータファイルを選択するか、フォルダ内に「必要コマ数」等を含むファイルを入れてください'}), 400
 
-    if not week_files or all(not f.filename for f in week_files):
-        # メタファイル自体に週シートが含まれている可能性もあるが、基本は週ファイルが必要
-        # ただし、フォルダ1つだけ選んでその中に全部入っている場合、week_filesが空になる可能性がある
-        # detectした後のweek_filesが空なら、エラーにせず続行（メタファイル内のシートのみ処理）？
-        # いや、現状のロジックはweek_filesをループするので、1つ以上必要。
-        pass
-
-    # メタデータファイルを保存・読み込み
+    # メタデータファイルを保存
     ok, err = validate_file(meta_file)
     if not ok:
         return jsonify({'error': f'メタデータファイル: {err}'}), 400
@@ -1583,21 +1681,17 @@ def consolidate_booth():
     meta_file.save(meta_path)
 
     try:
-        meta_wb = openpyxl.load_workbook(meta_path)
+        meta_wb = openpyxl.load_workbook(meta_path, read_only=True)
+        meta_sheet_names = [sn for sn in meta_wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
+        meta_wb.close()
     except Exception as e:
         return jsonify({'error': f'メタデータファイルの読み込みに失敗: {e}'}), 400
 
-    # メタシートを特定（必要コマ数、一覧表、ブース希望、指導可能科目等）
-    meta_sheet_names = [sn for sn in meta_wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
+    print(f"[consolidate] メタシート: {meta_sheet_names}", flush=True)
 
-    # 古い週シートを削除（メタシート以外）
-    old_week_sheets = [sn for sn in meta_wb.sheetnames if sn not in meta_sheet_names]
-    for sn in old_week_sheets:
-        del meta_wb[sn]
-    print(f"[consolidate] メタシート: {meta_sheet_names}, 削除した古い週シート: {old_week_sheets}", flush=True)
-
-    # 週別ファイルを処理
+    # 週別ファイルをバリデーション・保存
     errors = []
+    saved_week_paths = []
     week_count = 0
     for f in sorted(week_files, key=lambda x: x.filename):
         ok, err = validate_file(f)
@@ -1608,7 +1702,7 @@ def consolidate_booth():
         week_path = os.path.join(sd['dir'], 'week_' + os.path.basename(f.filename))
         try:
             f.save(week_path)
-            week_wb = openpyxl.load_workbook(week_path)
+            week_wb = openpyxl.load_workbook(week_path, read_only=True)
 
             # 出力ファイル（_schedule_dataシートを含む）をスキップ
             if any(sn.startswith('_schedule_data') for sn in week_wb.sheetnames):
@@ -1616,71 +1710,23 @@ def consolidate_booth():
                 week_wb.close()
                 continue
 
+            # 有効な週シートがあるかチェック
+            has_valid = False
             for sn in week_wb.sheetnames:
-                # 「ブース表」が含まれるシートのみ対象
                 if 'ブース表' not in sn:
                     continue
-                # 非表示シートはスキップ（念のため）
                 if week_wb[sn].sheet_state != 'visible':
                     continue
-
-                src_ws = week_wb[sn]
-                
-                # シートが空かチェック（簡易チェック: 講師名セルにデータがあるか）
-                has_data = False
-                for day in DAYS:
-                    col = SRC_DAY_COLS[day]
-                    for start, tl, nb in SRC_TIME_SLOTS:
-                        for b in range(nb):
-                            if src_ws.cell(start+b*2, col).value:
-                                has_data = True
-                                break
-                        if has_data: break
-                    if has_data: break
-                
-                if not has_data:
-                    print(f"[consolidate] 空の週シートをスキップ: {sn}", flush=True)
-                    continue
-
-                week_count += 1
-
-                # シート名の重複を回避
-                new_name = sn
-                if new_name in meta_wb.sheetnames:
-                    new_name = f'第{week_count}週'
-                while new_name in meta_wb.sheetnames:
-                    new_name = f'週{week_count}_{week_count}'
-
-                dst_ws = meta_wb.create_sheet(new_name)
-
-                # セルのコピー（値 + スタイル）
-                for row in src_ws.iter_rows():
-                    for cell in row:
-                        dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
-                        dst_cell.value = cell.value
-                        if cell.has_style:
-                            dst_cell.font = copy(cell.font)
-                            dst_cell.border = copy(cell.border)
-                            dst_cell.fill = copy(cell.fill)
-                            dst_cell.number_format = cell.number_format
-                            dst_cell.protection = copy(cell.protection)
-                            dst_cell.alignment = copy(cell.alignment)
-
-                # 結合セルのコピー
-                for merged_range in src_ws.merged_cells.ranges:
-                    dst_ws.merge_cells(str(merged_range))
-
-                # 列幅のコピー
-                for col_letter, dim in src_ws.column_dimensions.items():
-                    dst_ws.column_dimensions[col_letter].width = dim.width
-
-                # 行高さのコピー
-                for row_num, dim in src_ws.row_dimensions.items():
-                    dst_ws.row_dimensions[row_num].height = dim.height
-
-                print(f"[consolidate] {f.filename} -> シート '{new_name}' を追加", flush=True)
+                has_valid = True
+                break
 
             week_wb.close()
+            if has_valid:
+                week_count += 1
+                saved_week_paths.append(week_path)
+                print(f"[consolidate] 週ファイル保存: {f.filename}", flush=True)
+            else:
+                print(f"[consolidate] 有効な週シートなし: {f.filename}", flush=True)
         except Exception as e:
             errors.append(f'{f.filename}: {str(e)}')
             traceback.print_exc()
@@ -1688,26 +1734,16 @@ def consolidate_booth():
     if week_count == 0:
         return jsonify({'error': '有効な週シートがありません', 'details': errors}), 400
 
-    # 統合ブックを保存
-    output_path = os.path.join(sd['dir'], 'consolidated_booth.xlsx')
-    meta_wb.save(output_path)
-    meta_wb.close()
-
-    # boothファイルとして登録
-    sd['files'] = {**sd.get('files', {}), 'booth': output_path}
+    # メタファイルと週ファイルリストを個別に登録
+    sd['files'] = {**sd.get('files', {}), 'booth': meta_path, 'week_files': saved_week_paths}
     save_session_files(sd)
-
-    # 統合結果のシート一覧
-    final_sheets = meta_wb.sheetnames
 
     return jsonify({
         'ok': True,
         'weekCount': week_count,
         'metaSheets': meta_sheet_names,
-        'removedSheets': old_week_sheets,
-        'finalSheets': final_sheets,
         'errors': errors,
-        'files': {k: os.path.basename(v) for k, v in sd.get('files', {}).items()},
+        'files': {k: (os.path.basename(v) if isinstance(v, str) else [os.path.basename(p) for p in v]) for k, v in sd.get('files', {}).items()},
     })
 
 @app.route('/api/generate', methods=['POST'])
@@ -1732,11 +1768,12 @@ def generate():
     manual_teachers = data.get('manualTeachers', [])
 
     try:
-        # ブース表xlsxから全データを読み込み
+        # メタファイルから講師スキル・ブース希望・生徒データを読み込み
         booth_wb = openpyxl.load_workbook(files['booth'])
         skills = load_teacher_skills(booth_wb)
         file_booth_pref = load_booth_pref(booth_wb)
         students = load_students_from_wb(booth_wb)
+        booth_wb.close()
 
         # ブース希望: UI設定を優先、なければファイルから読んだ値を使用
         booth_pref = {**file_booth_pref, **booth_pref_ui}
@@ -1749,15 +1786,24 @@ def generate():
         if manual_teachers:
             print(f"[generate] manual teachers (候補のみ): {manual_teachers}", flush=True)
 
-        # ブース表シート数に合わせて週数を制限（メタシートを除外）
-        valid_booth_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
-        if len(wt) > len(valid_booth_sheets):
-            print(f"[generate] Truncating weeks from {len(wt)} to {len(valid_booth_sheets)} (based on booth sheets)", flush=True)
-            wt = wt[:len(valid_booth_sheets)]
-        total = sum(sum(s['needs'].values()) for s in students)
+        # 週ファイルリストから週数を制限
+        week_file_paths = files.get('week_files', [])
+        if week_file_paths:
+            if len(wt) > len(week_file_paths):
+                print(f"[generate] Truncating weeks from {len(wt)} to {len(week_file_paths)} (based on week files)", flush=True)
+                wt = wt[:len(week_file_paths)]
+            holidays = load_holidays_from_files(week_file_paths[:len(wt)])
+        else:
+            # 後方互換: 統合ブックが直接アップロードされた場合
+            booth_wb = openpyxl.load_workbook(files['booth'])
+            valid_booth_sheets = [sn for sn in booth_wb.sheetnames if not any(k in sn for k in META_KEYWORDS)]
+            if len(wt) > len(valid_booth_sheets):
+                print(f"[generate] Truncating weeks from {len(wt)} to {len(valid_booth_sheets)} (based on booth sheets)", flush=True)
+                wt = wt[:len(valid_booth_sheets)]
+            holidays = load_holidays(booth_wb, len(wt))
+            booth_wb.close()
 
-        # 休塾日検出
-        holidays = load_holidays(booth_wb, len(wt))
+        total = sum(sum(s['needs'].values()) for s in students)
 
         schedule, unplaced, office_teachers = build_schedule(
             students, wt, skills, office_rule, booth_pref, holidays=holidays
@@ -1779,8 +1825,12 @@ def generate():
             schedule_json.append(wj)
 
         # 週ごとの日付情報を取得
-        week_dates = extract_week_dates(booth_wb, len(schedule))
-        booth_wb.close()
+        if week_file_paths:
+            week_dates = extract_week_dates_from_files(week_file_paths[:len(schedule)])
+        else:
+            booth_wb = openpyxl.load_workbook(files['booth'])
+            week_dates = extract_week_dates(booth_wb, len(schedule))
+            booth_wb.close()
 
         sd['result'] = {
             'schedule': schedule,
@@ -1895,13 +1945,16 @@ def download():
             else:
                 ot_list.append({d: rule[d][0] if rule.get(d) else None for d in DAYS})
 
+        week_file_paths = sd.get('files', {}).get('week_files')
+        booth_path = sd.get('files', {}).get('booth')
         write_excel(
             res['schedule'],
             res['unplaced'],
             ot_list,
-            sd['files']['booth'],
+            booth_path,
             output_path,
-            state_json=state_json
+            state_json=state_json,
+            week_file_paths=week_file_paths
         )
         return send_file(output_path, as_attachment=True, download_name='時間割_出力.xlsx')
     except Exception as e:
