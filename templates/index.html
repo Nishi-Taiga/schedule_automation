@@ -1053,31 +1053,6 @@
     }
 
     /* Survey upload toggle */
-    .src-toggle {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 10px
-    }
-
-    .src-toggle button {
-      padding: 6px 14px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: #fff;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      font-family: inherit;
-      transition: all .12s;
-      color: var(--ink2)
-    }
-
-    .src-toggle button.active {
-      background: var(--accent);
-      color: #fff;
-      border-color: var(--accent)
-    }
-
     .survey-zone {
       border: 2px dashed var(--border);
       border-radius: 10px;
@@ -1133,31 +1108,6 @@
     }
 
     /* Booth consolidation */
-    .booth-toggle {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 10px
-    }
-
-    .booth-toggle button {
-      padding: 6px 14px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: #fff;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      font-family: inherit;
-      transition: all .12s;
-      color: var(--ink2)
-    }
-
-    .booth-toggle button.active {
-      background: var(--accent);
-      color: #fff;
-      border-color: var(--accent)
-    }
-
     .consol-zone {
       border: 2px dashed var(--border);
       border-radius: 10px;
@@ -1380,7 +1330,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.9.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1391,24 +1341,8 @@
     </div>
     <div id="pUpload" class="card">
       <h2>ファイルアップロード</h2>
-      <h3 style="font-size:13px;margin-bottom:6px">元シートの取得方法</h3>
-      <div class="src-toggle">
-        <button id="srcMode1" class="active" onclick="setSrcMode('file')">元シートをアップロード</button>
-        <button id="srcMode2" onclick="setSrcMode('survey')">講師回答ファイルから集約</button>
-      </div>
-      <div id="srcFileMode">
-        <label class="upload-row" id="uSrc">
-          <div class="icon">📁</div>
-          <div>
-            <div class="label">ブース表元シート (.xlsx)</div>
-            <div class="desc" id="nSrc">出勤可能講師の一覧</div>
-          </div><input type="file" accept=".xlsx" onchange="onF(this,'src')">
-        </label>
-        <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn"
-            onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory
-            style="display:none" onchange="onFolderSingle(this,'src')"></div>
-      </div>
-      <div id="srcSurveyMode" style="display:none">
+      <h3 style="font-size:13px;margin-bottom:6px">元シート（講師回答ファイルから集約）</h3>
+      <div id="srcSurveyMode">
         <div class="survey-zone" id="surveyZone">
           <div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div>
           <div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx"
@@ -1419,25 +1353,8 @@
           <div class="survey-files" id="surveyFileList"></div>
         </div>
       </div>
-      <h3 style="font-size:13px;margin-bottom:6px;margin-top:16px">ブース表の取得方法</h3>
-      <div class="booth-toggle">
-        <button id="boothMode1" class="active" onclick="setBoothMode('file')">ブース表をアップロード</button>
-        <button id="boothMode2" onclick="setBoothMode('consolidate')">ブース表を集約</button>
-      </div>
-      <div id="boothFileMode">
-        <label class="upload-row" id="uBooth">
-          <div class="icon">📁</div>
-          <div>
-            <div class="label">ブース表 (.xlsx)</div>
-            <div class="desc" id="nBooth">生徒情報・講師指導可能科目・テンプレート</div>
-          </div><input type="file" accept=".xlsx" onchange="onF(this,'booth')">
-        </label>
-        <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn"
-            onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory
-            style="display:none" onchange="onFolderSingle(this,'booth')"></div>
-        <div class="file-note">※ ブース表に「必要コマ数」「一覧表」「講師ブース希望」シートが含まれている必要があります</div>
-      </div>
-      <div id="boothConsolMode" style="display:none">
+      <h3 style="font-size:13px;margin-bottom:6px;margin-top:16px">ブース表（メタデータ＋週別ブース表）</h3>
+      <div id="boothConsolMode">
         <div class="consol-zone" id="consolMetaZone">
           <div class="consol-label">📋 メタデータファイル (.xlsx)</div>
           <div class="consol-desc" id="consolMetaDesc">必要コマ数・一覧表(指導科目)・ブース希望シートを含むファイル</div><input type="file"
@@ -1680,9 +1597,6 @@
     }
     async function onFolderSingle(inp, key) {
       const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
-      // 複数ファイル: 自動でバッチモードに切り替え
-      if (files.length > 1 && key === 'src') { setSrcMode('survey'); await onFolderSurvey(inp); return; }
-      if (files.length > 1 && key === 'booth') { setBoothMode('consolidate'); consolMeta = null; onFolderWeeks(inp); await doConsolidate(); return; }
       const f = files[0];
       if (key === 'saved') {
         const row = document.getElementById('uSaved'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
@@ -1699,22 +1613,6 @@
         catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; }
         return;
       }
-      // src or booth
-      const row = document.getElementById(key === 'src' ? 'uSrc' : 'uBooth'); row.querySelector('.desc').textContent = 'アップロード中...'; row.classList.remove('done'); row.querySelector('.icon').textContent = '📄';
-      const fd = new FormData(); fd.append(key, await preloadFile(f));
-      try {
-        const res = await fetch('/api/upload', { method: 'POST', body: fd }); const d = await res.json();
-        if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; }
-        else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '失敗: ' + (d.error || '不明'); uploaded[key] = false; }
-      }
-      catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; uploaded[key] = false; }
-      const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = true;
-      if (ready) {
-        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...'; showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
-        try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        hideProgress(); btn.textContent = '次へ: 設定 →';
-      }
-      document.getElementById('toS').disabled = !ready;
     }
     async function onFolderSurvey(inp) {
       const files = filterXlsx(inp.files); if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
@@ -1754,15 +1652,6 @@
     }
 
     // === Survey upload ===
-    let srcMode = 'file';
-    function setSrcMode(mode) {
-      srcMode = mode;
-      document.getElementById('srcMode1').className = mode === 'file' ? 'active' : '';
-      document.getElementById('srcMode2').className = mode === 'survey' ? 'active' : '';
-      document.getElementById('srcFileMode').style.display = mode === 'file' ? '' : 'none';
-      document.getElementById('srcSurveyMode').style.display = mode === 'survey' ? '' : 'none';
-      checkReady();
-    }
     function checkReady() { const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = !ready; }
     async function onSurveyFiles(inp) {
       const files = inp.files; if (!files || !files.length) return;
@@ -1798,15 +1687,7 @@
     }
 
     // === Booth consolidation ===
-    let boothMode = 'file', consolMeta = null, consolWeeks = null;
-    function setBoothMode(mode) {
-      boothMode = mode;
-      document.getElementById('boothMode1').className = mode === 'file' ? 'active' : '';
-      document.getElementById('boothMode2').className = mode === 'consolidate' ? 'active' : '';
-      document.getElementById('boothFileMode').style.display = mode === 'file' ? '' : 'none';
-      document.getElementById('boothConsolMode').style.display = mode === 'consolidate' ? '' : 'none';
-      checkReady();
-    }
+    let consolMeta = null, consolWeeks = null;
     function onConsolMeta(inp) {
       const f = inp.files[0]; if (!f) return; consolMeta = f;
       document.getElementById('consolMetaZone').classList.add('done');
@@ -1853,25 +1734,6 @@
 
     function fmtSize(b) { if (b < 1024) return b + 'B'; if (b < 1048576) return (b / 1024).toFixed(1) + 'KB'; return (b / 1048576).toFixed(1) + 'MB'; }
     function showUpErr(detail) { const st = document.getElementById('upSt'); st.className = 'status err'; st.innerHTML = detail; }
-    async function onF(inp, key) {
-      const f = inp.files[0]; if (!f) return; const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = 'アップロード中...'; row.classList.remove('done'); row.querySelector('.icon').textContent = '📄'; document.getElementById('upSt').textContent = ''; document.getElementById('upSt').className = 'status';
-      const maxSize = 10 * 1024 * 1024; if (f.size > maxSize) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'ファイルサイズ超過'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ') は上限 10MB を超えています'); uploaded[key] = false; const ready = uploaded.src && uploaded.booth; document.getElementById('toS').disabled = !ready; return; }
-      let pf; try { pf = await preloadFile(f); } catch(e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'ファイル読み込み失敗'; showUpErr('ファイルを読み込めませんでした。ローカルにコピーしてから再度お試しください。'); uploaded[key] = false; return; }
-      const fd = new FormData(); fd.append(key, pf);
-      try {
-        const res = await fetch('/api/upload', { method: 'POST', body: fd }); let d; try { d = await res.json(); } catch (pe) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = 'サーバーエラー (HTTP ' + res.status + ')'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ' - レスポンス解析失敗'); uploaded[key] = false; return; }
-        if (res.ok && d.ok) { row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name; uploaded[key] = true; } else { const msg = d.error || '不明なエラー (HTTP ' + res.status + ')'; row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '失敗: ' + msg; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>HTTP ' + res.status + ': ' + escHtml(msg)); uploaded[key] = false; }
-      } catch (e) { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー'; showUpErr('[' + escHtml(key) + '] <b>' + escHtml(f.name) + '</b> (' + fmtSize(f.size) + ')<br>通信エラー: ' + escHtml(e.message) + '<br><small>サーバーに接続できませんでした。ネットワーク接続・ファイルサイズを確認してください。</small>'); uploaded[key] = false; }
-      const ready = uploaded.src && uploaded.booth;
-      document.getElementById('toS').disabled = true;
-      if (ready) {
-        const btn = document.getElementById('toS'); btn.textContent = '読み込み中...';
-        showProgress(30, '講師データを読み込んでいます...', 'データ読み込み中');
-        try { const r = await fetch('/api/teachers'); const d = await r.json(); if (d.teachers) teacherList = d.teachers; if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); } catch (e) { }
-        hideProgress(); btn.textContent = '次へ: 設定 →';
-      }
-      document.getElementById('toS').disabled = !ready;
-    }
 
     function go(step) {
       document.getElementById('pUpload').style.display = step === 'upload' ? '' : 'none'; document.getElementById('pSettings').style.display = step === 'settings' ? '' : 'none'; document.getElementById('pResult').style.display = step === 'result' ? '' : 'none';
