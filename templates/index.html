@@ -1611,7 +1611,7 @@
       const fd = new FormData();
       fd.append('file', _jsonFile);
       if (_jsonBoothFiles.length > 0) {
-        const loaded = await preloadFiles(_jsonBoothFiles);
+        const { files: loaded } = await preloadFiles(_jsonBoothFiles);
         for (const lf of loaded) fd.append('booth_files', lf);
       }
       try {
