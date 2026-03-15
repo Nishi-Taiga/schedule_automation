@@ -1029,30 +1029,7 @@
     }
 
     /* Restore banner */
-    .restore-banner {
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 8px;
-      padding: 12px 18px;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px
-    }
-
-    .restore-banner .msg {
-      font-size: 13px;
-      color: var(--accent2);
-      font-weight: 600
-    }
-
-    .restore-banner .actions {
-      display: flex;
-      gap: 8px
-    }
-
-    /* Survey upload toggle */
+    /* Survey upload */
     .survey-zone {
       border: 2px dashed var(--border);
       border-radius: 10px;
@@ -1330,7 +1307,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.1</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1474,24 +1451,6 @@
     async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); showSaveIndicator('自動保存しました'); } catch (e) { } }
     let autoSaveTimer = null;
     function scheduleAutoSave() { if (autoSaveTimer) clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(autoSave, 3000); }
-    async function checkSavedState() {
-      try {
-        const res = await fetch('/api/state'); const d = await res.json();
-        if (d.has_state && d.schedule) {
-          const wrap = document.getElementById('pUpload');
-          const banner = document.createElement('div'); banner.className = 'restore-banner'; banner.id = 'restoreBanner';
-          banner.innerHTML = '<span class="msg">前回の作業データがあります（' + escHtml(d.placed) + '/' + escHtml(d.total) + 'コマ配置済み）</span><div class="actions"><button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="restoreState()">復元する</button><button class="btn btn-o" style="padding:6px 14px;font-size:12px" onclick="dismissRestore()">新規作成</button></div>';
-          wrap.insertBefore(banner, wrap.firstChild);
-          window._savedState = d;
-        }
-      } catch (e) { }
-    }
-    function restoreState() {
-      if (!window._savedState) return; R = window._savedState; PW = 0; edited = false; calStudent = null; buildNgMap();
-      if (R.boothPref) BP = Object.entries(R.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
-      const b = document.getElementById('restoreBanner'); if (b) b.remove(); go('result'); rR(); showSaveIndicator('復元しました');
-    }
-    function dismissRestore() { const b = document.getElementById('restoreBanner'); if (b) b.remove(); window._savedState = null; }
     async function onLoadSaved(inp) {
       const f = inp.files[0]; if (!f) return;
       const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
@@ -1577,7 +1536,6 @@
       }
     }
     async function onLoadJson(inp) { onJsonSelected(inp); }
-    window.addEventListener('DOMContentLoaded', () => { checkSavedState(); });
 
     // === Folder upload helper ===
     function filterXlsx(fileList) { return Array.from(fileList).filter(f => f.name.endsWith('.xlsx') && !f.name.startsWith('~$') && !f.name.includes('出力')); }
