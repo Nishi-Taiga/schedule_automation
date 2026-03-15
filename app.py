@@ -2547,17 +2547,64 @@ def restore_json():
     if not total and students:
         total = sum(sum(s.get('needs', {}).values()) for s in students)
 
-    # booth / src ファイルが同時にアップロードされた場合はセッションに保存
+    # ブース表ファイル（メタ + 週別）を処理
     files = dict(sd.get('files', {}))
-    for key in ['booth', 'src']:
-        fx = request.files.get(key)
-        if fx and fx.filename:
-            ok, err = validate_file(fx)
+    booth_files = request.files.getlist('booth_files')
+    if booth_files and any(bf.filename for bf in booth_files):
+        # メタファイルと週ファイルを自動検出
+        detected_meta = None
+        week_paths = []
+        for bf in sorted(booth_files, key=lambda x: x.filename or ''):
+            if not bf.filename:
+                continue
+            fname = os.path.basename(bf.filename)
+            if '出力' in fname:
+                continue
+            ok, err = validate_file(bf)
             if not ok:
-                return jsonify({'error': f'{key}ファイル: {err}'}), 400
-            path = os.path.join(sd['dir'], key + '_' + fx.filename)
-            fx.save(path)
-            files[key] = path
+                continue
+            temp_path = os.path.join(sd['dir'], 'tmp_' + fname)
+            bf.save(temp_path)
+            try:
+                wb = openpyxl.load_workbook(temp_path, read_only=True)
+                snames = wb.sheetnames
+                is_output = any(sn.startswith('_schedule_data') for sn in snames)
+                has_meta = any(any(k in sn for k in META_KEYWORDS) for sn in snames)
+                wb.close()
+                if is_output:
+                    os.remove(temp_path)
+                    continue
+                if has_meta and not detected_meta:
+                    meta_path = os.path.join(sd['dir'], 'meta_' + fname)
+                    os.rename(temp_path, meta_path)
+                    detected_meta = meta_path
+                    files['booth'] = meta_path
+                else:
+                    week_path = os.path.join(sd['dir'], 'week_' + fname)
+                    os.rename(temp_path, week_path)
+                    # 有効な週シートがあるか確認
+                    wb2 = openpyxl.load_workbook(week_path, read_only=True)
+                    has_valid = any('ブース表' in sn and wb2[sn].sheet_state == 'visible' for sn in wb2.sheetnames)
+                    wb2.close()
+                    if has_valid:
+                        week_paths.append(week_path)
+            except Exception:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        if week_paths:
+            files['week_files'] = week_paths
+        print(f"[restore_json] meta={'yes' if detected_meta else 'no'}, weeks={len(week_paths)}", flush=True)
+    else:
+        # 後方互換: 個別の booth / src ファイル
+        for key in ['booth', 'src']:
+            fx = request.files.get(key)
+            if fx and fx.filename:
+                ok, err = validate_file(fx)
+                if not ok:
+                    return jsonify({'error': f'{key}ファイル: {err}'}), 400
+                path = os.path.join(sd['dir'], key + '_' + fx.filename)
+                fx.save(path)
+                files[key] = path
     sd['files'] = files
     save_session_files(sd)
 
@@ -2591,6 +2638,7 @@ def restore_json():
         'students': students,
         'weekDates': week_dates,
         'hasBooth': 'booth' in files,
+        'hasWeekFiles': bool(files.get('week_files')),
     }
     if weekly_teachers:
         resp['weeklyTeachers'] = weekly_teachers

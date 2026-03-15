@@ -1476,10 +1476,17 @@
       <label class="upload-row" id="uJson">
         <div class="icon">📋</div>
         <div>
-          <div class="label">JSONバックアップ (.json)</div>
-          <div class="desc" id="nJson">ブラウザコンソールから保存したJSONファイルを選択</div>
-        </div><input type="file" accept=".json" onchange="onLoadJson(this)">
+          <div class="label">JSONバックアップから復元</div>
+          <div class="desc" id="nJson">JSONファイルを選択</div>
+        </div><input type="file" accept=".json" onchange="onJsonSelected(this)">
       </label>
+      <div id="jsonBoothSection" style="display:none;padding-left:54px;margin-top:-4px;margin-bottom:6px">
+        <div style="font-size:12px;color:var(--ink3);margin-bottom:6px">ブース表DLにはメタデータ＋週別ブース表が必要です</div>
+        <button class="folder-btn" onclick="this.nextElementSibling.click()">📂 ブース表フォルダを選択</button>
+        <input type="file" webkitdirectory style="display:none" id="jsonBoothFolder" onchange="onJsonBoothFolder(this)">
+        <div id="jsonBoothStatus" style="font-size:12px;color:var(--ink3);margin-top:4px"></div>
+        <button class="btn btn-g" id="jsonRestoreBtn" style="margin-top:8px" onclick="doJsonRestore()">復元する</button>
+      </div>
     </div>
     <div id="pSettings" class="card" style="display:none">
       <h2>教室業務・チューター担当</h2>
@@ -1583,25 +1590,52 @@
       }
       catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
-    async function onLoadJson(inp) {
+    let _jsonFile = null, _jsonBoothFiles = [];
+    function onJsonSelected(inp) {
       const f = inp.files[0]; if (!f) return;
-      const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
-      showProgress(20, 'JSONバックアップを読み込んでいます...', '読み込み中');
-      const fd = new FormData(); fd.append('file', f);
+      _jsonFile = f;
+      const row = inp.closest('.upload-row');
+      row.classList.add('done'); row.querySelector('.icon').textContent = '✅';
+      row.querySelector('.desc').textContent = f.name;
+      document.getElementById('jsonBoothSection').style.display = 'block';
+    }
+    function onJsonBoothFolder(inp) {
+      const files = filterXlsx(inp.files);
+      _jsonBoothFiles = files;
+      document.getElementById('jsonBoothStatus').textContent = files.length + '個のExcelファイルを検出';
+    }
+    async function doJsonRestore() {
+      if (!_jsonFile) return;
+      const row = document.getElementById('uJson');
+      showProgress(20, 'JSONバックアップを復元中...', '復元中');
+      const fd = new FormData();
+      fd.append('file', _jsonFile);
+      if (_jsonBoothFiles.length > 0) {
+        const loaded = await preloadFiles(_jsonBoothFiles);
+        for (const lf of loaded) fd.append('booth_files', lf);
+      }
       try {
-        const res = await fetch('/api/restore_json', { method: 'POST', body: fd }); const d = await res.json();
+        const res = await fetch('/api/restore_json', { method: 'POST', body: fd });
+        const d = await res.json();
         hideProgress();
         if (res.ok && d.ok) {
-          row.classList.add('done'); row.querySelector('.icon').textContent = '✅';
-          row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
+          row.querySelector('.desc').textContent = _jsonFile.name + ' (' + d.placed + '/' + d.total + 'コマ)';
           R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
           if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
-          go('result'); rR(); showSaveIndicator('JSONから復元しました');
+          go('result'); rR();
+          const msg = d.hasWeekFiles ? 'JSON＋ブース表から復元しました' : 'JSONから復元しました（ブース表なし）';
+          showSaveIndicator(msg);
+        } else {
+          row.querySelector('.icon').textContent = '❌';
+          row.querySelector('.desc').textContent = d.error || '読み込み失敗';
         }
-        else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
+      } catch (e) {
+        hideProgress();
+        row.querySelector('.icon').textContent = '❌';
+        row.querySelector('.desc').textContent = '通信エラー: ' + e.message;
       }
-      catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
+    async function onLoadJson(inp) { onJsonSelected(inp); }
     window.addEventListener('DOMContentLoaded', () => { checkSavedState(); });
 
     // === Folder upload helper ===
