@@ -2542,11 +2542,6 @@ def restore_json():
     placed = state.get('placed', 0)
     total = state.get('total', 0)
 
-    if not placed:
-        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
-    if not total and students:
-        total = sum(sum(s.get('needs', {}).values()) for s in students)
-
     # ブース表ファイル（メタ + 週別）を処理
     files = dict(sd.get('files', {}))
     booth_files = request.files.getlist('booth_files')
@@ -2615,6 +2610,32 @@ def restore_json():
         except Exception:
             pass
 
+    # メタデータExcelからJSONに不足しているデータを補完
+    if 'booth' in files:
+        try:
+            meta_wb = openpyxl.load_workbook(files['booth'])
+            if not students:
+                students = load_students_from_wb(meta_wb)
+                print(f"[restore_json] students補完: {len(students)}名", flush=True)
+            if not booth_pref:
+                booth_pref = load_booth_pref(meta_wb)
+            meta_wb.close()
+        except Exception as e:
+            print(f"[restore_json] メタ補完エラー: {e}", flush=True)
+
+    # 週ファイルからweek_datesを補完
+    week_file_paths = files.get('week_files', [])
+    if week_file_paths:
+        if not week_dates or not week_dates.get('weeks'):
+            week_dates = extract_week_dates_from_files(week_file_paths)
+            print(f"[restore_json] week_dates補完: {week_dates}", flush=True)
+
+    # placed / total を再計算
+    if not placed:
+        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+    if not total and students:
+        total = sum(sum(s.get('needs', {}).values()) for s in students)
+
     sd['result'] = {
         'schedule_json': schedule,
         'schedule': schedule,
@@ -2627,6 +2648,22 @@ def restore_json():
     }
     save_session_result(sd)
 
+    # students JSON化（setやtupleをlist化）
+    students_json = []
+    for s in students:
+        students_json.append({
+            'grade': s.get('grade', ''), 'name': s.get('name', ''),
+            'needs': s.get('needs', {}),
+            'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
+            'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
+            'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
+            'notes': s.get('notes', ''),
+            'ng_teachers': s.get('ng_teachers', []),
+            'wish_teachers': s.get('wish_teachers', []),
+            'ng_students': s.get('ng_students', []),
+            'ng_dates': [list(d) for d in s.get('ng_dates', set())],
+        })
+
     resp = {
         'ok': True,
         'placed': placed,
@@ -2635,7 +2672,7 @@ def restore_json():
         'unplaced': unplaced,
         'officeTeachers': office_teachers,
         'boothPref': booth_pref,
-        'students': students,
+        'students': students_json,
         'weekDates': week_dates,
         'hasBooth': 'booth' in files,
         'hasWeekFiles': bool(files.get('week_files')),
