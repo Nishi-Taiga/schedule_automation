@@ -1307,7 +1307,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.1</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.2</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1383,7 +1383,7 @@
           <input type="file" webkitdirectory style="display:none" onchange="onJsonWeekFolder(this)">
         </div>
         <div id="jsonBoothStatus" style="font-size:12px;color:var(--ink3);margin-top:4px"></div>
-        <button class="btn btn-g" id="jsonRestoreBtn" style="margin-top:8px" onclick="doJsonRestore()">復元する</button>
+        <button class="btn btn-g" id="jsonRestoreBtn" style="margin-top:8px" disabled onclick="doJsonRestore()">復元する</button>
       </div>
     </div>
     <div id="pSettings" class="card" style="display:none">
@@ -1493,9 +1493,14 @@
       if (_jsonMetaFile) parts.push('メタ: ' + _jsonMetaFile.name);
       if (_jsonWeekFiles.length) parts.push('週別: ' + _jsonWeekFiles.length + '件');
       document.getElementById('jsonBoothStatus').textContent = parts.join(' / ') || '';
+      document.getElementById('jsonRestoreBtn').disabled = !(_jsonMetaFile && _jsonWeekFiles.length);
     }
     async function doJsonRestore() {
       if (!_jsonFile) return;
+      if (!_jsonMetaFile || !_jsonWeekFiles.length) {
+        alert('メタデータ (.xlsx) と週別ブース表フォルダの両方を選択してください。\n生徒データ・配置率の計算に必要です。');
+        return;
+      }
       const row = document.getElementById('uJson');
       showProgress(20, 'JSONバックアップを復元中...', '復元中');
       const fd = new FormData();
@@ -1511,7 +1516,16 @@
       if (_jsonMetaFile) boothRaw.push(_jsonMetaFile);
       boothRaw.push(..._jsonWeekFiles);
       if (boothRaw.length > 0) {
-        const { files: loaded } = await preloadFiles(boothRaw);
+        const { files: loaded, errors } = await preloadFiles(boothRaw);
+        if (errors.length > 0) {
+          console.warn('[doJsonRestore] preload errors:', errors);
+          showUpErr('一部ファイルの読み込みに失敗: ' + errors.join(', ') + '<br><small>Google ドライブから直接選択できない場合は、ローカルにコピーしてから選択してください。</small>');
+        }
+        if (loaded.length === 0) {
+          hideProgress();
+          showUpErr('ブース表ファイルの読み込みに失敗しました。<br><small>Google ドライブのファイルはローカルにコピーしてから選択してください。</small>');
+          return;
+        }
         for (const lf of loaded) fd.append('booth_files', lf);
       }
       try {

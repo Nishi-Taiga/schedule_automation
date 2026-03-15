@@ -2636,6 +2636,10 @@ def restore_json():
     if not total and students:
         total = sum(sum(s.get('needs', {}).values()) for s in students)
 
+    # 生徒データがない場合は警告を含める
+    if not students:
+        print(f"[restore_json] WARNING: students is empty. booth={'booth' in files}, booth_files_sent={bool(booth_files and any(bf.filename for bf in booth_files))}", flush=True)
+
     sd['result'] = {
         'schedule_json': schedule,
         'schedule': schedule,
