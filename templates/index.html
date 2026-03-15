@@ -1482,8 +1482,12 @@
       </label>
       <div id="jsonBoothSection" style="display:none;padding-left:54px;margin-top:-4px;margin-bottom:6px">
         <div style="font-size:12px;color:var(--ink3);margin-bottom:6px">ブース表DLにはメタデータ＋週別ブース表が必要です</div>
-        <button class="folder-btn" onclick="this.nextElementSibling.click()">📂 ブース表フォルダを選択</button>
-        <input type="file" webkitdirectory style="display:none" id="jsonBoothFolder" onchange="onJsonBoothFolder(this)">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+          <button class="folder-btn" onclick="this.nextElementSibling.click()">📄 メタデータ (.xlsx)</button>
+          <input type="file" accept=".xlsx" style="display:none" onchange="onJsonMetaFile(this)">
+          <button class="folder-btn" onclick="this.nextElementSibling.click()">📂 週別ブース表フォルダ</button>
+          <input type="file" webkitdirectory style="display:none" onchange="onJsonWeekFolder(this)">
+        </div>
         <div id="jsonBoothStatus" style="font-size:12px;color:var(--ink3);margin-top:4px"></div>
         <button class="btn btn-g" id="jsonRestoreBtn" style="margin-top:8px" onclick="doJsonRestore()">復元する</button>
       </div>
@@ -1590,7 +1594,7 @@
       }
       catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
-    let _jsonFile = null, _jsonBoothFiles = [];
+    let _jsonFile = null, _jsonMetaFile = null, _jsonWeekFiles = [];
     function onJsonSelected(inp) {
       const f = inp.files[0]; if (!f) return;
       _jsonFile = f;
@@ -1599,19 +1603,39 @@
       row.querySelector('.desc').textContent = f.name;
       document.getElementById('jsonBoothSection').style.display = 'block';
     }
-    function onJsonBoothFolder(inp) {
-      const files = filterXlsx(inp.files);
-      _jsonBoothFiles = files;
-      document.getElementById('jsonBoothStatus').textContent = files.length + '個のExcelファイルを検出';
+    function onJsonMetaFile(inp) {
+      const f = inp.files[0]; if (!f) return;
+      _jsonMetaFile = f;
+      _updateJsonBoothStatus();
+    }
+    function onJsonWeekFolder(inp) {
+      _jsonWeekFiles = filterXlsx(inp.files);
+      _updateJsonBoothStatus();
+    }
+    function _updateJsonBoothStatus() {
+      const parts = [];
+      if (_jsonMetaFile) parts.push('メタ: ' + _jsonMetaFile.name);
+      if (_jsonWeekFiles.length) parts.push('週別: ' + _jsonWeekFiles.length + '件');
+      document.getElementById('jsonBoothStatus').textContent = parts.join(' / ') || '';
     }
     async function doJsonRestore() {
       if (!_jsonFile) return;
       const row = document.getElementById('uJson');
       showProgress(20, 'JSONバックアップを復元中...', '復元中');
       const fd = new FormData();
-      fd.append('file', _jsonFile);
-      if (_jsonBoothFiles.length > 0) {
-        const { files: loaded } = await preloadFiles(_jsonBoothFiles);
+      // Google ドライブストリーム対応: JSONファイルもプリロード
+      try {
+        const buf = await _jsonFile.arrayBuffer();
+        fd.append('file', new File([buf], _jsonFile.name, { type: 'application/json' }));
+      } catch (e) {
+        fd.append('file', _jsonFile);
+      }
+      // メタ + 週ファイルをまとめて booth_files として送信
+      const boothRaw = [];
+      if (_jsonMetaFile) boothRaw.push(_jsonMetaFile);
+      boothRaw.push(..._jsonWeekFiles);
+      if (boothRaw.length > 0) {
+        const { files: loaded } = await preloadFiles(boothRaw);
         for (const lf of loaded) fd.append('booth_files', lf);
       }
       try {
