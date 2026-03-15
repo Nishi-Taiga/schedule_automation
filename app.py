@@ -2691,8 +2691,28 @@ def get_state():
 
     # インメモリキャッシュにあればそれを使う
     if res and 'schedule_json' in res:
+        students_raw = res.get('students', [])
+        week_dates = res.get('week_dates')
+        files = sd.get('files', {})
+
+        # students が空ならメタデータExcelから補完
+        if not students_raw and 'booth' in files:
+            try:
+                meta_wb = openpyxl.load_workbook(files['booth'])
+                students_raw = load_students_from_wb(meta_wb)
+                meta_wb.close()
+                res['students'] = students_raw
+                save_session_result(sd)
+            except Exception:
+                pass
+        # week_dates が空なら週ファイルから補完
+        if (not week_dates or not week_dates.get('weeks')) and files.get('week_files'):
+            week_dates = extract_week_dates_from_files(files['week_files'])
+            res['week_dates'] = week_dates
+            save_session_result(sd)
+
         students_json = []
-        for s in res.get('students', []):
+        for s in students_raw:
             avail_list = sorted([list(a) for a in s['avail']]) if isinstance(s.get('avail'), set) else s.get('avail')
             backup_list = sorted([list(a) for a in s['backup_avail']]) if isinstance(s.get('backup_avail'), set) else s.get('backup_avail')
             fixed_list = [list(f) for f in s.get('fixed', [])] if s.get('fixed') else []
@@ -2710,7 +2730,7 @@ def get_state():
                 'ng_dates': ng_dates_list,
             })
         placed = sum(len(b['slots']) for w in res['schedule_json'] for d in w.values() for bs in d.values() for b in bs)
-        total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
+        total = sum(sum(s.get('needs', {}).values()) for s in students_raw)
         return jsonify({
             'has_state': True,
             'placed': placed,
@@ -2720,7 +2740,7 @@ def get_state():
             'officeTeachers': res.get('office_teachers', []),
             'boothPref': res.get('booth_pref', {}),
             'students': students_json,
-            'weekDates': res.get('week_dates') or {'year':2026, 'month':3, 'weeks':[]},
+            'weekDates': week_dates or {'year':2026, 'month':3, 'weeks':[]},
         })
 
     # ディスクから復元を試みる
