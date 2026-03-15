@@ -1307,7 +1307,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.2</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.3</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1375,11 +1375,11 @@
         </div><input type="file" accept=".json" onchange="onJsonSelected(this)">
       </label>
       <div id="jsonBoothSection" style="display:none;padding-left:54px;margin-top:-4px;margin-bottom:6px">
-        <div style="font-size:12px;color:var(--ink3);margin-bottom:6px">ブース表DLにはメタデータ＋週別ブース表が必要です</div>
+        <div style="font-size:12px;color:var(--ink3);margin-bottom:6px">復元にはメタデータ＋週別ブース表の<b>両方</b>が必要です（下の2つを選択してください）</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
-          <button class="folder-btn" onclick="this.nextElementSibling.click()">📄 メタデータ (.xlsx)</button>
+          <button class="folder-btn" id="jsonMetaBtn" onclick="this.nextElementSibling.click()" style="border:2px solid var(--red)">📄 メタデータ (.xlsx) ← 未選択</button>
           <input type="file" accept=".xlsx" style="display:none" onchange="onJsonMetaFile(this)">
-          <button class="folder-btn" onclick="this.nextElementSibling.click()">📂 週別ブース表フォルダ</button>
+          <button class="folder-btn" id="jsonWeekBtn" onclick="this.nextElementSibling.click()" style="border:2px solid var(--red)">📂 週別ブース表フォルダ ← 未選択</button>
           <input type="file" webkitdirectory style="display:none" onchange="onJsonWeekFolder(this)">
         </div>
         <div id="jsonBoothStatus" style="font-size:12px;color:var(--ink3);margin-top:4px"></div>
@@ -1482,10 +1482,18 @@
     function onJsonMetaFile(inp) {
       const f = inp.files[0]; if (!f) return;
       _jsonMetaFile = f;
+      const btn = document.getElementById('jsonMetaBtn');
+      btn.textContent = '✅ ' + f.name;
+      btn.style.border = '2px solid var(--green)';
       _updateJsonBoothStatus();
     }
     function onJsonWeekFolder(inp) {
       _jsonWeekFiles = filterXlsx(inp.files);
+      const btn = document.getElementById('jsonWeekBtn');
+      if (_jsonWeekFiles.length) {
+        btn.textContent = '✅ ' + _jsonWeekFiles.length + '件の週別ファイル';
+        btn.style.border = '2px solid var(--green)';
+      }
       _updateJsonBoothStatus();
     }
     function _updateJsonBoothStatus() {
@@ -1493,7 +1501,8 @@
       if (_jsonMetaFile) parts.push('メタ: ' + _jsonMetaFile.name);
       if (_jsonWeekFiles.length) parts.push('週別: ' + _jsonWeekFiles.length + '件');
       document.getElementById('jsonBoothStatus').textContent = parts.join(' / ') || '';
-      document.getElementById('jsonRestoreBtn').disabled = !(_jsonMetaFile && _jsonWeekFiles.length);
+      const ready = _jsonMetaFile && _jsonWeekFiles.length;
+      document.getElementById('jsonRestoreBtn').disabled = !ready;
     }
     async function doJsonRestore() {
       if (!_jsonFile) return;
