@@ -2564,6 +2564,110 @@ def load_saved():
 
     return jsonify({'ok': True, **state})
 
+# ========== メタデータ・講師回答の事後更新 API ==========
+@app.route('/api/update_meta', methods=['POST'])
+@login_required
+def update_meta():
+    """メタデータファイルを再アップロードして、既存スケジュールの未配置コマを再計算"""
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'ファイルが選択されていません'}), 400
+    ok, err = validate_file(f)
+    if not ok:
+        return jsonify({'error': err}), 400
+
+    sd = get_session_data()
+    result = sd.get('result', {})
+    schedule = result.get('schedule') or result.get('schedule_json', [])
+    if not schedule:
+        return jsonify({'error': '復元済みスケジュールがありません。先にスケジュールを生成または復元してください。'}), 400
+
+    # メタファイルを保存
+    path = os.path.join(sd['dir'], 'meta_update_' + os.path.basename(f.filename))
+    f.save(path)
+
+    try:
+        wb = openpyxl.load_workbook(path)
+        fresh_students = load_students_from_wb(wb)
+        fresh_booth_pref = load_booth_pref(wb)
+        wb.close()
+    except Exception as e:
+        return jsonify({'error': f'メタデータの読み込みに失敗: {e}'}), 500
+
+    if not fresh_students:
+        return jsonify({'error': 'メタデータから生徒情報を読み取れませんでした'}), 400
+
+    # booth ファイル参照を更新
+    sd['files'] = {**sd.get('files', {}), 'booth': path}
+    save_session_files(sd)
+
+    # ======== placed / total / unplaced を最新メタデータで再計算 ========
+    placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+    total = sum(sum(s.get('needs', {}).values()) for s in fresh_students)
+    if total == 0:
+        total = placed
+
+    placed_count = {}
+    for week in schedule:
+        for day_slots in week.values():
+            for booths in day_slots.values():
+                for b in booths:
+                    for slot in b.get('slots', []):
+                        key = (slot[1], slot[2])
+                        placed_count[key] = placed_count.get(key, 0) + 1
+
+    unplaced = []
+    for s in fresh_students:
+        name = s.get('name', '')
+        grade = s.get('grade', '')
+        for subj, need in s.get('needs', {}).items():
+            done = placed_count.get((name, subj), 0)
+            if done < need:
+                unplaced.append({
+                    'grade': grade, 'name': name,
+                    'subject': subj, 'count': need - done,
+                    'reason': 'メタデータ更新から再計算'
+                })
+
+    # students を JSON-safe に変換
+    students_json = []
+    for s in fresh_students:
+        students_json.append({
+            'grade': s.get('grade', ''), 'name': s.get('name', ''),
+            'needs': s.get('needs', {}),
+            'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
+            'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
+            'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
+            'notes': s.get('notes', ''),
+            'ng_teachers': s.get('ng_teachers', []),
+            'wish_teachers': s.get('wish_teachers', []),
+            'ng_students': s.get('ng_students', []),
+            'ng_dates': [list(d) for d in s.get('ng_dates', set())],
+        })
+
+    # result を更新
+    result['students'] = students_json
+    result['placed'] = placed
+    result['total'] = total
+    result['unplaced'] = unplaced
+    if fresh_booth_pref:
+        result['booth_pref'] = fresh_booth_pref
+    sd['result'] = result
+    save_session_result(sd)
+
+    print(f"[update_meta] {len(fresh_students)}名の生徒データ更新, placed={placed}, total={total}, unplaced={len(unplaced)}", flush=True)
+
+    return jsonify({
+        'ok': True,
+        'placed': placed,
+        'total': total,
+        'unplaced': unplaced,
+        'students': students_json,
+        'studentCount': len(fresh_students),
+        'boothPref': fresh_booth_pref or {},
+    })
+
+
 # ========== Schedule update API ==========
 @app.route('/api/update_schedule', methods=['POST'])
 @login_required

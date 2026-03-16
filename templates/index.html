@@ -1312,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.1</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.2</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1429,6 +1429,25 @@
         <details id="learningPanel" style="margin-top:8px;font-size:12px;background:#f8f9fa;padding:6px 10px;border-radius:6px;border:1px solid #e0e0e0">
           <summary style="cursor:pointer;font-weight:600;color:#555">🧠 学習状況</summary>
           <div id="learningContent" style="margin-top:6px"></div>
+        </details>
+        <details id="fileUpdatePanel" style="margin-top:8px;font-size:12px;background:#f0f7ff;padding:6px 10px;border-radius:6px;border:1px solid #b3d4fc">
+          <summary style="cursor:pointer;font-weight:600;color:#1565c0">📂 ファイル更新（メタデータ・講師回答）</summary>
+          <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">
+            <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
+              <div style="font-weight:600;margin-bottom:4px">メタデータ更新</div>
+              <div style="color:#888;font-size:11px;margin-bottom:6px">生徒追加・コマ数変更を反映（既存配置は維持）</div>
+              <input type="file" id="updateMetaInput" accept=".xlsx,.xls" style="font-size:11px;max-width:100%"
+                     onchange="doUpdateMeta(this)">
+              <div id="updateMetaStatus" style="margin-top:4px;font-size:11px"></div>
+            </div>
+            <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
+              <div style="font-weight:600;margin-bottom:4px">講師回答追加</div>
+              <div style="color:#888;font-size:11px;margin-bottom:6px">新しい講師回答をアップロード後、再生成で反映</div>
+              <input type="file" id="updateSurveyInput" accept=".xlsx,.xls" multiple style="font-size:11px;max-width:100%"
+                     onchange="doUpdateSurveys(this)">
+              <div id="updateSurveyStatus" style="margin-top:4px;font-size:11px"></div>
+            </div>
+          </div>
         </details>
       </div>
       <div class="wt" id="wTabs"></div>
@@ -2418,6 +2437,51 @@
       }
       const addBtn = document.createElement('button'); addBtn.className = 'btn btn-o'; addBtn.style.cssText = 'margin-top:8px;font-size:12px;padding:4px 12px';
       addBtn.textContent = '＋ 未配置コマ追加'; addBtn.onclick = () => showAddUnplacedModal(); wrap.appendChild(addBtn);
+    }
+
+    // ========== ファイル更新ハンドラ ==========
+    async function doUpdateMeta(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const status = document.getElementById('updateMetaStatus');
+      status.textContent = '更新中...';
+      status.style.color = '#1565c0';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/api/update_meta', {method: 'POST', body: fd});
+        const j = await res.json();
+        if (!res.ok || !j.ok) { status.textContent = j.error || 'エラー'; status.style.color = 'red'; return; }
+        // 結果を反映
+        R.students = j.students;
+        R.placed = j.placed;
+        R.total = j.total;
+        R.unplaced = j.unplaced;
+        if (j.boothPref) R.boothPref = j.boothPref;
+        buildNgMap();
+        rR();
+        status.textContent = `${j.studentCount}名の生徒データを更新しました（未配置: ${j.unplaced.length}件）`;
+        status.style.color = 'green';
+      } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }
+      input.value = '';
+    }
+
+    async function doUpdateSurveys(input) {
+      const files = input.files;
+      if (!files.length) return;
+      const status = document.getElementById('updateSurveyStatus');
+      status.textContent = 'アップロード中...';
+      status.style.color = '#1565c0';
+      const fd = new FormData();
+      for (const f of files) fd.append('surveys', f);
+      try {
+        const res = await fetch('/api/upload_surveys', {method: 'POST', body: fd});
+        const j = await res.json();
+        if (!res.ok || !j.ok) { status.textContent = j.error || 'エラー'; status.style.color = 'red'; return; }
+        status.innerHTML = `${j.teacherCount}名の講師データ（${j.weeks}週分）を登録しました。<br><b>「↻ 再生成」で反映されます。</b>`;
+        status.style.color = 'green';
+      } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }
+      input.value = '';
     }
 
     function showAddUnplacedModal(preStudent) {
