@@ -358,11 +358,20 @@ def load_booth_pref(wb):
 
 def parse_ng_dates(val, year, month):
     """NG日程を解析して (week_index, day_name) のsetを返す。
-    形式例: '2/5', '2/1-2/7', '2/19,2/24,2/25', '12/5'
+    形式例: '2/5', '2/1-2/7', '2/19,2/24,2/25', '12/5', '平日'
     """
     if not val: return set()
     day_names = ['月','火','水','木','金','土','日']
+    WEEKDAYS = ['月','火','水','木','金']
     result = set()
+    val_str = str(val).strip()
+
+    # 「平日」→ 全週の月〜金をNG
+    if '平日' in val_str:
+        for wi in range(6):
+            for d in WEEKDAYS:
+                result.add((wi, d))
+        val_str = val_str.replace('平日', '')
 
     def add_date(m, d):
         if m != month: return
@@ -384,7 +393,7 @@ def parse_ng_dates(val, year, month):
             # 日のみ → 当月と仮定
             return month, int(s)
 
-    for part in str(val).split(','):
+    for part in val_str.split(','):
         part = part.strip()
         if not part: continue
         if '-' in part:
@@ -474,12 +483,18 @@ def parse_avail(val):
 
 def parse_regular(val):
     if not val: return []
+    WEEKDAYS = ['月','火','水','木','金']
     result = []
     for p in str(val).split(','):
         p = p.strip()
         if ':' not in p: continue
-        dt,subj = p.split(':',1)
-        result.append((dt[0], dt[1:], subj.strip()))
+        dt, subj = p.split(':', 1)
+        if dt.startswith('平日'):
+            ts = dt[2:]
+            for d in WEEKDAYS:
+                result.append((d, ts, subj.strip()))
+        else:
+            result.append((dt[0], dt[1:], subj.strip()))
     return result
 
 def load_weekly_teachers(path):
@@ -1223,34 +1238,42 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                     remaining[s['name']][subj] -= 1
                     _update_index(wi, s['name'], subj, day, ts_str)
 
-    # Phase2: 通常配置
+    # Phase2: 通常配置（希望講師ありの生徒を完全に先に配置してから、その他の生徒を配置）
     order = sorted(students, key=lambda s: (
-        0 if s['wish_teachers'] else 1,
         len(s['avail']) if s['avail'] else 999, sum(s['needs'].values())
     ))
+    wish_order = [s for s in order if s['wish_teachers']]
+    no_wish_order = [s for s in order if not s['wish_teachers']]
     unplaced_reasons = {}  # (name, subj) -> reason
-    for s in order:
-        for subj, total in s['needs'].items():
-            still = remaining[s['name']].get(subj, 0)
-            if still <= 0: continue
-            targets = distribute(still, num_weeks)
-            for wi in range(num_weeks):
-                for _ in range(targets[wi]):
-                    if remaining[s['name']].get(subj,0) <= 0: break
-                    pd = get_placed_days(None, s['name'], subj, wi)
-                    ex = get_student_slots(None, s['name'], wi)
-                    apd = get_any_placed_days(None, s['name'], wi)
-                    best, reason = find_slot(schedule[wi], s, subj, pd, ex, wi, apd)
-                    if best:
-                        day, ts, bi = best
-                        schedule[wi][day][ts][bi]['slots'].append((s['grade'],s['name'],subj))
-                        remaining[s['name']][subj] -= 1
-                        _update_index(wi, s['name'], subj, day, ts)
-                    elif reason:
-                        unplaced_reasons[(s['name'], subj)] = reason
+
+    def _place_phase2(student_list):
+        for s in student_list:
+            for subj, total in s['needs'].items():
+                still = remaining[s['name']].get(subj, 0)
+                if still <= 0: continue
+                targets = distribute(still, num_weeks)
+                for wi in range(num_weeks):
+                    for _ in range(targets[wi]):
+                        if remaining[s['name']].get(subj,0) <= 0: break
+                        pd = get_placed_days(None, s['name'], subj, wi)
+                        ex = get_student_slots(None, s['name'], wi)
+                        apd = get_any_placed_days(None, s['name'], wi)
+                        best, reason = find_slot(schedule[wi], s, subj, pd, ex, wi, apd)
+                        if best:
+                            day, ts, bi = best
+                            schedule[wi][day][ts][bi]['slots'].append((s['grade'],s['name'],subj))
+                            remaining[s['name']][subj] -= 1
+                            _update_index(wi, s['name'], subj, day, ts)
+                        elif reason:
+                            unplaced_reasons[(s['name'], subj)] = reason
+
+    # Phase2a: 希望講師ありの生徒を先に全て配置
+    _place_phase2(wish_order)
+    # Phase2b: 希望講師なしの生徒を配置
+    _place_phase2(no_wish_order)
 
     # Phase3: 未配置リトライ（distribute で割り当てられなかった週にも配置を試行）
-    for s in order:
+    for s in wish_order + no_wish_order:
         for subj in s['needs']:
             still = remaining[s['name']].get(subj, 0)
             if still <= 0: continue
@@ -2630,14 +2653,36 @@ def restore_json():
             week_dates = extract_week_dates_from_files(week_file_paths)
             print(f"[restore_json] week_dates補完: {week_dates}", flush=True)
 
-    # placed / total を再計算
-    if not placed:
-        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
-    if not total and students:
-        total = sum(sum(s.get('needs', {}).values()) for s in students)
+    # ======== placed / total / unplaced を最新データで再計算 ========
+    placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+    total = sum(sum(s.get('needs', {}).values()) for s in students) if students else 0
+    if total == 0:
+        total = placed
 
-    # 生徒データがない場合は警告を含める
-    if not students:
+    # 未配置コマを再計算（studentsがある場合）
+    if students:
+        placed_count = {}
+        for week in schedule:
+            for day_slots in week.values():
+                for booths in day_slots.values():
+                    for b in booths:
+                        for slot in b.get('slots', []):
+                            key = (slot[1], slot[2])
+                            placed_count[key] = placed_count.get(key, 0) + 1
+        unplaced = []
+        for s in students:
+            name = s.get('name', '') if isinstance(s, dict) else s['name']
+            grade = s.get('grade', '') if isinstance(s, dict) else s.get('grade', '')
+            for subj, need in (s.get('needs', {}) if isinstance(s, dict) else s.get('needs', {})).items():
+                done = placed_count.get((name, subj), 0)
+                if done < need:
+                    unplaced.append({
+                        'grade': grade, 'name': name,
+                        'subject': subj, 'count': need - done,
+                        'reason': 'JSON復元から再計算'
+                    })
+        print(f"[restore_json] 再計算: placed={placed}, total={total}, unplaced={len(unplaced)}件", flush=True)
+    else:
         print(f"[restore_json] WARNING: students is empty. booth={'booth' in files}, booth_files_sent={bool(booth_files and any(bf.filename for bf in booth_files))}", flush=True)
 
     sd['result'] = {

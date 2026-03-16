@@ -588,6 +588,11 @@
       color: #c62828
     }
 
+    .slot-chip.ng-date {
+      background: #fff8e1;
+      border: 2px solid #ffa726
+    }
+
     .booth-cell {
       min-height: 34px;
       position: relative;
@@ -1307,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.10.4</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.11.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1440,9 +1445,20 @@
     const TL = ['14:55', '16:00', '17:05', '18:10', '19:15', '20:20'], TS = { '14:55': '14', '16:00': '16', '17:05': '17', '18:10': '18', '19:15': '19', '20:20': '20' }, TSR = { '14': '14:55', '16': '16:00', '17': '17:05', '18': '18:10', '19': '19:15', '20': '20:20' }, BL = ['①', '②', '③', '④', '⑤', '⑥'];
     let OR = { 月: [], 火: [], 水: [], 木: [], 金: [], 土: [] };
     let BP = [], R = null, PW = 0, uploaded = {}, edited = false, dragData = null, calStudent = null, teacherList = [], manualTeachers = [];
-    let ngMap = {}, ngStudentMap = {};
-    function buildNgMap() { ngMap = {}; ngStudentMap = {}; if (!R || !R.students) return; R.students.forEach(s => { ngMap[s.name] = new Set(s.ng_teachers || []); ngStudentMap[s.name] = new Set(s.ng_students || []) }); }
+    let ngMap = {}, ngStudentMap = {}, ngDateMap = {};
+    function buildNgMap() {
+      ngMap = {}; ngStudentMap = {}; ngDateMap = {};
+      if (!R || !R.students) return;
+      R.students.forEach(s => {
+        ngMap[s.name] = new Set(s.ng_teachers || []);
+        ngStudentMap[s.name] = new Set(s.ng_students || []);
+        const dates = new Set();
+        (s.ng_dates || []).forEach(d => dates.add(d[0] + '_' + d[1]));
+        ngDateMap[s.name] = dates;
+      });
+    }
     function isNg(n, t) { return ngMap[n] && ngMap[n].has(t); }
+    function isNgDate(n, wi, day) { return ngDateMap[n] && ngDateMap[n].has(wi + '_' + day); }
     function isNgStudent(a, b) { return (ngStudentMap[a] && ngStudentMap[a].has(b)) || (ngStudentMap[b] && ngStudentMap[b].has(a)); }
     function isAdjacentNg(wi, day, ts, bi, sn) { return false; }
 
@@ -2080,13 +2096,14 @@
 
     // === Student slot ===
     function mkChip(slot, wi, day, ts, bi, si, teacher) {
-      const el = document.createElement('div'); const ngT = isNg(slot[1], teacher); const ngS = isAdjacentNg(wi, day, ts, bi, slot[1]); const warn = ngT || ngS;
-      el.className = 'slot-chip' + (warn ? ' ng' : ''); el.draggable = true;
-      let wt = ngT ? 'NG講師:' + teacher : ''; if (ngS) wt += (wt ? ' / ' : '') + 'NG生徒が隣接';
+      const el = document.createElement('div'); const ngT = isNg(slot[1], teacher); const ngS = isAdjacentNg(wi, day, ts, bi, slot[1]); const ngD = isNgDate(slot[1], wi, day);
+      const warn = ngT || ngS || ngD;
+      el.className = 'slot-chip' + (ngT || ngS ? ' ng' : '') + (ngD && !ngT && !ngS ? ' ng-date' : ''); el.draggable = true;
+      let wt = ngT ? 'NG講師:' + teacher : ''; if (ngS) wt += (wt ? ' / ' : '') + 'NG生徒が隣接'; if (ngD) wt += (wt ? ' / ' : '') + 'NG日程';
       const gSpan = '<span class="g">' + escHtml(slot[0]) + '</span>';
       const sSpan = '<span class="s">' + escHtml(slot[1]) + '</span>';
       const jSpan = '<span class="j">' + escHtml(slot[2]) + '</span>';
-      el.innerHTML = gSpan + sSpan + jSpan + (warn ? '<span style="color:var(--red);font-size:9px">⚠</span>' : '');
+      el.innerHTML = gSpan + sSpan + jSpan + (warn ? '<span style="color:' + (ngD && !ngT && !ngS ? 'var(--orange)' : 'var(--red)') + ';font-size:9px">⚠</span>' : '');
       el.title = wt;
       let dragged = false;
       el.addEventListener('dragstart', e => { dragged = true; dragData = { type: 'booth', wi, day, ts, bi, si, slot }; el.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; });
@@ -2339,12 +2356,66 @@
       zone.addEventListener('dragleave', () => { zone.classList.remove('drag-over'); });
       zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); doUnplaced(); });
       wrap.appendChild(zone);
+      const addBtn = document.createElement('button'); addBtn.className = 'btn btn-o'; addBtn.style.cssText = 'margin-top:8px;font-size:12px;padding:4px 12px';
+      addBtn.textContent = '＋ 未配置コマ追加'; addBtn.onclick = () => showAddUnplacedModal(); wrap.appendChild(addBtn);
     }
 
     function rU(wrap) {
-      if (!R.unplaced.length) { wrap.innerHTML = '<p class="ap">✅ 全コマ配置済み</p>'; return; }
-      let h = '<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th><th>理由</th></tr></thead><tbody>';
-      for (const u of R.unplaced) h += '<tr><td>' + escHtml(u.grade) + '</td><td>' + escHtml(u.name) + '</td><td>' + escHtml(u.subject) + '</td><td class="ct">' + u.count + '</td><td style="font-size:11px;color:var(--orange)">' + escHtml(u.reason || '') + '</td></tr>'; h += '</tbody></table>'; wrap.innerHTML = h;
+      if (!R.unplaced.length) { wrap.innerHTML = '<p class="ap">✅ 全コマ配置済み</p>'; }
+      else {
+        let h = '<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th><th>理由</th></tr></thead><tbody>';
+        for (const u of R.unplaced) h += '<tr><td>' + escHtml(u.grade) + '</td><td>' + escHtml(u.name) + '</td><td>' + escHtml(u.subject) + '</td><td class="ct">' + u.count + '</td><td style="font-size:11px;color:var(--orange)">' + escHtml(u.reason || '') + '</td></tr>'; h += '</tbody></table>';
+        wrap.innerHTML = h;
+      }
+      const addBtn = document.createElement('button'); addBtn.className = 'btn btn-o'; addBtn.style.cssText = 'margin-top:8px;font-size:12px;padding:4px 12px';
+      addBtn.textContent = '＋ 未配置コマ追加'; addBtn.onclick = () => showAddUnplacedModal(); wrap.appendChild(addBtn);
+    }
+
+    function showAddUnplacedModal(preStudent) {
+      const root = document.getElementById('modalRoot');
+      const bg = document.createElement('div'); bg.className = 'modal-bg';
+      const modal = document.createElement('div'); modal.className = 'modal'; modal.style.cssText = 'min-width:320px;padding:20px';
+      const sorted = [...(R.students || [])].sort((a, b) => (a.grade || '').localeCompare(b.grade || '') || (a.name || '').localeCompare(b.name || ''));
+      let h = '<h3 style="margin:0 0 12px">＋ 未配置コマ追加</h3>';
+      h += '<div style="margin-bottom:10px"><label style="font-size:12px;font-weight:600">生徒</label>';
+      h += '<select id="addUpStudent" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-top:4px">';
+      h += '<option value="">選択してください...</option>';
+      sorted.forEach(s => { h += '<option value="' + escHtml(s.name) + '" data-grade="' + escHtml(s.grade || '') + '"' + (preStudent === s.name ? ' selected' : '') + '>' + escHtml(s.grade || '') + ' ' + escHtml(s.name) + '</option>'; });
+      h += '</select></div>';
+      h += '<div style="margin-bottom:10px"><label style="font-size:12px;font-weight:600">科目</label>';
+      h += '<select id="addUpSubj" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-top:4px"><option value="">先に生徒を選択...</option></select></div>';
+      h += '<div style="margin-bottom:14px"><label style="font-size:12px;font-weight:600">コマ数</label>';
+      h += '<input type="number" id="addUpCount" value="1" min="1" max="20" style="width:60px;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-top:4px;margin-left:8px"></div>';
+      h += '<div style="display:flex;gap:8px;justify-content:flex-end">';
+      h += '<button class="btn btn-o" id="addUpCancel">キャンセル</button>';
+      h += '<button class="btn btn-g" id="addUpOk">追加</button></div>';
+      modal.innerHTML = h; bg.appendChild(modal); root.appendChild(bg);
+      const SUBJECTS = ['英','英検','数','算','国','理','社','現','古','物','化','生','日','地','政','世'];
+      function updateSubjects() {
+        const name = document.getElementById('addUpStudent').value;
+        const sel = document.getElementById('addUpSubj'); sel.innerHTML = '';
+        if (!name) { sel.innerHTML = '<option value="">先に生徒を選択...</option>'; return; }
+        const st = R.students.find(s => s.name === name);
+        const subjs = st && st.needs ? Object.keys(st.needs) : [];
+        if (subjs.length) { subjs.forEach(s => { sel.innerHTML += '<option value="' + s + '">' + s + (st.needs[s] ? ' (必要:' + st.needs[s] + ')' : '') + '</option>'; }); }
+        SUBJECTS.filter(s => !subjs.includes(s)).forEach(s => { sel.innerHTML += '<option value="' + s + '">' + s + ' (新規)</option>'; });
+      }
+      document.getElementById('addUpStudent').onchange = updateSubjects;
+      if (preStudent) updateSubjects();
+      document.getElementById('addUpCancel').onclick = () => { root.innerHTML = ''; };
+      document.getElementById('addUpOk').onclick = () => {
+        const name = document.getElementById('addUpStudent').value;
+        const subj = document.getElementById('addUpSubj').value;
+        const count = parseInt(document.getElementById('addUpCount').value) || 1;
+        if (!name || !subj) { alert('生徒と科目を選択してください'); return; }
+        const st = R.students.find(s => s.name === name);
+        const grade = st ? (st.grade || '') : '';
+        const existing = R.unplaced.find(u => u.name === name && u.subject === subj);
+        if (existing) { existing.count += count; } else { R.unplaced.push({ grade: grade, name: name, subject: subj, count: count, reason: '手動追加' }); }
+        R.total = (R.total || 0) + count;
+        edited = true; root.innerHTML = ''; rR();
+      };
+      bg.addEventListener('click', e => { if (e.target === bg) root.innerHTML = ''; });
     }
 
     // === Student Calendar ===
