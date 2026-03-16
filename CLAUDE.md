@@ -2,7 +2,7 @@
 
 ## バージョン管理
 
-- 現在のバージョン: **v0.11.0**
+- 現在のバージョン: **v0.12.0**
 - バージョン表記箇所: `templates/index.html` の `<h1>` タグ内 `<span>` 要素
 - セマンティックバージョニング (`vMAJOR.MINOR.PATCH`) を使用
   - MAJOR: 未完成のため `0` を維持（正式リリースで `1` に）
@@ -121,6 +121,19 @@ schedule_automation/
 - フロントエンドは index.html に HTML/CSS/JS をインライン記述（分離不要）
 - 変数名の慣例: `wi`=週インデックス, `ts`=時間帯短縮名, `bi`=ブースインデックス
 
+### 学習システム (v0.12.0+)
+
+- **概要**: 手動編集パターンを学習し、`find_slot()`のスコアリング重みを自動調整
+- **データフロー**: 生成→スナップショット保存→手動編集→Excelダウンロード時に差分比較→重み調整
+- **永続化**: Supabase (`qchdlmmfpkhkkqunziqb`) の `schedule_learning_data` / `schedule_edit_history` テーブル
+- **環境変数**: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (Render.comで設定)
+- **重み**: `DEFAULT_WEIGHTS` (app.py) に定義。`WEIGHT_BOUNDS` で上下限制約
+- **過学習防止**: EMA(alpha=0.3)、最低3セッション、1回最大10%変動、BOUNDS制約
+- **API**:
+  - `POST /api/submit_feedback` — 差分計算＋重み調整
+  - `GET /api/learning_stats` — 学習状況取得
+  - `POST /api/reset_learning` — 学習データリセット
+
 ### よくあるトラブルと対処
 
 | 症状 | 原因 | 対処 |
@@ -142,14 +155,16 @@ schedule_automation/
   3. `http://localhost:5000` にアクセスできることを確認
   4. 確認後 `Ctrl+C` で停止してからコミット・プッシュ
 
-### デプロイ後（本番環境） ★必須
+### デプロイ後（本番環境） ★必須 — Playwright E2E
 
-- **コミット・プッシュ後、デプロイ環境で修正が正しく動作することを確認するまで作業を終了しない**
+- **コミット・プッシュ後、デプロイ環境で Playwright E2E テストが成功するまで作業を終了しない**
+- `.claude/skills/deploy-test/SKILL.md` に従ってテストを実施すること
 - テスト手順:
-  1. バージョン番号でデプロイ反映を確認
-  2. Python `requests` でデプロイ環境 (`https://schedule-automation-386m.onrender.com/`) のAPIを実際に叩く
-  3. レスポンスのステータスコード・JSON内容・データを検証
+  1. バージョン番号でデプロイ反映を確認（Render free tier は反映に5〜15分かかる場合あり）
+  2. Playwright でデプロイ環境 (`https://schedule-automation-386m.onrender.com/`) に対してブラウザテストを実行
+  3. パスワード `2321` でログイン → 実データでのファイルアップロード → スケジュール生成 → 結果確認
   4. テスト失敗時は原因特定→修正→再push→再テストを成功するまで繰り返す
+- テスト用ファイル: `G:\マイドライブ\塾\糀谷\共有用フォルダ_西\files\`
 - 日本語ファイル名はASCII名の一時ファイルにコピーして回避
 
 ## セットアップ

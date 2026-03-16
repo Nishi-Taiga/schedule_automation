@@ -18,9 +18,11 @@ import atexit
 import traceback
 import datetime as _dt
 import calendar
-from copy import copy
+from copy import copy, deepcopy
 from collections import defaultdict
 from functools import wraps
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -126,6 +128,10 @@ def _save_result_to_disk(sid, result):
         saveable = {}
         if 'schedule_json' in result:
             saveable['schedule_json'] = result['schedule_json']
+        if 'original_schedule_json' in result:
+            saveable['original_schedule_json'] = result['original_schedule_json']
+        if 'original_unplaced' in result:
+            saveable['original_unplaced'] = result['original_unplaced']
         if 'unplaced' in result:
             saveable['unplaced'] = result['unplaced']
         if 'office_teachers' in result:
@@ -270,6 +276,281 @@ DAY_COLS = {
     '木':(18,19,20,21,22),'金':(23,24,25,26,27),'土':(28,29,30,31,32),
 }
 TUTOR_ROWS = [19,32,45,58,71,84]
+
+# ========== 学習システム ==========
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+
+DEFAULT_WEIGHTS = {
+    'ng_date': -5000,
+    'backup_time': -150,
+    'continuous_block': 2000,
+    'skip_interval': -200,
+    'same_day_2nd': 50,
+    'same_day_3plus': -80,
+    'wish_teacher': 500,
+    'booth_pref': 10,
+    'empty_booth': 20,
+}
+
+WEIGHT_BOUNDS = {
+    'ng_date': (-10000, -1000),
+    'backup_time': (-500, 0),
+    'continuous_block': (500, 5000),
+    'skip_interval': (-1000, 0),
+    'same_day_2nd': (-50, 200),
+    'same_day_3plus': (-300, 50),
+    'wish_teacher': (100, 2000),
+    'booth_pref': (0, 50),
+    'empty_booth': (0, 100),
+}
+
+def _supabase_request(method, table, params='', body=None, headers_extra=None):
+    """Supabase REST API へのリクエストヘルパー"""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return None
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    if params:
+        url += f"?{params}"
+    hdrs = {
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
+        'Content-Type': 'application/json',
+    }
+    if headers_extra:
+        hdrs.update(headers_extra)
+    data = json.dumps(body, ensure_ascii=False).encode('utf-8') if body else None
+    req = Request(url, data=data, headers=hdrs, method=method)
+    try:
+        with urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode('utf-8')
+            return json.loads(raw) if raw.strip() else None
+    except (URLError, HTTPError) as e:
+        print(f"[learning] Supabase {method} {table} error: {e}", flush=True)
+        return None
+
+def load_learning_weights():
+    """Supabaseから学習済み重みを読み込む。なければデフォルト値を返す"""
+    rows = _supabase_request('GET', 'schedule_learning_data', 'key=eq.weights&select=data')
+    if rows and len(rows) > 0:
+        saved = rows[0].get('data', {})
+        weights = dict(DEFAULT_WEIGHTS)
+        # statsのsession_countを確認（3未満なら学習適用しない）
+        stats_rows = _supabase_request('GET', 'schedule_learning_data', 'key=eq.stats&select=data')
+        session_count = 0
+        if stats_rows and len(stats_rows) > 0:
+            session_count = stats_rows[0].get('data', {}).get('session_count', 0)
+        if session_count >= 3:
+            for k in DEFAULT_WEIGHTS:
+                if k in saved:
+                    weights[k] = int(round(saved[k]))
+        return weights
+    return dict(DEFAULT_WEIGHTS)
+
+def save_learning_weights(weights):
+    """学習済み重みをSupabaseに保存 (upsert)"""
+    _supabase_request('POST', 'schedule_learning_data', '', body={
+        'key': 'weights',
+        'data': weights,
+        'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
+    }, headers_extra={'Prefer': 'resolution=merge-duplicates'})
+
+def load_learning_stats():
+    """学習統計を読み込む"""
+    rows = _supabase_request('GET', 'schedule_learning_data', 'key=eq.stats&select=data')
+    if rows and len(rows) > 0:
+        return rows[0].get('data', {})
+    return {'session_count': 0}
+
+def save_learning_stats(stats):
+    """学習統計をSupabaseに保存 (upsert)"""
+    _supabase_request('POST', 'schedule_learning_data', '', body={
+        'key': 'stats',
+        'data': stats,
+        'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
+    }, headers_extra={'Prefer': 'resolution=merge-duplicates'})
+
+def save_edit_history(entry):
+    """編集履歴を保存し、20件超を削除"""
+    _supabase_request('POST', 'schedule_edit_history', '', body=entry,
+                      headers_extra={'Prefer': 'return=minimal'})
+    # 古いレコードを削除（最新20件以外）
+    rows = _supabase_request('GET', 'schedule_edit_history',
+                             'select=id&order=created_at.desc&offset=20')
+    if rows:
+        for r in rows:
+            _supabase_request('DELETE', 'schedule_edit_history', f"id=eq.{r['id']}")
+
+def _index_placements(schedule_json):
+    """スケジュールから (name, subject) → [(wi, day, ts, bi, teacher), ...] のインデックスを構築"""
+    idx = defaultdict(list)
+    for wi, week in enumerate(schedule_json):
+        for day, day_data in week.items():
+            for ts, booths in day_data.items():
+                for bi, b in enumerate(booths):
+                    teacher = b.get('teacher', '')
+                    for slot in b.get('slots', []):
+                        if len(slot) >= 3:
+                            name, subj = slot[1], slot[2]
+                            idx[(name, subj)].append({
+                                'wi': wi, 'day': day, 'ts': ts, 'bi': bi, 'teacher': teacher
+                            })
+    return idx
+
+def compute_schedule_diff(original, edited, orig_unplaced, edit_unplaced):
+    """自動生成スケジュールと手動編集後スケジュールの差分を計算"""
+    changes = []
+    orig_idx = _index_placements(original)
+    edit_idx = _index_placements(edited)
+    all_keys = set(orig_idx.keys()) | set(edit_idx.keys())
+
+    for key in all_keys:
+        orig_locs = orig_idx.get(key, [])
+        edit_locs = edit_idx.get(key, [])
+        # 位置をタプル化して比較
+        orig_set = {(l['wi'], l['day'], l['ts'], l['bi']) for l in orig_locs}
+        edit_set = {(l['wi'], l['day'], l['ts'], l['bi']) for l in edit_locs}
+        removed = orig_set - edit_set
+        added = edit_set - orig_set
+
+        # 同じブースで講師変更を検出
+        for loc in orig_locs:
+            pos = (loc['wi'], loc['day'], loc['ts'], loc['bi'])
+            if pos in edit_set:
+                # 同じ位置にあるが講師が違う場合
+                for eloc in edit_locs:
+                    epos = (eloc['wi'], eloc['day'], eloc['ts'], eloc['bi'])
+                    if epos == pos and eloc['teacher'] != loc['teacher']:
+                        changes.append({
+                            'type': 'teacher_swap',
+                            'student': key[0], 'subject': key[1],
+                            'wi': loc['wi'], 'day': loc['day'], 'ts': loc['ts'], 'bi': loc['bi'],
+                            'from_teacher': loc['teacher'], 'to_teacher': eloc['teacher'],
+                        })
+
+        # 移動の対応付け（removedとaddedを対にする）
+        removed_list = list(removed)
+        added_list = list(added)
+        moved_count = min(len(removed_list), len(added_list))
+        for i in range(moved_count):
+            r = removed_list[i]
+            a = added_list[i]
+            r_teacher = next((l['teacher'] for l in orig_locs
+                              if (l['wi'], l['day'], l['ts'], l['bi']) == r), '')
+            a_teacher = next((l['teacher'] for l in edit_locs
+                              if (l['wi'], l['day'], l['ts'], l['bi']) == a), '')
+            changes.append({
+                'type': 'student_moved',
+                'student': key[0], 'subject': key[1],
+                'from': {'wi': r[0], 'day': r[1], 'ts': r[2], 'bi': r[3], 'teacher': r_teacher},
+                'to': {'wi': a[0], 'day': a[1], 'ts': a[2], 'bi': a[3], 'teacher': a_teacher},
+            })
+
+        # 残りのremoved = 配置→未配置
+        for i in range(moved_count, len(removed_list)):
+            r = removed_list[i]
+            changes.append({
+                'type': 'student_removed',
+                'student': key[0], 'subject': key[1],
+                'from': {'wi': r[0], 'day': r[1], 'ts': r[2], 'bi': r[3]},
+            })
+
+        # 残りのadded = 未配置→配置
+        for i in range(moved_count, len(added_list)):
+            a = added_list[i]
+            a_teacher = next((l['teacher'] for l in edit_locs
+                              if (l['wi'], l['day'], l['ts'], l['bi']) == a), '')
+            changes.append({
+                'type': 'student_placed',
+                'student': key[0], 'subject': key[1],
+                'to': {'wi': a[0], 'day': a[1], 'ts': a[2], 'bi': a[3], 'teacher': a_teacher},
+            })
+
+    return changes
+
+def extract_signals(changes, original, edited):
+    """差分変更からスコアリング重み調整用のシグナルを抽出"""
+    signals = {}
+    if not changes:
+        return signals
+
+    # カウンター
+    continuous_kept = 0
+    continuous_broken = 0
+    backup_to_primary = 0
+    backup_kept = 0
+    wish_kept = 0
+    wish_overridden = 0
+    empty_booth_used = 0
+    same_day_3plus_created = 0
+    same_day_3plus_broken = 0
+
+    for ch in changes:
+        if ch['type'] == 'student_moved':
+            frm = ch['from']
+            to = ch['to']
+            # 時間帯の変化を分析
+            if frm['ts'] != to['ts']:
+                # 連続コマの変化
+                try:
+                    times = SATURDAY_TIMES if to['day'] == '土' else WEEKDAY_TIMES
+                    from_long = TIME_SHORT_REV.get(frm['ts'])
+                    to_long = TIME_SHORT_REV.get(to['ts'])
+                    if from_long in times and to_long in times:
+                        from_idx = times.index(from_long)
+                        to_idx = times.index(to_long)
+                        if abs(from_idx - to_idx) == 1:
+                            continuous_kept += 1
+                        elif abs(from_idx - to_idx) > 1:
+                            continuous_broken += 1
+                except (ValueError, KeyError):
+                    pass
+
+        elif ch['type'] == 'teacher_swap':
+            wish_overridden += 1
+
+        elif ch['type'] == 'student_placed':
+            # 未配置→配置（アルゴリズムが見つけられなかったスロットを人間が発見）
+            to = ch['to']
+            # 空きブースかどうか確認
+            try:
+                booth = edited[to['wi']][to['day']][to['ts']][to['bi']]
+                if len(booth.get('slots', [])) <= 1:
+                    empty_booth_used += 1
+            except (IndexError, KeyError):
+                pass
+
+    total = len(changes)
+    if total == 0:
+        return signals
+
+    # 連続コマシグナル
+    if continuous_broken + continuous_kept > 0:
+        ratio = (continuous_kept - continuous_broken) / (continuous_broken + continuous_kept)
+        signals['continuous_block'] = ratio * 0.5
+
+    # 希望講師シグナル
+    if wish_overridden > 0:
+        signals['wish_teacher'] = -0.3 * min(wish_overridden / total, 1.0)
+
+    # 空きブースシグナル
+    if empty_booth_used > 0:
+        signals['empty_booth'] = 0.3 * min(empty_booth_used / total, 1.0)
+
+    return signals
+
+def adjust_weights(current_weights, signals, alpha=0.3):
+    """EMAで重みを調整する"""
+    new_weights = dict(current_weights)
+    for key, signal in signals.items():
+        if key not in new_weights:
+            continue
+        delta = signal * abs(DEFAULT_WEIGHTS[key]) * 0.1
+        new_weights[key] = new_weights[key] + alpha * delta
+        lo, hi = WEIGHT_BOUNDS[key]
+        new_weights[key] = max(lo, min(hi, new_weights[key]))
+        new_weights[key] = int(round(new_weights[key]))
+    return new_weights
 
 def to_short(name):
     if not name: return None
@@ -1017,7 +1298,9 @@ def extract_week_dates_from_files(week_file_paths):
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== スケジューラー ==========
-def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None):
+def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None, weights=None):
+    if weights is None:
+        weights = dict(DEFAULT_WEIGHTS)
     remaining = {s['name']: dict(s['needs']) for s in students}
     smap = {s['name']: s for s in students}
     schedule = []
@@ -1163,11 +1446,11 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                         continue
                     sc = 0
                     # NG日程は大きくペナルティ（配置は可能）
-                    if is_ng_date: sc -= 5000
+                    if is_ng_date: sc += weights['ng_date']
                     # 予備時間はペナルティ（希望時間を優先）
-                    if is_backup: sc -= 150
+                    if is_backup: sc += weights['backup_time']
                     # 同曜日に既に別科目が配置されている場合
-                    # 連続コマを強く推奨（+2000）、飛び石は回避（-200）
+                    # 連続コマを強く推奨、飛び石は回避
                     existing_on_day = [t_ for d_, t_ in existing if d_ == day]
                     if existing_on_day:
                         # 現在の時刻のインデックスを取得
@@ -1175,7 +1458,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                             # timesは '16:00' 等の形式リスト
                             # tl は現在ループ中の時刻文字列 ('16:00')
                             curr_idx = times.index(tl)
-                            
+
                             is_continuous = False
                             for et_short in existing_on_day:
                                 et_long = TIME_SHORT_REV.get(et_short)
@@ -1183,22 +1466,22 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                                     ex_idx = times.index(et_long)
                                     diff = abs(curr_idx - ex_idx)
                                     if diff == 1:
-                                        sc += 2000  # 連続コマは最優先
+                                        sc += weights['continuous_block']
                                         is_continuous = True
                                     elif diff > 1:
-                                        sc -= 200   # 飛び石はペナルティ
+                                        sc += weights['skip_interval']
                         except ValueError:
                             pass
-                    
+
                     if day in any_placed_days:
                         day_count = len(existing_on_day)
                         if day_count < 2:
-                            sc += 50   # 2コマ目までは曜日優先（連続ボーナスと累積）
+                            sc += weights['same_day_2nd']
                         else:
-                            sc -= 80   # 3コマ目以降は分散推奨
-                    if b['teacher'] in s['wish_teachers']: sc += 500
-                    if t in booth_pref and booth_pref[t]==bi+1: sc += 10
-                    if len(b['slots'])==0: sc += 20
+                            sc += weights['same_day_3plus']
+                    if b['teacher'] in s['wish_teachers']: sc += weights['wish_teacher']
+                    if t in booth_pref and booth_pref[t]==bi+1: sc += weights['booth_pref']
+                    if len(b['slots'])==0: sc += weights['empty_booth']
                     cands.append((sc, day, ts, bi))
         if not cands:
             if not checked_avail:
@@ -1828,8 +2111,12 @@ def generate():
 
         total = sum(sum(s['needs'].values()) for s in students)
 
+        # 学習済み重みをロード
+        learned_weights = load_learning_weights()
+
         schedule, unplaced, office_teachers = build_schedule(
-            students, wt, skills, office_rule, booth_pref, holidays=holidays
+            students, wt, skills, office_rule, booth_pref, holidays=holidays,
+            weights=learned_weights
         )
         placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
 
@@ -1847,6 +2134,10 @@ def generate():
                 wj[day] = dj
             schedule_json.append(wj)
 
+        # 自動生成結果のスナップショットを保存（学習用diff比較のため）
+        original_schedule_json = deepcopy(schedule_json)
+        original_unplaced = deepcopy(unplaced)
+
         # 週ごとの日付情報を取得
         if week_file_paths:
             week_dates = extract_week_dates_from_files(week_file_paths[:len(schedule)])
@@ -1858,6 +2149,8 @@ def generate():
         sd['result'] = {
             'schedule': schedule,
             'schedule_json': schedule_json,
+            'original_schedule_json': original_schedule_json,
+            'original_unplaced': original_unplaced,
             'unplaced': unplaced,
             'office_teachers': office_teachers,
             'office_rule': office_rule,
@@ -2841,6 +3134,91 @@ def get_state():
             })
 
     return jsonify({'has_state': False})
+
+# ========== 学習フィードバック API ==========
+@app.route('/api/submit_feedback', methods=['POST'])
+@login_required
+def submit_feedback():
+    """手動編集後のスケジュールと自動生成結果を比較し、学習データを更新"""
+    sd = get_session_data()
+    res = sd.get('result', {})
+    original = res.get('original_schedule_json')
+    edited = res.get('schedule_json')
+    if not original or not edited:
+        return jsonify({'ok': False, 'error': 'スナップショットがありません', 'changes_count': 0})
+
+    orig_unplaced = res.get('original_unplaced', [])
+    edit_unplaced = res.get('unplaced', [])
+
+    changes = compute_schedule_diff(original, edited, orig_unplaced, edit_unplaced)
+    if not changes:
+        return jsonify({'ok': True, 'changes_count': 0, 'summary': {}})
+
+    # パターン抽出 & 重み調整
+    signals = extract_signals(changes, original, edited)
+    current_weights = load_learning_weights()
+    new_weights = adjust_weights(current_weights, signals)
+
+    # 統計更新
+    stats = load_learning_stats()
+    stats['session_count'] = stats.get('session_count', 0) + 1
+    stats['last_updated'] = _dt.datetime.utcnow().isoformat() + 'Z'
+
+    # 保存
+    save_learning_weights(new_weights)
+    save_learning_stats(stats)
+
+    # 変更サマリ
+    summary = {}
+    for ch in changes:
+        t = ch['type']
+        summary[t] = summary.get(t, 0) + 1
+
+    # 編集履歴保存
+    placed_before = sum(len(b.get('slots', [])) for w in original for d in w.values()
+                        for bs in d.values() for b in bs)
+    placed_after = sum(len(b.get('slots', [])) for w in edited for d in w.values()
+                       for bs in d.values() for b in bs)
+    save_edit_history({
+        'total_changes': len(changes),
+        'placed_before': placed_before,
+        'placed_after': placed_after,
+        'changes': changes,
+    })
+
+    return jsonify({
+        'ok': True,
+        'changes_count': len(changes),
+        'summary': summary,
+        'weights': new_weights,
+        'session_count': stats['session_count'],
+    })
+
+@app.route('/api/learning_stats')
+@login_required
+def learning_stats():
+    """学習状況を返す"""
+    stats = load_learning_stats()
+    current_weights = load_learning_weights()
+    return jsonify({
+        'session_count': stats.get('session_count', 0),
+        'last_updated': stats.get('last_updated', ''),
+        'current_weights': current_weights,
+        'default_weights': DEFAULT_WEIGHTS,
+    })
+
+@app.route('/api/reset_learning', methods=['POST'])
+@login_required
+def reset_learning():
+    """学習データをリセット"""
+    save_learning_weights(dict(DEFAULT_WEIGHTS))
+    save_learning_stats({'session_count': 0})
+    # 履歴も全削除
+    rows = _supabase_request('GET', 'schedule_edit_history', 'select=id')
+    if rows:
+        for r in rows:
+            _supabase_request('DELETE', 'schedule_edit_history', f"id=eq.{r['id']}")
+    return jsonify({'ok': True})
 
 # ========== 起動 ==========
 if __name__ == '__main__':

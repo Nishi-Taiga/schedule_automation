@@ -1312,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.11.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1426,6 +1426,10 @@
         </div>
         <div class="edit-hint">✋ 講師名・生徒チップをD&Dで移動。生徒名クリック→個人カレンダー。カレンダー内の授業クリック→講師/時間変更。<span
             style="color:var(--red)">赤＝NG</span></div>
+        <details id="learningPanel" style="margin-top:8px;font-size:12px;background:#f8f9fa;padding:6px 10px;border-radius:6px;border:1px solid #e0e0e0">
+          <summary style="cursor:pointer;font-weight:600;color:#555">🧠 学習状況</summary>
+          <div id="learningContent" style="margin-top:6px"></div>
+        </details>
       </div>
       <div class="wt" id="wTabs"></div>
       <div class="card">
@@ -1818,13 +1822,58 @@
         }
         updateProgress(100, '完了！ ' + d.placed + '/' + d.total + 'コマ配置');
         await new Promise(r => setTimeout(r, 600));
-        R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
+        R = d; R.originalSchedule = JSON.parse(JSON.stringify(d.schedule)); R.originalUnplaced = JSON.parse(JSON.stringify(d.unplaced));
+        PW = 0; edited = false; calStudent = null; buildNgMap();
         if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
         hideProgress(); go('result'); rR();
       } catch (e) { hideProgress(); st.textContent = 'エラー: ' + e.message; st.className = 'status err'; } finally { btn.disabled = false; btn.innerHTML = '🚀 スケジュール生成'; }
     }
 
-    async function dlExcel() { if (edited) { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); } window.location.href = '/api/download'; }
+    async function dlExcel() {
+      if (edited) {
+        await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) });
+        try {
+          const fb = await fetch('/api/submit_feedback', { method: 'POST' }).then(r => r.json());
+          if (fb.changes_count > 0) showSaveIndicator('学習データに' + fb.changes_count + '件の変更を記録');
+        } catch (e) { console.warn('学習フィードバック送信失敗:', e); }
+      }
+      window.location.href = '/api/download';
+    }
+
+    async function loadLearningStats() {
+      const el = document.getElementById('learningContent');
+      if (!el) return;
+      try {
+        const d = await fetch('/api/learning_stats').then(r => r.json());
+        const wNames = { ng_date:'NG日程', backup_time:'予備時間', continuous_block:'連続コマ',
+          skip_interval:'飛び石', same_day_2nd:'同日2コマ目', same_day_3plus:'同日3コマ+',
+          wish_teacher:'希望講師', booth_pref:'ブース希望', empty_booth:'空きブース' };
+        let h = '<div style="margin-bottom:4px">学習セッション数: <b>' + d.session_count + '</b>' +
+          (d.last_updated ? ' (最終: ' + d.last_updated.slice(0,10) + ')' : '') + '</div>';
+        if (d.session_count > 0) {
+          h += '<table style="width:100%;font-size:11px;border-collapse:collapse"><tr style="background:#e8e8e8"><th style="text-align:left;padding:2px 4px">項目</th><th style="padding:2px 4px">デフォルト</th><th style="padding:2px 4px">現在</th><th style="padding:2px 4px">変化</th></tr>';
+          for (const [k, name] of Object.entries(wNames)) {
+            const def = d.default_weights[k], cur = d.current_weights[k], diff = cur - def;
+            const color = diff > 0 ? '#2e7d32' : diff < 0 ? '#c62828' : '#888';
+            h += '<tr><td style="padding:2px 4px">' + name + '</td><td style="text-align:center;padding:2px 4px">' + def +
+              '</td><td style="text-align:center;padding:2px 4px;font-weight:600">' + cur +
+              '</td><td style="text-align:center;padding:2px 4px;color:' + color + '">' + (diff > 0 ? '+' : '') + diff + '</td></tr>';
+          }
+          h += '</table>';
+          h += '<button onclick="resetLearning()" style="margin-top:6px;font-size:11px;padding:3px 10px;border:1px solid #ccc;border-radius:4px;cursor:pointer;background:#fff">リセット</button>';
+        } else {
+          h += '<div style="color:#888">まだ学習データがありません（3セッション以上で反映開始）</div>';
+        }
+        el.innerHTML = h;
+      } catch (e) { el.innerHTML = '<span style="color:#888">学習データの取得に失敗</span>'; }
+    }
+    async function resetLearning() {
+      if (!confirm('学習データをリセットしますか？')) return;
+      await fetch('/api/reset_learning', { method: 'POST' });
+      showSaveIndicator('学習データをリセットしました');
+      loadLearningStats();
+    }
+    document.getElementById('learningPanel').addEventListener('toggle', function() { if (this.open) loadLearningStats(); });
 
     async function runCheck() {
       if (!R || !R.schedule) return;
