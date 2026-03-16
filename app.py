@@ -1861,6 +1861,13 @@ def upload():
 @login_required
 def upload_surveys():
     """講師回答ファイル（複数）をアップロード → 集約 → 元シートを自動生成"""
+    try:
+        return _upload_surveys_impl()
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': f'サーバーエラー: {str(e)}'}), 500
+
+def _upload_surveys_impl():
     sd = get_session_data()
     files = request.files.getlist('surveys')
     print(f"[survey] received {len(files)} files: {[f.filename for f in files]}", flush=True)
