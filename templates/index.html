@@ -1372,6 +1372,27 @@
       <div style="padding-left:54px;margin-top:-4px;margin-bottom:6px"><button class="folder-btn"
           onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory
           style="display:none" onchange="onFolderSingle(this,'saved')"></div>
+      <div id="postRestoreSection" style="display:none;margin:12px 0;padding:12px;background:#f0f7ff;border-radius:8px;border:1px solid #b3d4fc">
+        <div id="postRestoreMsg" style="font-weight:600;margin-bottom:8px;color:#1565c0"></div>
+        <p style="font-size:11.5px;color:var(--ink3);margin-bottom:10px">必要に応じてメタデータや講師回答を更新してから結果を表示できます</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px">
+          <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
+            <div style="font-weight:600;margin-bottom:4px;font-size:12px">メタデータ更新</div>
+            <div style="color:#888;font-size:11px;margin-bottom:6px">生徒追加・コマ数変更を反映</div>
+            <input type="file" id="postRestoreMetaInput" accept=".xlsx,.xls" style="font-size:11px;max-width:100%"
+                   onchange="doPostRestoreMeta(this)">
+            <div id="postRestoreMetaStatus" style="margin-top:4px;font-size:11px"></div>
+          </div>
+          <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
+            <div style="font-weight:600;margin-bottom:4px;font-size:12px">講師回答追加</div>
+            <div style="color:#888;font-size:11px;margin-bottom:6px">新しい講師回答を追加</div>
+            <input type="file" id="postRestoreSurveyInput" accept=".xlsx,.xls" multiple style="font-size:11px;max-width:100%"
+                   onchange="doPostRestoreSurvey(this)">
+            <div id="postRestoreSurveyStatus" style="margin-top:4px;font-size:11px"></div>
+          </div>
+        </div>
+        <button class="btn btn-g" onclick="finalizeRestore()">📊 結果を表示</button>
+      </div>
       <label class="upload-row" id="uJson">
         <div class="icon">📋</div>
         <div>
@@ -1442,7 +1463,7 @@
             </div>
             <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
               <div style="font-weight:600;margin-bottom:4px">講師回答追加</div>
-              <div style="color:#888;font-size:11px;margin-bottom:6px">新しい講師回答をアップロード後、再生成で反映</div>
+              <div style="color:#888;font-size:11px;margin-bottom:6px">新しい講師回答をアップロード（DL時に反映）</div>
               <input type="file" id="updateSurveyInput" accept=".xlsx,.xls" multiple style="font-size:11px;max-width:100%"
                      onchange="doUpdateSurveys(this)">
               <div id="updateSurveyStatus" style="margin-top:4px;font-size:11px"></div>
@@ -1503,7 +1524,16 @@
           row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
           R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
           if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
-          go('result'); rR(); showSaveIndicator('スケジュールを復元しました');
+          // 結果画面に自動遷移せず、ファイル更新セクションを表示
+          const sec = document.getElementById('postRestoreSection');
+          sec.style.display = 'block';
+          document.getElementById('postRestoreMsg').textContent = '✅ スケジュール復元完了 (' + d.placed + '/' + d.total + 'コマ)';
+          // ステータスをリセット
+          document.getElementById('postRestoreMetaStatus').textContent = '';
+          document.getElementById('postRestoreSurveyStatus').textContent = '';
+          document.getElementById('postRestoreMetaInput').value = '';
+          document.getElementById('postRestoreSurveyInput').value = '';
+          sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
         else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
       }
@@ -1626,7 +1656,11 @@
           const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json(); hideProgress();
           if (res.ok && d.ok) {
             row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
-            R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b })); go('result'); rR(); showSaveIndicator('スケジュールを復元しました');
+            R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
+            const sec = document.getElementById('postRestoreSection'); sec.style.display = 'block';
+            document.getElementById('postRestoreMsg').textContent = '✅ スケジュール復元完了 (' + d.placed + '/' + d.total + 'コマ)';
+            document.getElementById('postRestoreMetaStatus').textContent = ''; document.getElementById('postRestoreSurveyStatus').textContent = '';
+            sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
           else { row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = d.error || '読み込み失敗'; }
         }
@@ -2440,6 +2474,53 @@
     }
 
     // ========== ファイル更新ハンドラ ==========
+    // --- 復元直後（Step1）のファイル更新 ---
+    async function doPostRestoreMeta(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const status = document.getElementById('postRestoreMetaStatus');
+      status.textContent = '更新中...';
+      status.style.color = '#1565c0';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/api/update_meta', {method: 'POST', body: fd});
+        const j = await res.json();
+        if (!res.ok || !j.ok) { status.textContent = j.error || 'エラー'; status.style.color = 'red'; return; }
+        R.students = j.students;
+        R.placed = j.placed;
+        R.total = j.total;
+        R.unplaced = j.unplaced;
+        if (j.boothPref) R.boothPref = j.boothPref;
+        buildNgMap();
+        document.getElementById('postRestoreMsg').textContent = '✅ スケジュール復元完了 (' + j.placed + '/' + j.total + 'コマ)';
+        status.textContent = `✅ ${j.studentCount}名の生徒データを更新（未配置: ${j.unplaced.length}件）`;
+        status.style.color = 'green';
+      } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }
+    }
+
+    async function doPostRestoreSurvey(input) {
+      const files = input.files;
+      if (!files.length) return;
+      const status = document.getElementById('postRestoreSurveyStatus');
+      status.textContent = 'アップロード中...';
+      status.style.color = '#1565c0';
+      const fd = new FormData();
+      for (const f of files) fd.append('surveys', f);
+      try {
+        const res = await fetch('/api/upload_surveys', {method: 'POST', body: fd});
+        const j = await res.json();
+        if (!res.ok || !j.ok) { status.textContent = j.error || 'エラー'; status.style.color = 'red'; return; }
+        status.textContent = `✅ ${j.teacherCount}名の講師データ（${j.weeks}週分）を登録`;
+        status.style.color = 'green';
+      } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }
+    }
+
+    function finalizeRestore() {
+      go('result'); rR(); showSaveIndicator('スケジュールを復元しました');
+    }
+
+    // --- 結果画面でのファイル更新 ---
     async function doUpdateMeta(input) {
       const file = input.files[0];
       if (!file) return;
@@ -2478,7 +2559,7 @@
         const res = await fetch('/api/upload_surveys', {method: 'POST', body: fd});
         const j = await res.json();
         if (!res.ok || !j.ok) { status.textContent = j.error || 'エラー'; status.style.color = 'red'; return; }
-        status.innerHTML = `${j.teacherCount}名の講師データ（${j.weeks}週分）を登録しました。<br><b>「↻ 再生成」で反映されます。</b>`;
+        status.textContent = `${j.teacherCount}名の講師データ（${j.weeks}週分）を登録しました。ブース表DLに反映されます。`;
         status.style.color = 'green';
       } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }
       input.value = '';
