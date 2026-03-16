@@ -75,6 +75,9 @@ def cleanup_old_sessions():
         meta = _load_meta(name)
         if meta and now - meta.get('last_access', 0) > SESSION_TIMEOUT:
             shutil.rmtree(sdir, ignore_errors=True)
+    # Supabase: 7日以上古いセッションを削除
+    cutoff = (_dt.datetime.utcnow() - _dt.timedelta(days=7)).isoformat() + 'Z'
+    _supabase_request('DELETE', 'schedule_sessions', f'updated_at=lt.{cutoff}')
 
 def get_session_data():
     """現在のセッションのデータを取得(なければ作成) - ディスクベース"""
@@ -229,6 +232,7 @@ def logout():
             shutil.rmtree(sdir, ignore_errors=True)
         if hasattr(get_session_data, '_cache') and sid in get_session_data._cache:
             del get_session_data._cache[sid]
+        _supabase_request('DELETE', 'schedule_sessions', f'sid=eq.{sid}')
     session.clear()
     return redirect(url_for('login_page'))
 
