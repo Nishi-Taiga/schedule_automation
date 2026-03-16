@@ -161,8 +161,21 @@ def _save_result_to_disk(sid, result):
             saveable['skills'] = result['skills']
         with open(rp, 'w', encoding='utf-8') as f:
             json.dump(saveable, f, ensure_ascii=False)
+        # Supabaseにも永続保存
+        _save_result_to_supabase(sid, saveable)
     except Exception as e:
         print(f"[save_result] WARNING: ディスク保存失敗: {e}", flush=True)
+
+def _save_result_to_supabase(sid, saveable):
+    """スケジュール結果をSupabaseに永続保存 (upsert)"""
+    try:
+        _supabase_request('POST', 'schedule_sessions', '', body={
+            'sid': sid,
+            'result_data': saveable,
+            'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
+        }, headers_extra={'Prefer': 'resolution=merge-duplicates'})
+    except Exception as e:
+        print(f"[save_result] WARNING: Supabase保存失敗: {e}", flush=True)
 
 def _load_result_from_disk(sid):
     """ディスクからスケジュール結果を読み込む"""
@@ -174,6 +187,16 @@ def _load_result_from_disk(sid):
             return json.load(f)
     except Exception:
         return None
+
+def _load_result_from_supabase(sid):
+    """Supabaseからスケジュール結果を読み込む"""
+    try:
+        rows = _supabase_request('GET', 'schedule_sessions', f'sid=eq.{sid}&select=result_data')
+        if rows and len(rows) > 0:
+            return rows[0].get('result_data')
+    except Exception as e:
+        print(f"[load_result] WARNING: Supabase読み込み失敗: {e}", flush=True)
+    return None
 
 # ========== 認証 ==========
 def login_required(f):
@@ -1855,7 +1878,7 @@ def upload():
         return jsonify({'error': 'アップロードするファイルが含まれていません'}), 400
     sd['files'] = {**sd.get('files',{}), **saved}
     save_session_files(sd)
-    return jsonify({'ok': True, 'files': {k: os.path.basename(v) for k,v in sd.get('files',{}).items()}})
+    return jsonify({'ok': True, 'files': {k: (os.path.basename(v) if isinstance(v, str) else [os.path.basename(p) for p in v]) for k, v in sd.get('files', {}).items()}})
 
 @app.route('/api/upload_surveys', methods=['POST'])
 @login_required
@@ -1935,7 +1958,7 @@ def _upload_surveys_impl():
         'teacherCount': len(teacher_names),
         'weeks': len(weekly_teachers),
         'errors': errors,
-        'files': {k: os.path.basename(v) for k, v in sd.get('files', {}).items()},
+        'files': {k: (os.path.basename(v) if isinstance(v, str) else [os.path.basename(p) for p in v]) for k, v in sd.get('files', {}).items()},
     })
 
 @app.route('/api/consolidate_booth', methods=['POST'])
@@ -3138,6 +3161,55 @@ def get_state():
                 'boothPref': disk_result.get('booth_pref', {}),
                 'students': students_json,
                 'weekDates': disk_result.get('week_dates') or {'year':2026, 'month':3, 'weeks':[]},
+            })
+
+    # Supabaseから復元を試みる（リデプロイ後のフォールバック）
+    if sid:
+        supa_result = _load_result_from_supabase(sid)
+        if supa_result and 'schedule_json' in supa_result:
+            students_json = []
+            for s in supa_result.get('students', []):
+                students_json.append({
+                    'grade': s.get('grade', ''), 'name': s.get('name', ''),
+                    'needs': s.get('needs', {}),
+                    'avail': s.get('avail') if s.get('avail') else [],
+                    'backup_avail': s.get('backup_avail') if s.get('backup_avail') else [],
+                    'fixed': s.get('fixed', []),
+                    'notes': s.get('notes', ''),
+                    'ng_teachers': s.get('ng_teachers', []),
+                    'wish_teachers': s.get('wish_teachers', []),
+                    'ng_students': s.get('ng_students', []),
+                    'ng_dates': s.get('ng_dates', []),
+                })
+            placed = sum(len(b['slots']) for w in supa_result['schedule_json'] for d in w.values() for bs in d.values() for b in bs)
+            total = sum(sum(s.get('needs', {}).values()) for s in supa_result.get('students', []))
+
+            # インメモリキャッシュ + ディスクに復元
+            sd['result'] = {
+                'schedule_json': supa_result['schedule_json'],
+                'schedule': supa_result['schedule_json'],
+                'original_schedule_json': supa_result.get('original_schedule_json'),
+                'original_unplaced': supa_result.get('original_unplaced'),
+                'unplaced': supa_result.get('unplaced', []),
+                'office_teachers': supa_result.get('office_teachers', []),
+                'booth_pref': supa_result.get('booth_pref', {}),
+                'students': supa_result.get('students', []),
+                'week_dates': supa_result.get('week_dates'),
+                'weekly_teachers': supa_result.get('weekly_teachers'),
+                'skills': supa_result.get('skills', {}),
+            }
+            save_session_result(sd)
+
+            return jsonify({
+                'has_state': True,
+                'placed': placed,
+                'total': total,
+                'schedule': supa_result['schedule_json'],
+                'unplaced': supa_result.get('unplaced', []),
+                'officeTeachers': supa_result.get('office_teachers', []),
+                'boothPref': supa_result.get('booth_pref', {}),
+                'students': students_json,
+                'weekDates': supa_result.get('week_dates') or {'year':2026, 'month':3, 'weeks':[]},
             })
 
     return jsonify({'has_state': False})
