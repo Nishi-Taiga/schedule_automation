@@ -2558,6 +2558,18 @@ def load_saved():
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+    # スケジュール状態をセッションに保存（update_meta等で参照するため）
+    sd['result'] = {
+        'schedule_json': state['schedule'],
+        'schedule': state['schedule'],
+        'unplaced': state.get('unplaced', []),
+        'office_teachers': state.get('officeTeachers', []),
+        'booth_pref': state.get('boothPref', {}),
+        'students': state.get('students', []),
+        'week_dates': state.get('weekDates'),
+    }
+    save_session_result(sd)
+
     # 保存済みファイル自体をブース表として登録（再ダウンロード用）
     sd['files'] = {**sd.get('files', {}), 'booth': path}
     save_session_files(sd)
