@@ -1010,6 +1010,14 @@ def parse_survey_file(file_path):
             if year and month:
                 break
 
+    # ファイル名から年月を抽出するフォールバック（例: "202604シート" → 2026年4月）
+    if year is None or month is None:
+        fn_match = re.search(r'(\d{4})(\d{2})', os.path.basename(file_path))
+        if fn_match:
+            y, m = int(fn_match.group(1)), int(fn_match.group(2))
+            if 2020 <= y <= 2100 and 1 <= m <= 12:
+                year, month = y, m
+
     week_map = _compute_month_week_map(year, month) if year and month else {}
 
     # 列ヘッダー（日付・曜日・祝日フラグ）を読み取る
@@ -1045,6 +1053,10 @@ def parse_survey_file(file_path):
             day_of_month = resolved_date.day
         elif isinstance(date_val, (int, float)) and 1 <= date_val <= 31:
             day_of_month = int(date_val)
+        elif isinstance(date_val, str) and date_val.strip().isdigit():
+            d = int(date_val.strip())
+            if 1 <= d <= 31:
+                day_of_month = d
         week_num = week_map.get(day_of_month)
 
         holiday = _get_merged_cell_value(ws, 9, j)
@@ -1074,6 +1086,9 @@ def parse_survey_file(file_path):
                 })
 
     wb.close()
+    none_weeks = sum(1 for a in availability if a.get('week_num') is None)
+    if none_weeks:
+        print(f"[survey] WARNING: {teacher_name} — {none_weeks}/{len(availability)}コマで week_num=None (year={year}, month={month})", flush=True)
     print(f"[survey] parsed: {teacher_name} (full: {raw_name}) — {len(availability)}コマ, year={year}, month={month}, cols={len(columns)}", flush=True)
 
     return {
@@ -1099,6 +1114,15 @@ def aggregate_surveys_to_weekly(survey_results):
             index[key].add(fn)
     if max_week == 0:
         max_week = 4  # fallback
+
+    # week_num=None のデータを全週に配分（データ消失を防止）
+    for key in list(index.keys()):
+        if key[0] is None:
+            _, day, time_str = key
+            teachers = index[key]
+            for wn in range(1, max_week + 1):
+                index[(wn, day, time_str)].update(teachers)
+            del index[key]
 
     weeks = []
     for wi in range(max_week):
@@ -1946,6 +1970,11 @@ def _upload_surveys_impl():
     for sr in survey_results:
         sr['name'] = to_short(sr.get('full_name', sr['name']))
 
+    # フルネーム→短縮名マッピングをセッションに保存（生成時の名前衝突解消用）
+    survey_name_map = {sr['name']: sr.get('full_name', '') for sr in survey_results}
+    sd['survey_name_map'] = survey_name_map
+    save_session_files(sd)
+
     # 集約して元シートExcelを生成
     weekly_teachers = aggregate_surveys_to_weekly(survey_results)
     src_path = os.path.join(sd['dir'], 'generated_src.xlsx')
@@ -2125,6 +2154,21 @@ def generate():
         # 手動追加講師はブースに配置せず候補リストにのみ表示（手動D&D用）
         if manual_teachers:
             print(f"[generate] manual teachers (候補のみ): {manual_teachers}", flush=True)
+
+        # 手動追加講師とサーベイ講師の名前衝突を解消
+        survey_name_map = sd.get('survey_name_map', {})
+        for mt in manual_teachers:
+            if mt in survey_name_map:
+                full_name = survey_name_map[mt]
+                parts = full_name.replace('\u3000', ' ').split()
+                if len(parts) >= 2:
+                    new_short = parts[1] + 'T'
+                    print(f"[generate] 名前衝突: 手動追加「{mt}」とサーベイ「{full_name}」→「{new_short}」に変更", flush=True)
+                    for wi in range(len(wt)):
+                        for day in wt[wi]:
+                            for ts in wt[wi][day]:
+                                wt[wi][day][ts] = [new_short if t == mt else t for t in wt[wi][day][ts]]
+                    NAME_MAP[full_name] = new_short
 
         # 週ファイルリストから週数を制限
         week_file_paths = files.get('week_files', [])
