@@ -1312,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.5</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.6</span></h1>
     </div>
   </div>
   <div class="container">
@@ -2519,6 +2519,7 @@
         const res = await fetch('/api/upload_surveys', {method: 'POST', body: fd});
         const j = await res.json();
         if (!res.ok || !j.ok) { status.textContent = j.error || 'エラー'; status.style.color = 'red'; return; }
+        if (j.weeklyTeachers) R.weeklyTeachers = j.weeklyTeachers;
         status.textContent = `✅ ${j.teacherCount}名の講師データ（${j.weeks}週分）を登録`;
         status.style.color = 'green';
       } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }
@@ -2567,6 +2568,7 @@
         const res = await fetch('/api/upload_surveys', {method: 'POST', body: fd});
         const j = await res.json();
         if (!res.ok || !j.ok) { status.textContent = j.error || 'エラー'; status.style.color = 'red'; return; }
+        if (j.weeklyTeachers) R.weeklyTeachers = j.weeklyTeachers;
         status.textContent = `${j.teacherCount}名の講師データ（${j.weeks}週分）を登録しました。ブース表DLに反映されます。`;
         status.style.color = 'green';
       } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }

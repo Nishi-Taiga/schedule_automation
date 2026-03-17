@@ -1996,11 +1996,19 @@ def _upload_surveys_impl():
     save_session_files(sd)
 
     teacher_names = sorted(set(sr['name'] for sr in survey_results))
+
+    # セッション結果にweekly_teachersを保存（講師ピッカー用）
+    res = sd.get('result', {})
+    res['weekly_teachers'] = weekly_teachers
+    sd['result'] = res
+    save_session_result(sd)
+
     return jsonify({
         'ok': True,
         'teachers': teacher_names,
         'teacherCount': len(teacher_names),
         'weeks': len(weekly_teachers),
+        'weeklyTeachers': weekly_teachers,
         'errors': errors,
         'files': {k: (os.path.basename(v) if isinstance(v, str) else [os.path.basename(p) for p in v]) for k, v in sd.get('files', {}).items()},
     })
