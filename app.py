@@ -1823,6 +1823,11 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
 
+    # 古い未配置コマ・データシートがあれば削除（重複防止）
+    for old_sn in list(wb.sheetnames):
+        if old_sn == '未配置コマ' or old_sn.startswith('_schedule_data'):
+            del wb[old_sn]
+
     # 未配置コマシート
     ws_up = wb.create_sheet('未配置コマ')
     for c, h in enumerate(['学年','生徒名','科目','未配置数'], 1):
