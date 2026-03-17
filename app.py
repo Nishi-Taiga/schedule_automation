@@ -2621,6 +2621,14 @@ def load_saved():
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+    # weeklyTeachers を取得（_schedule_data JSONに含まれている場合）
+    weekly_teachers = state.get('weeklyTeachers') or state.get('weekly_teachers')
+    if not weekly_teachers and 'src' in sd.get('files', {}):
+        try:
+            weekly_teachers = load_weekly_teachers(sd['files']['src'])
+        except Exception:
+            pass
+
     # スケジュール状態をセッションに保存（update_meta等で参照するため）
     sd['result'] = {
         'schedule_json': state['schedule'],
@@ -2630,6 +2638,7 @@ def load_saved():
         'booth_pref': state.get('boothPref', {}),
         'students': state.get('students', []),
         'week_dates': state.get('weekDates'),
+        'weekly_teachers': weekly_teachers,
     }
     save_session_result(sd)
 
@@ -2660,7 +2669,10 @@ def load_saved():
     sd['files'] = new_files
     save_session_files(sd)
 
-    return jsonify({'ok': True, 'hasBoothTemplate': has_booth_template, **state})
+    resp = {'ok': True, 'hasBoothTemplate': has_booth_template, **state}
+    if weekly_teachers:
+        resp['weeklyTeachers'] = weekly_teachers
+    return jsonify(resp)
 
 # ========== メタデータ・講師回答の事後更新 API ==========
 @app.route('/api/update_meta', methods=['POST'])
