@@ -1105,7 +1105,7 @@ def aggregate_surveys_to_weekly(survey_results):
     index = defaultdict(set)
     max_week = 0
     for sr in survey_results:
-        fn = sr.get('full_name') or sr['name']
+        fn = sr['name']  # 短縮名を使用（スケジュールの講師名と一致させるため）
         for a in sr['availability']:
             wn = a.get('week_num')
             if wn and wn > max_week:
