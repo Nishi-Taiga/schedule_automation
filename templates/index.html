@@ -1312,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.3</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.4</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1527,7 +1527,12 @@
           // 結果画面に自動遷移せず、ファイル更新セクションを表示
           const sec = document.getElementById('postRestoreSection');
           sec.style.display = 'block';
-          document.getElementById('postRestoreMsg').textContent = '✅ スケジュール復元完了 (' + d.placed + '/' + d.total + 'コマ)';
+          let restoreMsg = '✅ スケジュール復元完了 (' + d.placed + '/' + d.total + 'コマ)';
+          if (d.hasBoothTemplate === false) {
+            restoreMsg += '\n⚠️ ブース表テンプレートが含まれていません。ブース表DLの出力にはブース表シートが含まれません。元のブース表Excelを「メタデータ更新」から再アップロードしてください。';
+          }
+          document.getElementById('postRestoreMsg').textContent = restoreMsg;
+          document.getElementById('postRestoreMsg').style.whiteSpace = 'pre-line';
           // ステータスをリセット
           document.getElementById('postRestoreMetaStatus').textContent = '';
           document.getElementById('postRestoreSurveyStatus').textContent = '';
@@ -1658,7 +1663,10 @@
             row.classList.add('done'); row.querySelector('.icon').textContent = '✅'; row.querySelector('.desc').textContent = f.name + ' (' + d.placed + '/' + d.total + 'コマ)';
             R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
             const sec = document.getElementById('postRestoreSection'); sec.style.display = 'block';
-            document.getElementById('postRestoreMsg').textContent = '✅ スケジュール復元完了 (' + d.placed + '/' + d.total + 'コマ)';
+            let rmsg2 = '✅ スケジュール復元完了 (' + d.placed + '/' + d.total + 'コマ)';
+            if (d.hasBoothTemplate === false) rmsg2 += '\n⚠️ ブース表テンプレートが含まれていません。元のブース表Excelを「メタデータ更新」から再アップロードしてください。';
+            document.getElementById('postRestoreMsg').textContent = rmsg2;
+            document.getElementById('postRestoreMsg').style.whiteSpace = 'pre-line';
             document.getElementById('postRestoreMetaStatus').textContent = ''; document.getElementById('postRestoreSurveyStatus').textContent = '';
             sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }

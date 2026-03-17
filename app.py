@@ -1804,8 +1804,14 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
     elif booth_path:
         # 後方互換: 統合ブックから読み込み
         wb = openpyxl.load_workbook(booth_path)
-        meta_sheets = [sn for sn in wb.sheetnames if any(k in sn for k in META_KEYWORDS)]
-        week_sheets = [sn for sn in wb.sheetnames if sn not in meta_sheets]
+        # メタシート・システムシートを除外して週シートを特定
+        exclude_sheets = set()
+        for sn in wb.sheetnames:
+            if any(k in sn for k in META_KEYWORDS):
+                exclude_sheets.add(sn)
+            elif sn.startswith('_schedule_data') or sn == '未配置コマ':
+                exclude_sheets.add(sn)
+        week_sheets = [sn for sn in wb.sheetnames if sn not in exclude_sheets]
         num_weeks = min(num_weeks, len(week_sheets))
 
         for wi in range(num_weeks):
@@ -2614,11 +2620,34 @@ def load_saved():
     }
     save_session_result(sd)
 
-    # 保存済みファイル自体をブース表として登録（再ダウンロード用）
-    sd['files'] = {**sd.get('files', {}), 'booth': path}
+    # 保存済みファイル自体をテンプレートとして登録（再ダウンロード用）
+    # ブース表シートを含むか確認し、booth_path 分岐で使えるよう booth に登録
+    new_files = {**sd.get('files', {})}
+    has_booth_template = False
+    try:
+        check_wb = openpyxl.load_workbook(path, read_only=True)
+        check_snames = check_wb.sheetnames
+        check_wb.close()
+        # 週シート（ブース表テンプレート）があるか判定
+        exclude = set()
+        for sn in check_snames:
+            if any(k in sn for k in META_KEYWORDS):
+                exclude.add(sn)
+            elif sn.startswith('_schedule_data') or sn == '未配置コマ':
+                exclude.add(sn)
+        week_sheet_names = [sn for sn in check_snames if sn not in exclude]
+        has_booth_template = len(week_sheet_names) > 0
+
+        new_files['booth'] = path
+        # 統合ブックは booth_path 分岐で処理するため week_files は消す
+        new_files.pop('week_files', None)
+    except Exception:
+        new_files['booth'] = path
+
+    sd['files'] = new_files
     save_session_files(sd)
 
-    return jsonify({'ok': True, **state})
+    return jsonify({'ok': True, 'hasBoothTemplate': has_booth_template, **state})
 
 # ========== メタデータ・講師回答の事後更新 API ==========
 @app.route('/api/update_meta', methods=['POST'])
@@ -2653,8 +2682,22 @@ def update_meta():
     if not fresh_students:
         return jsonify({'error': 'メタデータから生徒情報を読み取れませんでした'}), 400
 
-    # booth ファイル参照を更新
-    sd['files'] = {**sd.get('files', {}), 'booth': path}
+    # booth ファイル参照を更新 + ブース表シートがあればテンプレートとしても登録
+    new_files = {**sd.get('files', {}), 'booth': path}
+    try:
+        tmpl_wb = openpyxl.load_workbook(path, read_only=True)
+        tmpl_exclude = set()
+        for sn in tmpl_wb.sheetnames:
+            if any(k in sn for k in META_KEYWORDS) or sn.startswith('_schedule_data') or sn == '未配置コマ':
+                tmpl_exclude.add(sn)
+        tmpl_weeks = [sn for sn in tmpl_wb.sheetnames if sn not in tmpl_exclude]
+        tmpl_wb.close()
+        if tmpl_weeks:
+            # ブース表シートがある → booth_path 分岐で使うため week_files を消す
+            new_files.pop('week_files', None)
+    except Exception:
+        pass
+    sd['files'] = new_files
     save_session_files(sd)
 
     # ======== placed / total / unplaced を最新メタデータで再計算 ========
