@@ -261,7 +261,7 @@ def run_tests():
                 restore_msg = page3.text_content("#postRestoreMsg") or ""
                 print(f"  INFO: {restore_msg[:150]}")
 
-                go_result_btn = page3.query_selector("#postRestoreGoResult")
+                go_result_btn = page3.query_selector('button[onclick="finalizeRestore()"]')
                 if go_result_btn:
                     go_result_btn.click()
                     page3.wait_for_selector("#pResult", state="visible", timeout=30000)
