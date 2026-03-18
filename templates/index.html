@@ -1312,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.9</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.13.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1436,6 +1436,7 @@
       <div class="bg">
         <button class="btn btn-o" onclick="go('upload')">← 戻る</button>
         <button class="btn btn-g" id="genBtn" onclick="gen()">🚀 スケジュール生成</button>
+        <button class="btn btn-p" id="goResultBtn" style="display:none" onclick="go('result');rR()">📊 結果を表示</button>
       </div>
       <div class="status" id="stTxt"></div>
     </div>
@@ -1451,6 +1452,7 @@
           <div style="flex:1"></div>
           <button class="btn btn-o" id="checkBtn" onclick="runCheck()">🔍 チェック</button>
           <button class="btn btn-p" onclick="dlExcel()">📥 ブース表DL</button>
+          <button class="btn btn-o" onclick="dlJson()">💾 JSON保存</button>
           <button class="btn btn-o" onclick="go('settings')">↻ 再生成</button>
         </div>
         <div class="edit-hint">✋ 講師名・生徒チップをD&Dで移動。生徒名クリック→個人カレンダー。カレンダー内の授業クリック→講師/時間変更。<span
@@ -1642,9 +1644,17 @@
           row.querySelector('.desc').textContent = _jsonFile.name + ' (' + d.placed + '/' + d.total + 'コマ)';
           R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
           if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
-          go('result'); rR();
-          let msg = d.hasWeekFiles ? 'JSON＋ブース表から復元しました' : 'JSONから復元しました（ブース表なし）';
-          if (d.surveyTeacherCount) msg += '（講師: ' + d.surveyTeacherCount + '名）';
+          // 設定画面のデータを復元
+          if (d.officeRule) { OR = {}; for (const day of D) OR[day] = d.officeRule[day] || []; }
+          if (d.manualTeachers) manualTeachers = [...d.manualTeachers];
+          // weeklyTeachersからteacherListを構築
+          if (d.weeklyTeachers && d.weeklyTeachers.length) {
+            const tSet = new Set(teacherList);
+            for (const wk of d.weeklyTeachers) for (const day of Object.values(wk)) for (const ts of Object.values(day)) (ts || []).forEach(t => tSet.add(t));
+            teacherList = [...tSet].sort();
+          }
+          go('settings');
+          let msg = 'JSON復元完了（' + d.placed + '/' + d.total + 'コマ）— 設定を確認して結果を表示してください';
           showSaveIndicator(msg);
         } else {
           row.querySelector('.icon').textContent = '❌';
@@ -1826,6 +1836,9 @@
       for (const [k, id] of [['upload', 'sb1'], ['settings', 'sb2'], ['result', 'sb3']]) document.getElementById(id).className = 'step-btn' + (step === k ? ' active' : ''); if (step === 'settings') buildSettingsUI();
     }
     function buildSettingsUI() {
+      // 復元済みスケジュールがある場合は「結果を表示」ボタンを表示
+      const goBtn = document.getElementById('goResultBtn');
+      if (goBtn) goBtn.style.display = (R && R.schedule && R.schedule.length) ? '' : 'none';
       const g = document.getElementById('oGrid'); g.innerHTML = '';
       const opts = [...teacherList];
       const optSet = new Set(opts);
@@ -1923,6 +1936,12 @@
         } catch (e) { console.warn('学習フィードバック送信失敗:', e); }
       }
       window.location.href = '/api/download';
+    }
+    async function dlJson() {
+      if (edited) {
+        await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) });
+      }
+      window.location.href = '/api/download_json';
     }
 
     async function loadLearningStats() {
@@ -2108,11 +2127,18 @@
       el.addEventListener('click', e => { if (!wasDragged) { e.stopPropagation(); showTeacherPicker(el, wi, day, ts, bi); } });
       return el;
     }
-    function getAvailableTeachers(wi, day) {
+    function getAvailableTeachers(wi, day, ts) {
       // weekly_teachers から出勤可能な講師を取得（教室業務担当を除く）
       const wt = R.weeklyTeachers; if (!wt || !wt[wi] || !wt[wi][day]) return [];
-      const dayData = wt[wi][day]; const all = new Set();
-      for (const ts of Object.keys(dayData)) { (dayData[ts] || []).forEach(t => all.add(t)); }
+      const dayData = wt[wi][day];
+      const all = new Set();
+      if (ts && dayData[ts]) {
+        // 特定の時間帯の出勤講師のみ
+        (dayData[ts] || []).forEach(t => all.add(t));
+      } else {
+        // フォールバック: その日の全時間帯
+        for (const k of Object.keys(dayData)) { (dayData[k] || []).forEach(t => all.add(t)); }
+      }
       const ot = (R.officeTeachers[wi] || {})[day]; if (ot) all.delete(ot);
       return [...all].sort();
     }
@@ -2126,7 +2152,7 @@
       // 既存のピッカーを閉じる
       document.querySelectorAll('.teacher-picker').forEach(p => p.remove());
       const assigned = getAssignedTeachers(wi, day);
-      const available = getAvailableTeachers(wi, day);
+      const available = getAvailableTeachers(wi, day, ts);
       const unassigned = available.filter(t => !assigned.has(t));
       if (!unassigned.length && available.length <= 1) return;
       const picker = document.createElement('div'); picker.className = 'teacher-picker';
@@ -2161,7 +2187,7 @@
     function showEmptyBoothPicker(cell, wi, day, ts, bi) {
       document.querySelectorAll('.teacher-picker').forEach(p => p.remove());
       const assigned = getAssignedTeachers(wi, day);
-      const available = getAvailableTeachers(wi, day);
+      const available = getAvailableTeachers(wi, day, ts);
       const unassigned = available.filter(t => !assigned.has(t));
       const picker = document.createElement('div'); picker.className = 'teacher-picker';
       if (unassigned.length) {
@@ -2326,7 +2352,7 @@
       m.onclick = (e) => { if (e.target === m) closeSlotEditModal(); };
 
       let h = '<div class="modal"><div class="modal-header">ブース編集 (' + day + ' ' + TSR[ts] + ' - ブース' + BL[bi] + ')</div><div class="modal-body"><div style="margin-bottom:12px"><label>講師</label><select id="seTeacher" style="width:100%;padding:4px"><option value="">(なし)</option>';
-      const allT = getAvailableTeachers(wi, day);
+      const allT = getAvailableTeachers(wi, day, ts);
       if (booth.teacher && !allT.includes(booth.teacher)) allT.push(booth.teacher); allT.sort();
       allT.forEach(t => { h += '<option value="' + t + '"' + (t === booth.teacher ? ' selected' : '') + '>' + t + '</option>'; });
       h += '</select></div>';

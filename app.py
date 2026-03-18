@@ -2274,6 +2274,7 @@ def generate():
             'office_teachers': office_teachers,
             'office_rule': office_rule,
             'booth_pref': booth_pref,
+            'manual_teachers': manual_teachers,
             'students': students,
             'week_dates': week_dates,
             'weekly_teachers': wt,
@@ -2330,7 +2331,9 @@ def download():
             'schedule': res.get('schedule_json', []),
             'unplaced': res.get('unplaced', []),
             'officeTeachers': res.get('office_teachers', []),
+            'officeRule': res.get('office_rule', {}),
             'boothPref': res.get('booth_pref', {}),
+            'manualTeachers': res.get('manual_teachers', []),
             'weekDates': res.get('week_dates'),
             'total': sum(sum(s['needs'].values()) for s in res.get('students', [])),
         }
@@ -2392,6 +2395,70 @@ def download():
             week_file_paths=week_file_paths
         )
         return send_file(output_path, as_attachment=True, download_name='時間割_出力.xlsx')
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/download_json')
+@login_required
+def download_json():
+    """スケジュール全状態をJSONファイルとしてダウンロード"""
+    sd = get_session_data()
+    res = sd.get('result', {})
+    if 'schedule' not in res:
+        return jsonify({'error': '先にスケジュールを生成してください'}), 400
+
+    try:
+        schedule = res.get('schedule_json') or res.get('schedule', [])
+        students_json = []
+        for s in res.get('students', []):
+            students_json.append({
+                'grade': s.get('grade', ''), 'name': s.get('name', ''),
+                'needs': s.get('needs', {}),
+                'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
+                'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
+                'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
+                'notes': s.get('notes', ''),
+                'ng_teachers': s.get('ng_teachers', []),
+                'wish_teachers': s.get('wish_teachers', []),
+                'ng_students': s.get('ng_students', []),
+                'ng_dates': [list(d) for d in s.get('ng_dates', set())],
+            })
+
+        wt = None
+        if 'src' in sd.get('files', {}):
+            try:
+                wt = load_weekly_teachers(sd['files']['src'])
+            except Exception:
+                pass
+        if not wt:
+            wt = res.get('weekly_teachers')
+
+        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+        total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
+
+        state_json = {
+            'schedule': schedule,
+            'unplaced': res.get('unplaced', []),
+            'officeTeachers': res.get('office_teachers', []),
+            'officeRule': res.get('office_rule', {}),
+            'boothPref': res.get('booth_pref', {}),
+            'manualTeachers': res.get('manual_teachers', []),
+            'weekDates': res.get('week_dates'),
+            'total': total,
+            'students': students_json,
+            'placed': placed,
+        }
+        if wt:
+            state_json['weeklyTeachers'] = wt
+
+        json_str = json.dumps(state_json, ensure_ascii=False, indent=2)
+        json_path = os.path.join(sd['dir'], 'schedule_data.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
+            f.write(json_str)
+
+        return send_file(json_path, as_attachment=True, download_name='schedule_data.json',
+                         mimetype='application/json')
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -3135,7 +3202,9 @@ def restore_json():
 
     unplaced = state.get('unplaced', [])
     office_teachers = state.get('officeTeachers') or state.get('office_teachers', [])
+    office_rule = state.get('officeRule') or state.get('office_rule', {})
     booth_pref = state.get('boothPref') or state.get('booth_pref', {})
+    manual_teachers = state.get('manualTeachers') or state.get('manual_teachers', [])
     students = state.get('students', [])
     week_dates = state.get('weekDates') or state.get('week_dates')
     weekly_teachers = state.get('weeklyTeachers') or state.get('weekly_teachers')
@@ -3288,7 +3357,9 @@ def restore_json():
         'schedule': schedule,
         'unplaced': unplaced,
         'office_teachers': office_teachers,
+        'office_rule': office_rule,
         'booth_pref': booth_pref,
+        'manual_teachers': manual_teachers,
         'students': students,
         'week_dates': week_dates,
         'weekly_teachers': weekly_teachers,  # ダウンロード時のフォールバック用
@@ -3318,7 +3389,9 @@ def restore_json():
         'schedule': schedule,
         'unplaced': unplaced,
         'officeTeachers': office_teachers,
+        'officeRule': office_rule,
         'boothPref': booth_pref,
+        'manualTeachers': manual_teachers,
         'students': students_json,
         'weekDates': week_dates,
         'hasBooth': 'booth' in files,
