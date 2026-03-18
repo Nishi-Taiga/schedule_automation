@@ -1312,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.8</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.12.9</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1409,6 +1409,14 @@
           <input type="file" webkitdirectory style="display:none" onchange="onJsonWeekFolder(this)">
         </div>
         <div id="jsonBoothStatus" style="font-size:12px;color:var(--ink3);margin-top:4px"></div>
+        <div style="margin-top:8px;margin-bottom:6px">
+          <div style="font-size:12px;color:var(--ink3);margin-bottom:4px"><b>任意</b>: 講師回答ファイル（講師ピッカー用）</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="folder-btn" id="jsonSurveyBtn" onclick="this.nextElementSibling.click()">📂 講師回答フォルダ ← 未選択</button>
+            <input type="file" webkitdirectory style="display:none" onchange="onJsonSurveyFolder(this)">
+          </div>
+          <div id="jsonSurveyStatus" style="font-size:11px;color:var(--ink3);margin-top:4px"></div>
+        </div>
         <button class="btn btn-g" id="jsonRestoreBtn" style="margin-top:8px" disabled onclick="doJsonRestore()">復元する</button>
       </div>
     </div>
@@ -1544,7 +1552,7 @@
       }
       catch (e) { hideProgress(); row.querySelector('.icon').textContent = '❌'; row.querySelector('.desc').textContent = '通信エラー: ' + e.message; }
     }
-    let _jsonFile = null, _jsonMetaFile = null, _jsonWeekFiles = [];
+    let _jsonFile = null, _jsonMetaFile = null, _jsonWeekFiles = [], _jsonSurveyFiles = [];
     function onJsonSelected(inp) {
       const f = inp.files[0]; if (!f) return;
       _jsonFile = f;
@@ -1569,6 +1577,15 @@
         btn.style.border = '2px solid var(--green)';
       }
       _updateJsonBoothStatus();
+    }
+    function onJsonSurveyFolder(inp) {
+      _jsonSurveyFiles = filterXlsx(inp.files);
+      const btn = document.getElementById('jsonSurveyBtn');
+      if (_jsonSurveyFiles.length) {
+        btn.textContent = '✅ ' + _jsonSurveyFiles.length + '件の講師回答ファイル';
+        btn.style.border = '2px solid var(--green)';
+      }
+      document.getElementById('jsonSurveyStatus').textContent = _jsonSurveyFiles.length ? _jsonSurveyFiles.length + '件選択済み' : '';
     }
     function _updateJsonBoothStatus() {
       const parts = [];
@@ -1611,6 +1628,12 @@
         }
         for (const lf of loaded) fd.append('booth_files', lf);
       }
+      // 講師回答ファイル（任意）
+      if (_jsonSurveyFiles.length > 0) {
+        const { files: surveyLoaded, errors: surveyErrors } = await preloadFiles(_jsonSurveyFiles);
+        if (surveyErrors.length > 0) console.warn('[doJsonRestore] survey preload errors:', surveyErrors);
+        for (const sf of surveyLoaded) fd.append('surveys', sf);
+      }
       try {
         const res = await fetch('/api/restore_json', { method: 'POST', body: fd });
         const d = await res.json();
@@ -1620,7 +1643,8 @@
           R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
           if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
           go('result'); rR();
-          const msg = d.hasWeekFiles ? 'JSON＋ブース表から復元しました' : 'JSONから復元しました（ブース表なし）';
+          let msg = d.hasWeekFiles ? 'JSON＋ブース表から復元しました' : 'JSONから復元しました（ブース表なし）';
+          if (d.surveyTeacherCount) msg += '（講師: ' + d.surveyTeacherCount + '名）';
           showSaveIndicator(msg);
         } else {
           row.querySelector('.icon').textContent = '❌';

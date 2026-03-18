@@ -1137,6 +1137,67 @@ def aggregate_surveys_to_weekly(survey_results):
 
     return weeks
 
+def _merge_weekly_teachers(base_wt, overlay_wt):
+    """2つのweeklyTeachers構造をunionマージする。Returns: マージ済みの新しいリスト"""
+    if not base_wt:
+        return list(overlay_wt) if overlay_wt else []
+    if not overlay_wt:
+        return list(base_wt)
+    max_weeks = max(len(base_wt), len(overlay_wt))
+    merged = []
+    for wi in range(max_weeks):
+        bw = base_wt[wi] if wi < len(base_wt) else {}
+        ow = overlay_wt[wi] if wi < len(overlay_wt) else {}
+        week = {}
+        for day in set(list(bw.keys()) + list(ow.keys())):
+            bd = bw.get(day, {})
+            od = ow.get(day, {})
+            day_data = {}
+            for ts in set(list(bd.keys()) + list(od.keys())):
+                day_data[ts] = sorted(set(bd.get(ts, [])) | set(od.get(ts, [])))
+            week[day] = day_data
+        merged.append(week)
+    return merged
+
+def _process_survey_files(file_list, session_dir):
+    """講師回答ファイルを処理し、survey_results・errors・survey_name_mapを返す共通ヘルパー。
+    Returns: (survey_results, errors, survey_name_map)
+    """
+    survey_results = []
+    errors = []
+    for f in file_list:
+        fname = os.path.basename(f.filename or '')
+        if not fname or '出力' in fname or 'メタデータ' in fname:
+            continue
+        ok, err = validate_file(f)
+        if not ok:
+            errors.append(f'{f.filename}: {err}')
+            continue
+        path = os.path.join(session_dir, 'survey_' + fname)
+        try:
+            f.save(path)
+        except Exception as e:
+            errors.append(f'{f.filename}: 保存失敗 - {e}')
+            continue
+        try:
+            result = parse_survey_file(path)
+            if result:
+                survey_results.append(result)
+                print(f"[survey] {f.filename} -> {result['name']} ({len(result['availability'])}コマ)", flush=True)
+            else:
+                errors.append(f'{f.filename}: 講師情報を読み取れません')
+        except Exception as e:
+            errors.append(f'{f.filename}: {str(e)}')
+            traceback.print_exc()
+    # 同姓講師を自動検出し、短縮名を再計算
+    if survey_results:
+        all_full = [sr['full_name'] for sr in survey_results if sr.get('full_name')]
+        _build_name_map(all_full)
+        for sr in survey_results:
+            sr['name'] = to_short(sr.get('full_name', sr['name']))
+    survey_name_map = {sr['name']: sr.get('full_name', '') for sr in survey_results}
+    return survey_results, errors, survey_name_map
+
 def generate_src_excel(weekly_teachers, output_path):
     """週別出勤講師データからブース表元シートExcel（1ブック・週別シート）を生成"""
     wb = openpyxl.Workbook()
@@ -1936,38 +1997,7 @@ def _upload_surveys_impl():
     if not files or all(not f.filename for f in files):
         return jsonify({'error': '講師回答ファイルが含まれていません'}), 400
 
-    survey_results = []
-    errors = []
-
-    for f in files:
-        # 出力ファイルや非講師回答ファイルをスキップ
-        fname = os.path.basename(f.filename or '')
-        if '出力' in fname or 'メタデータ' in fname:
-            print(f"[survey] 非講師回答ファイルをスキップ: {f.filename}", flush=True)
-            continue
-
-        ok, err = validate_file(f)
-        if not ok:
-            errors.append(f'{f.filename}: {err}')
-            continue
-
-        path = os.path.join(sd['dir'], 'survey_' + os.path.basename(f.filename))
-        try:
-            f.save(path)
-        except Exception as e:
-            errors.append(f'{f.filename}: 保存失敗 - {e}')
-            continue
-
-        try:
-            result = parse_survey_file(path)
-            if result:
-                survey_results.append(result)
-                print(f"[survey] {f.filename} -> {result['name']} ({len(result['availability'])}コマ)", flush=True)
-            else:
-                errors.append(f'{f.filename}: 講師情報を読み取れません')
-        except Exception as e:
-            errors.append(f'{f.filename}: {str(e)}')
-            traceback.print_exc()
+    survey_results, errors, survey_name_map = _process_survey_files(files, sd['dir'])
 
     if not survey_results:
         detail_msg = '有効な講師回答ファイルがありません'
@@ -1975,14 +2005,6 @@ def _upload_surveys_impl():
             detail_msg += '（' + '; '.join(errors[:5]) + '）'
         return jsonify({'error': detail_msg, 'details': errors}), 400
 
-    # 同姓講師を自動検出し、短縮名を再計算
-    all_full = [sr['full_name'] for sr in survey_results if sr.get('full_name')]
-    _build_name_map(all_full)
-    for sr in survey_results:
-        sr['name'] = to_short(sr.get('full_name', sr['name']))
-
-    # フルネーム→短縮名マッピングをセッションに保存（生成時の名前衝突解消用）
-    survey_name_map = {sr['name']: sr.get('full_name', '') for sr in survey_results}
     sd['survey_name_map'] = survey_name_map
     save_session_files(sd)
 
@@ -3178,15 +3200,36 @@ def restore_json():
                 path = os.path.join(sd['dir'], key + '_' + fx.filename)
                 fx.save(path)
                 files[key] = path
+    # 講師回答ファイルを処理（任意）
+    survey_files = request.files.getlist('surveys')
+    survey_wt = None
+    survey_teacher_count = 0
+    survey_errors = []
+    if survey_files and any(sf.filename for sf in survey_files):
+        print(f"[restore_json] survey files: {[sf.filename for sf in survey_files]}", flush=True)
+        survey_results, survey_errors, survey_name_map = _process_survey_files(survey_files, sd['dir'])
+        if survey_results:
+            survey_wt = aggregate_surveys_to_weekly(survey_results)
+            src_path = os.path.join(sd['dir'], 'generated_src.xlsx')
+            generate_src_excel(survey_wt, src_path)
+            files['src'] = src_path
+            sd['survey_name_map'] = survey_name_map
+            survey_teacher_count = len(set(sr['name'] for sr in survey_results))
+            print(f"[restore_json] survey: {survey_teacher_count}名, {len(survey_wt)}週", flush=True)
+
     sd['files'] = files
     save_session_files(sd)
 
     # srcがあればweeklyTeachersを再取得（最新化）
-    if 'src' in files:
+    if 'src' in files and not survey_wt:
         try:
             weekly_teachers = load_weekly_teachers(files['src'])
         except Exception:
             pass
+
+    # サーベイデータとJSONデータをマージ
+    if survey_wt:
+        weekly_teachers = _merge_weekly_teachers(weekly_teachers, survey_wt)
 
     # メタデータExcelからJSONに不足しているデータを補完
     if 'booth' in files:
@@ -3280,9 +3323,10 @@ def restore_json():
         'weekDates': week_dates,
         'hasBooth': 'booth' in files,
         'hasWeekFiles': bool(files.get('week_files')),
+        'weeklyTeachers': weekly_teachers or [],
+        'surveyTeacherCount': survey_teacher_count,
+        'surveyErrors': survey_errors,
     }
-    if weekly_teachers:
-        resp['weeklyTeachers'] = weekly_teachers
     return jsonify(resp)
 
 # ========== State persistence API ==========
