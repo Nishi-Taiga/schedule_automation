@@ -2,7 +2,7 @@
 
 ## バージョン管理
 
-- 現在のバージョン: **v0.13.0**
+- 現在のバージョン: **v0.14.0**
 - バージョン表記箇所: `templates/index.html` の `<h1>` タグ内 `<span>` 要素
 - セマンティックバージョニング (`vMAJOR.MINOR.PATCH`) を使用
   - MAJOR: 未完成のため `0` を維持（正式リリースで `1` に）
@@ -73,6 +73,10 @@ schedule_automation/
   3. `/api/generate` — スケジュール自動生成
   4. `/api/download` — 結果 Excel ダウンロード
   5. `/api/save` — 手動編集の保存
+  6. `/api/cloud_save` — スケジュール状態をSupabaseに永続保存 (自動/手動)
+  7. `/api/cloud_list` — 保存済みスナップショット一覧取得
+  8. `/api/cloud_load` — スナップショットからセッション復元
+  9. `/api/cloud_delete` — スナップショット削除
 
 ### フロントエンド (templates/index.html)
 
@@ -133,6 +137,14 @@ schedule_automation/
   - `POST /api/submit_feedback` — 差分計算＋重み調整
   - `GET /api/learning_stats` — 学習状況取得
   - `POST /api/reset_learning` — 学習データリセット
+
+### クラウド保存 (v0.14.0+)
+
+- **概要**: スケジュール状態をSupabaseに自動保存し、クラウドから復元可能にする
+- **テーブル**: `schedule_snapshots` (EdBrioテーブルとは独立)
+- **キー**: `year + month + label` で一意。自動保存は `label='latest'`
+- **自動保存タイミング**: スケジュール生成後、手動編集後(3秒デバウンス)
+- **ヘルパー**: `_build_state_json(sd)` — セッションデータからJSON状態を構築（`download_json` と共用）
 
 ### よくあるトラブルと対処
 

@@ -1312,7 +1312,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.13.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.14.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1419,6 +1419,12 @@
         </div>
         <button class="btn btn-g" id="jsonRestoreBtn" style="margin-top:8px" disabled onclick="doJsonRestore()">復元する</button>
       </div>
+      <div style="margin-top:12px;padding:10px 14px;background:#f0f7ff;border-radius:8px;border:1px solid #b3d4fc">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">クラウドから復元</div>
+        <p style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">自動保存されたスケジュールを復元できます</p>
+        <button class="btn btn-s" onclick="loadCloudList()">保存一覧を表示</button>
+        <div id="cloudList" style="margin-top:8px"></div>
+      </div>
     </div>
     <div id="pSettings" class="card" style="display:none">
       <h2>教室業務・チューター担当</h2>
@@ -1453,6 +1459,7 @@
           <button class="btn btn-o" id="checkBtn" onclick="runCheck()">🔍 チェック</button>
           <button class="btn btn-p" onclick="dlExcel()">📥 ブース表DL</button>
           <button class="btn btn-o" onclick="dlJson()">💾 JSON保存</button>
+          <button class="btn btn-o" onclick="dlCloudSave()">☁️ クラウド保存</button>
           <button class="btn btn-o" onclick="go('settings')">↻ 再生成</button>
         </div>
         <div class="edit-hint">✋ 講師名・生徒チップをD&Dで移動。生徒名クリック→個人カレンダー。カレンダー内の授業クリック→講師/時間変更。<span
@@ -1518,9 +1525,84 @@
 
     // === Auto-save/restore ===
     function showSaveIndicator(msg) { const el = document.getElementById('saveIndicator'); el.textContent = msg || '保存しました'; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
-    async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); showSaveIndicator('自動保存しました'); } catch (e) { } }
+    async function cloudSave(label) { if (!R || !R.schedule) return; try { await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: label || 'latest' }) }); } catch (e) { console.warn('Cloud save failed:', e); } }
+    async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); showSaveIndicator('自動保存しました'); cloudSave('latest').catch(() => {}); } catch (e) { } }
     let autoSaveTimer = null;
     function scheduleAutoSave() { if (autoSaveTimer) clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(autoSave, 3000); }
+
+    // === Cloud save/restore ===
+    async function loadCloudList() {
+      const list = document.getElementById('cloudList');
+      list.innerHTML = '<span style="color:var(--ink3);font-size:12px">読み込み中...</span>';
+      try {
+        const res = await fetch('/api/cloud_list');
+        const d = await res.json();
+        if (!d.ok || !d.snapshots || d.snapshots.length === 0) {
+          list.innerHTML = '<span style="color:var(--ink3);font-size:12px">保存済みデータなし</span>';
+          return;
+        }
+        list.innerHTML = '';
+        d.snapshots.forEach(snap => {
+          const div = document.createElement('div');
+          div.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #e0e0e0;font-size:12px;flex-wrap:wrap';
+          const dateStr = new Date(snap.updated_at).toLocaleString('ja-JP');
+          const label = snap.label === 'latest' ? '自動保存' : snap.label;
+          div.innerHTML = '<span style="min-width:80px;font-weight:600">' + snap.year + '年' + snap.month + '月</span>'
+            + '<span style="color:var(--ink3)">' + label + '</span>'
+            + '<span style="color:var(--ink3)">' + snap.placed + '/' + snap.total + 'コマ</span>'
+            + '<span style="color:var(--ink3);font-size:11px">' + dateStr + '</span>'
+            + '<button class="btn btn-s" data-id="' + snap.id + '" onclick="loadCloudSnapshot(this.dataset.id)">復元</button>'
+            + '<button style="background:none;border:none;cursor:pointer;color:var(--red);font-size:14px" data-id="' + snap.id + '" onclick="deleteCloudSnapshot(this.dataset.id,this.closest(\'div\'))">✕</button>';
+          list.appendChild(div);
+        });
+      } catch (e) {
+        list.innerHTML = '<span style="color:var(--red);font-size:12px">エラー: ' + e.message + '</span>';
+      }
+    }
+
+    async function loadCloudSnapshot(id) {
+      showProgress(20, 'クラウドからスケジュールを復元中...', '復元中');
+      try {
+        const res = await fetch('/api/cloud_load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+        const d = await res.json();
+        hideProgress();
+        if (res.ok && d.ok) {
+          R = d; PW = 0; edited = false; calStudent = null; buildNgMap();
+          if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
+          if (d.officeRule) { OR = {}; for (const day of D) OR[day] = d.officeRule[day] || []; }
+          if (d.manualTeachers) manualTeachers = [...d.manualTeachers];
+          if (d.weeklyTeachers && d.weeklyTeachers.length) {
+            const tSet = new Set(teacherList);
+            for (const wk of d.weeklyTeachers)
+              for (const day of Object.values(wk))
+                for (const ts of Object.values(day))
+                  (ts || []).forEach(t => tSet.add(t));
+            teacherList = [...tSet].sort();
+          }
+          go('settings');
+          showSaveIndicator('クラウドから復元しました');
+        } else { alert(d.error || '復元に失敗しました'); }
+      } catch (e) { hideProgress(); alert('通信エラー: ' + e.message); }
+    }
+
+    async function deleteCloudSnapshot(id, el) {
+      if (!confirm('この保存データを削除しますか？')) return;
+      try {
+        await fetch('/api/cloud_delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+        if (el) el.remove();
+      } catch (e) { alert('削除に失敗しました'); }
+    }
+
+    async function dlCloudSave() {
+      const label = prompt('保存名（空欄で「最新」）:') || 'latest';
+      try {
+        const res = await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
+        const d = await res.json();
+        if (d.ok) showSaveIndicator('クラウドに保存しました (' + d.year + '年' + d.month + '月)');
+        else alert(d.error || '保存に失敗しました');
+      } catch (e) { alert('通信エラー: ' + e.message); }
+    }
+
     async function onLoadSaved(inp) {
       const f = inp.files[0]; if (!f) return;
       const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
@@ -1924,6 +2006,7 @@
         PW = 0; edited = false; calStudent = null; buildNgMap();
         if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
         hideProgress(); go('result'); rR();
+        cloudSave('latest').catch(() => {});
       } catch (e) { hideProgress(); st.textContent = 'エラー: ' + e.message; st.className = 'status err'; } finally { btn.disabled = false; btn.innerHTML = '🚀 スケジュール生成'; }
     }
 

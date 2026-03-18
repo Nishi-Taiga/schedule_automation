@@ -2399,6 +2399,54 @@ def download():
         import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+def _build_state_json(sd):
+    """セッションデータからスケジュール全状態のJSONシリアライズ用dictを構築"""
+    res = sd.get('result', {})
+    schedule = res.get('schedule_json') or res.get('schedule', [])
+    students_json = []
+    for s in res.get('students', []):
+        students_json.append({
+            'grade': s.get('grade', ''), 'name': s.get('name', ''),
+            'needs': s.get('needs', {}),
+            'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
+            'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
+            'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
+            'notes': s.get('notes', ''),
+            'ng_teachers': s.get('ng_teachers', []),
+            'wish_teachers': s.get('wish_teachers', []),
+            'ng_students': s.get('ng_students', []),
+            'ng_dates': [list(d) for d in s.get('ng_dates', set())],
+        })
+
+    wt = None
+    if 'src' in sd.get('files', {}):
+        try:
+            wt = load_weekly_teachers(sd['files']['src'])
+        except Exception:
+            pass
+    if not wt:
+        wt = res.get('weekly_teachers')
+
+    placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+    total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
+
+    state_json = {
+        'schedule': schedule,
+        'unplaced': res.get('unplaced', []),
+        'officeTeachers': res.get('office_teachers', []),
+        'officeRule': res.get('office_rule', {}),
+        'boothPref': res.get('booth_pref', {}),
+        'manualTeachers': res.get('manual_teachers', []),
+        'weekDates': res.get('week_dates'),
+        'total': total,
+        'students': students_json,
+        'placed': placed,
+    }
+    if wt:
+        state_json['weeklyTeachers'] = wt
+    return state_json
+
+
 @app.route('/api/download_json')
 @login_required
 def download_json():
@@ -2409,48 +2457,7 @@ def download_json():
         return jsonify({'error': '先にスケジュールを生成してください'}), 400
 
     try:
-        schedule = res.get('schedule_json') or res.get('schedule', [])
-        students_json = []
-        for s in res.get('students', []):
-            students_json.append({
-                'grade': s.get('grade', ''), 'name': s.get('name', ''),
-                'needs': s.get('needs', {}),
-                'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
-                'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
-                'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
-                'notes': s.get('notes', ''),
-                'ng_teachers': s.get('ng_teachers', []),
-                'wish_teachers': s.get('wish_teachers', []),
-                'ng_students': s.get('ng_students', []),
-                'ng_dates': [list(d) for d in s.get('ng_dates', set())],
-            })
-
-        wt = None
-        if 'src' in sd.get('files', {}):
-            try:
-                wt = load_weekly_teachers(sd['files']['src'])
-            except Exception:
-                pass
-        if not wt:
-            wt = res.get('weekly_teachers')
-
-        placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
-        total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
-
-        state_json = {
-            'schedule': schedule,
-            'unplaced': res.get('unplaced', []),
-            'officeTeachers': res.get('office_teachers', []),
-            'officeRule': res.get('office_rule', {}),
-            'boothPref': res.get('booth_pref', {}),
-            'manualTeachers': res.get('manual_teachers', []),
-            'weekDates': res.get('week_dates'),
-            'total': total,
-            'students': students_json,
-            'placed': placed,
-        }
-        if wt:
-            state_json['weeklyTeachers'] = wt
+        state_json = _build_state_json(sd)
 
         json_str = json.dumps(state_json, ensure_ascii=False, indent=2)
         json_path = os.path.join(sd['dir'], 'schedule_data.json')
@@ -2461,6 +2468,139 @@ def download_json():
                          mimetype='application/json')
     except Exception as e:
         import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ========== クラウド保存/復元 (schedule_snapshots) ==========
+
+@app.route('/api/cloud_save', methods=['POST'])
+@login_required
+def cloud_save():
+    """スケジュール状態をSupabaseに永続保存 (upsert)"""
+    sd = get_session_data()
+    res = sd.get('result', {})
+    if 'schedule' not in res and 'schedule_json' not in res:
+        return jsonify({'error': 'スケジュールがありません'}), 400
+
+    try:
+        data = request.get_json(silent=True) or {}
+        label = data.get('label', 'latest')
+
+        state = _build_state_json(sd)
+        week_dates = res.get('week_dates') or {}
+        year = week_dates.get('year', 0)
+        month = week_dates.get('month', 0)
+        if not year or not month:
+            year = data.get('year', _dt.datetime.now().year)
+            month = data.get('month', _dt.datetime.now().month)
+
+        settings = {
+            'officeRule': res.get('office_rule', {}),
+            'boothPref': res.get('booth_pref', {}),
+            'manualTeachers': res.get('manual_teachers', []),
+        }
+
+        _supabase_request('POST', 'schedule_snapshots', '', body={
+            'year': year,
+            'month': month,
+            'label': label,
+            'schedule_data': state,
+            'settings_data': settings,
+            'placed': state.get('placed', 0),
+            'total': state.get('total', 0),
+            'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
+        }, headers_extra={'Prefer': 'resolution=merge-duplicates'})
+
+        print(f"[cloud_save] saved {year}/{month} label={label}", flush=True)
+        return jsonify({'ok': True, 'year': year, 'month': month, 'label': label})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/cloud_list')
+@login_required
+def cloud_list():
+    """保存済みスナップショット一覧を取得 (メタデータのみ)"""
+    try:
+        rows = _supabase_request('GET', 'schedule_snapshots',
+            'select=id,year,month,label,placed,total,created_at,updated_at'
+            '&order=updated_at.desc&limit=50')
+        return jsonify({'ok': True, 'snapshots': rows or []})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/cloud_load', methods=['POST'])
+@login_required
+def cloud_load():
+    """スナップショットをセッションに復元"""
+    data = request.get_json(silent=True) or {}
+    snapshot_id = data.get('id')
+    if not snapshot_id:
+        return jsonify({'error': 'スナップショットIDが必要です'}), 400
+
+    try:
+        rows = _supabase_request('GET', 'schedule_snapshots',
+            f'id=eq.{snapshot_id}&select=*')
+        if not rows:
+            return jsonify({'error': 'スナップショットが見つかりません'}), 404
+
+        snap = rows[0]
+        state = snap['schedule_data']
+        settings = snap.get('settings_data') or {}
+
+        # セッションに復元
+        sd = get_session_data()
+        schedule = state.get('schedule', [])
+        sd['result'] = {
+            'schedule_json': schedule,
+            'schedule': schedule,
+            'unplaced': state.get('unplaced', []),
+            'office_teachers': state.get('officeTeachers', []),
+            'office_rule': settings.get('officeRule', state.get('officeRule', {})),
+            'booth_pref': settings.get('boothPref', state.get('boothPref', {})),
+            'manual_teachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
+            'students': state.get('students', []),
+            'week_dates': state.get('weekDates'),
+            'weekly_teachers': state.get('weeklyTeachers'),
+        }
+        save_session_result(sd)
+
+        # フロントエンドに返却 (generate/restore_json と同じ形式)
+        placed = state.get('placed', 0)
+        total = state.get('total', 0)
+        return jsonify({
+            'ok': True,
+            'schedule': schedule,
+            'unplaced': state.get('unplaced', []),
+            'officeTeachers': state.get('officeTeachers', []),
+            'officeRule': settings.get('officeRule', state.get('officeRule', {})),
+            'boothPref': settings.get('boothPref', state.get('boothPref', {})),
+            'manualTeachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
+            'students': state.get('students', []),
+            'weekDates': state.get('weekDates'),
+            'weeklyTeachers': state.get('weeklyTeachers'),
+            'placed': placed,
+            'total': total,
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/cloud_delete', methods=['POST'])
+@login_required
+def cloud_delete():
+    """スナップショットを削除"""
+    data = request.get_json(silent=True) or {}
+    snapshot_id = data.get('id')
+    if not snapshot_id:
+        return jsonify({'error': 'IDが必要です'}), 400
+    try:
+        _supabase_request('DELETE', 'schedule_snapshots', f'id=eq.{snapshot_id}')
+        return jsonify({'ok': True})
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
