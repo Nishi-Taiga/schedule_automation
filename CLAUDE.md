@@ -2,7 +2,7 @@
 
 ## バージョン管理
 
-- 現在のバージョン: **v0.16.0**
+- 現在のバージョン: **v0.17.0**
 - バージョン表記箇所: `templates/index.html` の `<h1>` タグ内 `<span>` 要素
 - セマンティックバージョニング (`vMAJOR.MINOR.PATCH`) を使用
   - MAJOR: 未完成のため `0` を維持（正式リリースで `1` に）
@@ -77,6 +77,7 @@ schedule_automation/
   7. `/api/cloud_list` — 保存済みスナップショット一覧取得
   8. `/api/cloud_load` — スナップショットからセッション復元
   9. `/api/cloud_delete` — スナップショット削除
+  10. `/api/upload_booth_template` — 結果画面からブース表テンプレートを（再）アップロード
 
 ### フロントエンド (templates/index.html)
 
@@ -145,6 +146,13 @@ schedule_automation/
 - **キー**: `year + month + label` で一意。自動保存は `label='latest'`
 - **自動保存タイミング**: スケジュール生成後、手動編集後(3秒デバウンス)
 - **ヘルパー**: `_build_state_json(sd)` — セッションデータからJSON状態を構築（`download_json` と共用）
+- **ブース表テンプレート保存 (v0.17.0+)**:
+  - `schedule_snapshots.booth_template` (TEXT) にブース表Excelをbase64エンコードして保存
+  - 初回保存（生成後）＋手動クラウド保存時のみ送信（`include_template=true`）
+  - 自動保存（3秒デバウンス）では `booth_template` を省略 → PostgRESTの `merge-duplicates` で既存値保持
+  - `cloud_load` 時にbase64デコード → セッションディレクトリに復元 → `write_excel` がフォーマット付き出力可能
+  - 結果画面の「ファイル更新」パネルおよび復元後セクションからブース表テンプレートを再アップロード可能
+  - `/api/upload_booth_template` — アップロード + 同年月の全スナップショットのテンプレートをPATCH更新
 - **UI構成 (v0.16.0)**:
   - **メイン**: 「クラウドから再開」— 目立つカードとして上部に配置
   - **詳細オプション**: Excel・JSONからの再開は `<details>` 折りたたみに格納

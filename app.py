@@ -18,6 +18,7 @@ import atexit
 import traceback
 import datetime as _dt
 import calendar
+import base64
 from copy import copy, deepcopy
 from collections import defaultdict
 from functools import wraps
@@ -355,6 +356,28 @@ def _supabase_request(method, table, params='', body=None, headers_extra=None):
     except (URLError, HTTPError) as e:
         print(f"[learning] Supabase {method} {table} error: {e}", flush=True)
         return None
+
+def _encode_booth_file(sd):
+    """セッションのブース表ファイルをbase64エンコード。b64_str or None"""
+    booth_path = sd.get('files', {}).get('booth')
+    if not booth_path or not os.path.exists(booth_path):
+        return None
+    with open(booth_path, 'rb') as f:
+        data = f.read()
+    if len(data) > 5 * 1024 * 1024:
+        print(f"[cloud_save] booth file too large: {len(data)} bytes, skipping", flush=True)
+        return None
+    return base64.b64encode(data).decode('ascii')
+
+def _restore_booth_file(b64_str, session_dir):
+    """base64からブース表ファイルを復元。ファイルパスを返す or None"""
+    if not b64_str:
+        return None
+    raw = base64.b64decode(b64_str)
+    path = os.path.join(session_dir, 'booth_restored.xlsx')
+    with open(path, 'wb') as f:
+        f.write(raw)
+    return path
 
 def load_learning_weights():
     """Supabaseから学習済み重みを読み込む。なければデフォルト値を返す"""
@@ -2546,8 +2569,9 @@ def cloud_save():
                           for t, s in raw_skills.items()} if raw_skills else {}
             metadata = {'skills': skills_json}
 
-        sb_url = f"{SUPABASE_URL}/rest/v1/schedule_snapshots?on_conflict=year,month,label"
-        sb_body = json.dumps({
+        # ブース表テンプレート (include_template=true の場合のみ送信)
+        include_template = data.get('include_template', False)
+        sb_body_dict = {
             'year': year,
             'month': month,
             'label': label,
@@ -2555,7 +2579,15 @@ def cloud_save():
             'settings_data': settings,
             'metadata': metadata,
             'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
-        }, ensure_ascii=False).encode('utf-8')
+        }
+        if include_template:
+            b64 = _encode_booth_file(sd)
+            if b64:
+                sb_body_dict['booth_template'] = b64
+                print(f"[cloud_save] booth template included ({len(b64)} chars)", flush=True)
+
+        sb_url = f"{SUPABASE_URL}/rest/v1/schedule_snapshots?on_conflict=year,month,label"
+        sb_body = json.dumps(sb_body_dict, ensure_ascii=False).encode('utf-8')
         sb_hdrs = {
             'apikey': SUPABASE_SERVICE_KEY,
             'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
@@ -2605,8 +2637,20 @@ def cloud_load():
         return jsonify({'error': 'スナップショットIDが必要です'}), 400
 
     try:
-        rows = _supabase_request('GET', 'schedule_snapshots',
-            f'id=eq.{snapshot_id}&select=*')
+        # booth_template は大きいため、専用リクエストで取得 (timeout長め)
+        sb_url = f"{SUPABASE_URL}/rest/v1/schedule_snapshots?id=eq.{snapshot_id}&select=*"
+        sb_hdrs = {
+            'apikey': SUPABASE_SERVICE_KEY,
+            'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
+            'Content-Type': 'application/json',
+        }
+        sb_req = Request(sb_url, headers=sb_hdrs, method='GET')
+        try:
+            with urlopen(sb_req, timeout=30) as resp:
+                rows = json.loads(resp.read().decode('utf-8'))
+        except (URLError, HTTPError) as e:
+            print(f"[cloud_load] Supabase fetch error: {e}", flush=True)
+            return jsonify({'error': f'Supabase接続エラー: {e}'}), 502
         if not rows:
             return jsonify({'error': 'スナップショットが見つかりません'}), 404
 
@@ -2614,6 +2658,7 @@ def cloud_load():
         state = snap['schedule_data']
         settings = snap.get('settings_data') or {}
         metadata = snap.get('metadata') or {}
+        booth_b64 = snap.get('booth_template')
 
         # メタデータからskillsを復元 (list→set変換)
         skills = {}
@@ -2636,7 +2681,18 @@ def cloud_load():
             'weekly_teachers': state.get('weeklyTeachers'),
             'skills': skills,
         }
+
+        # ブース表テンプレート復元
+        has_booth = False
+        if booth_b64:
+            restored_path = _restore_booth_file(booth_b64, sd['dir'])
+            if restored_path:
+                sd['files'] = {**sd.get('files', {}), 'booth': restored_path}
+                has_booth = True
+                print(f"[cloud_load] booth template restored: {restored_path}", flush=True)
+
         save_session_result(sd)
+        save_session_files(sd)
 
         # フロントエンドに返却 (generate/restore_json と同じ形式)
         return jsonify({
@@ -2652,6 +2708,7 @@ def cloud_load():
             'weeklyTeachers': state.get('weeklyTeachers'),
             'placed': state.get('placed', 0),
             'total': state.get('total', 0),
+            'hasBoothTemplate': has_booth,
         })
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -2671,6 +2728,47 @@ def cloud_delete():
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/upload_booth_template', methods=['POST'])
+@login_required
+def upload_booth_template():
+    """結果画面からブース表テンプレートを（再）アップロード"""
+    sd = get_session_data()
+    f = request.files.get('booth')
+    if not f:
+        return jsonify({'error': 'ブース表ファイルが必要です'}), 400
+    ok, err = validate_file(f)
+    if not ok:
+        return jsonify({'error': err}), 400
+    path = os.path.join(sd['dir'], 'booth_' + os.path.basename(f.filename))
+    try:
+        f.save(path)
+    except Exception as e:
+        return jsonify({'error': f'ファイル保存に失敗しました: {e}'}), 500
+    sd['files'] = {**sd.get('files', {}), 'booth': path}
+    save_session_files(sd)
+    print(f"[upload_booth_template] saved booth -> {path}", flush=True)
+
+    # クラウドの既存スナップショットにもテンプレートを反映
+    res = sd.get('result', {})
+    week_dates = res.get('week_dates') or {}
+    year = week_dates.get('year', 0)
+    month = week_dates.get('month', 0)
+    booth_saved = False
+    if year and month and SUPABASE_URL and SUPABASE_SERVICE_KEY:
+        b64 = _encode_booth_file(sd)
+        if b64:
+            try:
+                _supabase_request('PATCH', 'schedule_snapshots',
+                    f'year=eq.{year}&month=eq.{month}',
+                    body={'booth_template': b64, 'updated_at': _dt.datetime.utcnow().isoformat() + 'Z'},
+                    headers_extra={'Prefer': 'return=minimal'})
+                booth_saved = True
+                print(f"[upload_booth_template] cloud updated ({len(b64)} chars)", flush=True)
+            except Exception as e:
+                print(f"[upload_booth_template] cloud update failed: {e}", flush=True)
+    return jsonify({'ok': True, 'filename': os.path.basename(path), 'cloudSaved': booth_saved})
 
 
 def parse_schedule_from_wb(wb):

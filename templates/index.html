@@ -1365,7 +1365,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.16.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.17.0</span></h1>
     </div>
   </div>
   <div class="container">
@@ -1488,6 +1488,13 @@
                    onchange="doPostRestoreSurvey(this)">
             <div id="postRestoreSurveyStatus" style="margin-top:4px;font-size:11px"></div>
           </div>
+          <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
+            <div style="font-weight:600;margin-bottom:4px;font-size:12px">ブース表テンプレート</div>
+            <div style="color:#888;font-size:11px;margin-bottom:6px">DL時のフォーマット用ブース表Excel</div>
+            <input type="file" id="postRestoreBoothInput" accept=".xlsx,.xls" style="font-size:11px;max-width:100%"
+                   onchange="doUpdateBoothTemplate(this)">
+            <div id="postRestoreBoothStatus" style="margin-top:4px;font-size:11px"></div>
+          </div>
         </div>
         <button class="btn btn-g" onclick="finalizeRestore()">📊 結果を表示</button>
       </div>
@@ -1544,6 +1551,13 @@
                      onchange="doUpdateSurveys(this)">
               <div id="updateSurveyStatus" style="margin-top:4px;font-size:11px"></div>
             </div>
+            <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
+              <div style="font-weight:600;margin-bottom:4px">ブース表テンプレート</div>
+              <div style="color:#888;font-size:11px;margin-bottom:6px">DL時のフォーマット用ブース表Excel</div>
+              <input type="file" id="updateBoothInput" accept=".xlsx,.xls" style="font-size:11px;max-width:100%"
+                     onchange="doUpdateBoothTemplate(this)">
+              <div id="updateBoothStatus" style="margin-top:4px;font-size:11px"></div>
+            </div>
           </div>
         </details>
       </div>
@@ -1584,7 +1598,7 @@
 
     // === Auto-save/restore ===
     function showSaveIndicator(msg) { const el = document.getElementById('saveIndicator'); el.textContent = msg || '保存しました'; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
-    async function cloudSave(label) { if (!R || !R.schedule) return; try { await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: label || 'latest' }) }); } catch (e) { console.warn('Cloud save failed:', e); } }
+    async function cloudSave(label, includeTemplate) { if (!R || !R.schedule) return; try { const body = { label: label || 'latest' }; if (includeTemplate) body.include_template = true; await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { console.warn('Cloud save failed:', e); } }
     async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); showSaveIndicator('自動保存しました'); cloudSave('latest').catch(() => {}); } catch (e) { } }
     let autoSaveTimer = null;
     function scheduleAutoSave() { if (autoSaveTimer) clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(autoSave, 3000); }
@@ -1638,7 +1652,11 @@
             teacherList = [...tSet].sort();
           }
           go('settings');
-          showSaveIndicator('クラウドから再開しました');
+          if (d.hasBoothTemplate) {
+            showSaveIndicator('クラウドから再開しました（テンプレート付）');
+          } else {
+            showSaveIndicator('クラウドから再開（テンプレートなし）');
+          }
         } else { alert(d.error || '再開に失敗しました'); }
       } catch (e) { hideProgress(); alert('通信エラー: ' + e.message); }
     }
@@ -1654,7 +1672,7 @@
     async function dlCloudSave() {
       const label = prompt('保存名（空欄で「最新」）:') || 'latest';
       try {
-        const res = await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
+        const res = await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, include_template: true }) });
         const d = await res.json();
         if (d.ok) showSaveIndicator('クラウドに保存しました (' + d.year + '年' + d.month + '月)');
         else alert(d.error || '保存に失敗しました');
@@ -2087,7 +2105,7 @@
         PW = 0; edited = false; calStudent = null; buildNgMap();
         if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
         hideProgress(); go('result'); rR();
-        cloudSave('latest').catch(() => {});
+        cloudSave('latest', true).catch(() => {});
       } catch (e) { hideProgress(); st.textContent = 'エラー: ' + e.message; st.className = 'status err'; } finally { btn.disabled = false; btn.innerHTML = '🚀 スケジュール生成'; }
     }
 
@@ -2863,6 +2881,23 @@
         status.textContent = `${j.teacherCount}名の講師データ（${j.weeks}週分）を登録しました。講師ピッカーが有効になりました。`;
         status.style.color = 'green';
       } catch(e) { status.textContent = 'エラー: ' + e.message; status.style.color = 'red'; }
+      input.value = '';
+    }
+
+    async function doUpdateBoothTemplate(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const statusEl = input.parentElement.querySelector('[id$="BoothStatus"]');
+      if (statusEl) { statusEl.textContent = 'アップロード中...'; statusEl.style.color = '#1565c0'; }
+      const fd = new FormData();
+      fd.append('booth', file);
+      try {
+        const res = await fetch('/api/upload_booth_template', { method: 'POST', body: fd });
+        const j = await res.json();
+        if (!res.ok || !j.ok) { if (statusEl) { statusEl.textContent = j.error || 'エラー'; statusEl.style.color = 'red'; } return; }
+        if (statusEl) { statusEl.textContent = j.filename + (j.cloudSaved ? ' (クラウド更新済)' : ''); statusEl.style.color = 'green'; }
+        showSaveIndicator('ブース表テンプレート更新');
+      } catch (e) { if (statusEl) { statusEl.textContent = 'エラー: ' + e.message; statusEl.style.color = 'red'; } }
       input.value = '';
     }
 

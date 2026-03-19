@@ -94,18 +94,23 @@ def run_tests():
                 btn_text = page.evaluate("document.getElementById('consolBtn').textContent")
                 print(f"  DEBUG: btn text after click = '{btn_text}'")
 
-                # Render free tier can be very slow - wait up to 5 minutes
+                # Wait for consolidation to finish: button text reverts on both success and error
                 page.wait_for_function(
-                    "() => { const r = document.getElementById('consolResult'); return r && r.textContent.length > 5; }",
+                    "() => { const b = document.getElementById('consolBtn'); return b && b.textContent.trim() === '集約して統合'; }",
                     timeout=300000
                 )
+                page.wait_for_timeout(1000)
                 result_text = page.evaluate("document.getElementById('consolResult').textContent")
+                error_text = page.evaluate("document.getElementById('upSt').textContent")
                 page.screenshot(path=os.path.join(SCREENSHOT_DIR, "02_consolidate.png"))
                 if '統合完了' in result_text or '✅' in result_text:
                     print("  PASS: Booth consolidation successful")
                     results.append(("Booth consolidation", True))
+                elif error_text:
+                    print(f"  FAIL: Error: {error_text[:150]}")
+                    results.append(("Booth consolidation", False))
                 else:
-                    print(f"  FAIL: Result: {result_text[:100]}")
+                    print(f"  FAIL: No result text found")
                     results.append(("Booth consolidation", False))
             else:
                 print("  FAIL: Button disabled")
