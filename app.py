@@ -3148,6 +3148,9 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
     avail_sets = {}   # name → set of (day, ts)
     backup_sets = {}  # name → set of (day, ts)
     ng_date_sets = {} # name → set of (wi, day)
+    # NG講師/NG生徒をsetに変換して高速参照
+    ng_teacher_sets = {}  # name → set
+    ng_student_sets = {}  # name → set
     for s in students:
         nm = s['name']
         a = s.get('avail')
@@ -3159,11 +3162,21 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
         nd = s.get('ng_dates', [])
         if nd:
             ng_date_sets[nm] = {(d[0], d[1]) if isinstance(d, (list, tuple)) else d for d in nd}
+        ngt = s.get('ng_teachers', [])
+        if ngt:
+            ng_teacher_sets[nm] = set(ngt)
+        ngs = s.get('ng_students', [])
+        if ngs:
+            ng_student_sets[nm] = set(ngs)
 
     # W3用: (wi, day) → {name → {subj: count}}
     day_subj_counts = {}
-    # W6用: name → {subj: count}
-    placed_counts = {}
+    # W7用: (wi, day) → {name → count}   1日のコマ数集計
+    day_student_counts = {}
+    # W8用: (wi, day, name) → set of ts_index   時間帯インデックス集計
+    _TS_ORDER = ['14', '16', '17', '18', '19', '20']
+    _TS_IDX = {ts: i for i, ts in enumerate(_TS_ORDER)}
+    day_student_ts = {}
     # E4用: seen pairs
     ng_pair_seen = set()
 
@@ -3180,6 +3193,7 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                 day_all_teachers.update(ts_teachers)
             for ts, booths in day_data.items():
                 teacher_booths = {}  # E6: teacher → [bi]
+                ts_idx = _TS_IDX.get(ts)
                 for bi, booth in enumerate(booths):
                     t = booth.get('teacher')
                     slots = booth.get('slots', [])
@@ -3188,12 +3202,6 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                     if t and t not in day_all_teachers:
                         issues.append({'level': 'error', 'code': 'E1', 'title': '講師未出勤',
                             'message': f'{_loc(wi, day, ts, bi)} — {t} はこの日に出勤していません',
-                            'wi': wi, 'day': day, 'ts': ts})
-
-                    # E5: ブース定員超過
-                    if len(slots) > 2:
-                        issues.append({'level': 'error', 'code': 'E5', 'title': 'ブース定員超過',
-                            'message': f'{_loc(wi, day, ts, bi)} — {len(slots)}人の生徒が配置されています（定員2人）',
                             'wi': wi, 'day': day, 'ts': ts})
 
                     # E6: 講師重複集計
@@ -3213,26 +3221,24 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                         if not sname:
                             continue
                         names_in_booth.append(sname)
-                        s = smap.get(sname)
 
                         # E3: NG講師
-                        if t and s and t in s.get('ng_teachers', []):
+                        if t and sname in ng_teacher_sets and t in ng_teacher_sets[sname]:
                             issues.append({'level': 'error', 'code': 'E3', 'title': 'NG講師',
                                 'message': f'{_loc(wi, day, ts, bi)} — {sname} のNG講師 {t} に配置されています',
                                 'wi': wi, 'day': day, 'ts': ts})
 
                         # W1: 希望時間外
-                        if s:
-                            has_avail = sname in avail_sets
-                            has_backup = sname in backup_sets
-                            if has_avail or has_backup:
-                                pair = (day, ts)
-                                in_avail = has_avail and pair in avail_sets[sname]
-                                in_backup = has_backup and pair in backup_sets[sname]
-                                if not in_avail and not in_backup:
-                                    issues.append({'level': 'warn', 'code': 'W1', 'title': '希望時間外',
-                                        'message': f'{_loc(wi, day, ts, bi)} — {sname} の希望/予備時間外に配置されています',
-                                        'wi': wi, 'day': day, 'ts': ts})
+                        has_avail = sname in avail_sets
+                        has_backup = sname in backup_sets
+                        if has_avail or has_backup:
+                            pair = (day, ts)
+                            in_avail = has_avail and pair in avail_sets[sname]
+                            in_backup = has_backup and pair in backup_sets[sname]
+                            if not in_avail and not in_backup:
+                                issues.append({'level': 'warn', 'code': 'W1', 'title': '希望時間外',
+                                    'message': f'{_loc(wi, day, ts, bi)} — {sname} の希望/予備時間外に配置されています',
+                                    'wi': wi, 'day': day, 'ts': ts})
 
                         # W2: NG日程
                         if sname in ng_date_sets and (wi, day) in ng_date_sets[sname]:
@@ -3248,35 +3254,33 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                                     'message': f'{_loc(wi, day, ts, bi)} — {t} は {grade} {subj} を指導できません（生徒: {sname}）',
                                     'wi': wi, 'day': day, 'ts': ts})
 
-                        # W3集計 & W6集計
+                        # W3集計: 同日同科目
                         if len(slot) >= 3:
                             subj = slot[2]
                             dk = (wi, day)
-                            if dk not in day_subj_counts:
-                                day_subj_counts[dk] = {}
-                            dsc = day_subj_counts[dk]
-                            dsc.setdefault(sname, {})
-                            dsc[sname][subj] = dsc[sname].get(subj, 0) + 1
-                            placed_counts.setdefault(sname, {})
-                            placed_counts[sname][subj] = placed_counts[sname].get(subj, 0) + 1
+                            dsc = day_subj_counts.setdefault(dk, {}).setdefault(sname, {})
+                            dsc[subj] = dsc.get(subj, 0) + 1
+
+                        # W7/W8集計: 1日あたりのコマ数・時間帯
+                        dk2 = (wi, day)
+                        dsc2 = day_student_counts.setdefault(dk2, {})
+                        dsc2[sname] = dsc2.get(sname, 0) + 1
+                        if ts_idx is not None:
+                            day_student_ts.setdefault((wi, day, sname), set()).add(ts_idx)
 
                     # E4: NG生徒ペア
-                    for i, a in enumerate(names_in_booth):
-                        for b in names_in_booth[i+1:]:
-                            sa = smap.get(a)
-                            sb = smap.get(b)
-                            is_ng = False
-                            if sa and b in sa.get('ng_students', []):
-                                is_ng = True
-                            if sb and a in sb.get('ng_students', []):
-                                is_ng = True
-                            if is_ng:
-                                key = (wi, day, ts, bi, tuple(sorted([a, b])))
-                                if key not in ng_pair_seen:
-                                    ng_pair_seen.add(key)
-                                    issues.append({'level': 'error', 'code': 'E4', 'title': 'NG生徒',
-                                        'message': f'{_loc(wi, day, ts, bi)} — {a} と {b} はNG生徒ペアです',
-                                        'wi': wi, 'day': day, 'ts': ts})
+                    if len(names_in_booth) >= 2:
+                        for i, a in enumerate(names_in_booth):
+                            for b_name in names_in_booth[i+1:]:
+                                is_ng = (a in ng_student_sets and b_name in ng_student_sets[a]) or \
+                                        (b_name in ng_student_sets and a in ng_student_sets[b_name])
+                                if is_ng:
+                                    key = (wi, day, ts, bi, tuple(sorted([a, b_name])))
+                                    if key not in ng_pair_seen:
+                                        ng_pair_seen.add(key)
+                                        issues.append({'level': 'error', 'code': 'E4', 'title': 'NG生徒',
+                                            'message': f'{_loc(wi, day, ts, bi)} — {a} と {b_name} はNG生徒ペアです',
+                                            'wi': wi, 'day': day, 'ts': ts})
 
                 # E6: 講師重複判定
                 for t, bis in teacher_booths.items():
@@ -3308,43 +3312,27 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                         'message': f'{_loc(wi, day)} — {sname} の {subj} が同じ曜日に{cnt}回配置されています',
                         'wi': wi, 'day': day, 'ts': None})
 
-    # ---- W5: 固定授業欠落チェック ----
-    for s in students:
-        fixed = s.get('fixed', [])
-        if not fixed:
-            continue
-        sname = s['name']
-        for fix_item in fixed:
-            if len(fix_item) < 3:
-                continue
-            f_day, f_ts, f_subj = fix_item[0], fix_item[1], fix_item[2]
-            for wi, week in enumerate(schedule):
-                day_data = week.get(f_day, {})
-                booths = day_data.get(f_ts, [])
-                found = False
-                for booth in booths:
-                    for slot in booth.get('slots', []):
-                        if len(slot) >= 3 and slot[1] == sname and slot[2] == f_subj:
-                            found = True
-                            break
-                    if found:
-                        break
-                if not found:
-                    issues.append({'level': 'warn', 'code': 'W5', 'title': '通常授業欠落',
-                        'message': f'{_loc(wi, f_day, f_ts)} — {sname} の通常授業（{f_subj}）が配置されていません',
-                        'wi': wi, 'day': f_day, 'ts': f_ts})
+    # ---- W7: 1日3コマ以上配置 ----
+    for (wi, day), name_counts in day_student_counts.items():
+        for sname, cnt in name_counts.items():
+            if cnt >= 3:
+                issues.append({'level': 'warn', 'code': 'W7', 'title': '1日3コマ以上',
+                    'message': f'{_loc(wi, day)} — {sname} が同日に{cnt}コマ配置されています',
+                    'wi': wi, 'day': day, 'ts': None})
 
-    # ---- W6: コマ数過剰チェック ----
-    for s in students:
-        sname = s['name']
-        needs = s.get('needs', {})
-        sp = placed_counts.get(sname, {})
-        for subj, cnt in sp.items():
-            needed = needs.get(subj, 0)
-            if cnt > needed and needed > 0:
-                issues.append({'level': 'warn', 'code': 'W6', 'title': 'コマ数過剰',
-                    'message': f'{sname} — {subj} が {needed}コマ必要に対して{cnt}コマ配置されています（+{cnt - needed}）',
-                    'wi': None, 'day': None, 'ts': None})
+    # ---- W8: 1コマ空き配置（連続しない時間帯） ----
+    for (wi, day, sname), ts_set in day_student_ts.items():
+        if len(ts_set) < 2:
+            continue
+        sorted_ts = sorted(ts_set)
+        for i in range(len(sorted_ts) - 1):
+            gap = sorted_ts[i + 1] - sorted_ts[i]
+            if gap == 2:
+                ts_a = _TS_ORDER[sorted_ts[i]]
+                ts_b = _TS_ORDER[sorted_ts[i + 1]]
+                issues.append({'level': 'warn', 'code': 'W8', 'title': '1コマ空き',
+                    'message': f'{_loc(wi, day)} — {sname} が {_ts_label(ts_a)} と {_ts_label(ts_b)} に配置（1コマ空き）',
+                    'wi': wi, 'day': day, 'ts': None})
 
     return issues
 

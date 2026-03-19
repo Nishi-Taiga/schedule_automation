@@ -1341,6 +1341,23 @@
     .check-item .badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
     .check-item .badge.err { background: #fecaca; color: #991b1b; }
     .check-item .badge.wrn { background: #fef3c7; color: #92400e; }
+
+    /* チェック進捗モーダル */
+    .check-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 9999; display: flex; align-items: center; justify-content: center; animation: fadeIn .2s ease; }
+    .check-modal { background: #fff; border-radius: 16px; padding: 32px 36px; min-width: 340px; max-width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); text-align: center; animation: modalSlideIn .3s ease; }
+    .check-modal h3 { margin: 0 0 20px; font-size: 16px; color: var(--ink); }
+    .check-progress-bar { width: 100%; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-bottom: 16px; }
+    .check-progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #6366f1); border-radius: 3px; transition: width .4s ease; width: 0; }
+    .check-step-list { text-align: left; margin: 0; padding: 0; list-style: none; }
+    .check-step-list li { font-size: 13px; padding: 6px 0; color: #9ca3af; display: flex; align-items: center; gap: 8px; transition: color .3s, transform .3s; }
+    .check-step-list li.active { color: #1d4ed8; font-weight: 600; transform: translateX(4px); }
+    .check-step-list li.done { color: #16a34a; }
+    .check-step-list li .step-icon { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .check-spinner { width: 16px; height: 16px; border: 2px solid #93c5fd; border-top-color: #2563eb; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalSlideIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes modalSlideOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-10px) scale(0.97); } }
   </style>
 </head>
 
@@ -2124,18 +2141,92 @@
       showSaveIndicator('学習データをリセットしました');
       loadLearningStats();
     }
+    const CHECK_STEPS = [
+      { label: '講師出勤・重複チェック', codes: ['E1','E2','E6','E7'] },
+      { label: 'NG講師・NG生徒チェック', codes: ['E3','E4'] },
+      { label: '希望時間・NG日程チェック', codes: ['W1','W2'] },
+      { label: '同日同科目・スキルチェック', codes: ['W3','W4'] },
+      { label: '1日3コマ以上・1コマ空きチェック', codes: ['W7','W8'] },
+    ];
+
+    function showCheckModal() {
+      let overlay = document.getElementById('checkModalOverlay');
+      if (overlay) overlay.remove();
+      overlay = document.createElement('div');
+      overlay.id = 'checkModalOverlay';
+      overlay.className = 'check-modal-overlay';
+      let stepsHtml = '';
+      CHECK_STEPS.forEach((s, i) => {
+        stepsHtml += '<li id="checkStep' + i + '"><span class="step-icon">○</span>' + escHtml(s.label) + '</li>';
+      });
+      overlay.innerHTML = '<div class="check-modal"><h3>🔍 スケジュールチェック</h3>' +
+        '<div class="check-progress-bar"><div class="check-progress-fill" id="checkProgressFill"></div></div>' +
+        '<ul class="check-step-list">' + stepsHtml + '</ul></div>';
+      document.body.appendChild(overlay);
+    }
+
+    function updateCheckStep(stepIdx) {
+      const fill = document.getElementById('checkProgressFill');
+      if (fill) fill.style.width = ((stepIdx + 1) / CHECK_STEPS.length * 100) + '%';
+      CHECK_STEPS.forEach((_, i) => {
+        const li = document.getElementById('checkStep' + i);
+        if (!li) return;
+        if (i < stepIdx) {
+          li.className = 'done';
+          li.querySelector('.step-icon').textContent = '✓';
+        } else if (i === stepIdx) {
+          li.className = 'active';
+          li.querySelector('.step-icon').innerHTML = '<span class="check-spinner"></span>';
+        } else {
+          li.className = '';
+          li.querySelector('.step-icon').textContent = '○';
+        }
+      });
+    }
+
+    function completeCheckStep(stepIdx) {
+      const li = document.getElementById('checkStep' + stepIdx);
+      if (li) { li.className = 'done'; li.querySelector('.step-icon').textContent = '✓'; }
+      const fill = document.getElementById('checkProgressFill');
+      if (fill) fill.style.width = ((stepIdx + 1) / CHECK_STEPS.length * 100) + '%';
+    }
+
+    function closeCheckModal() {
+      const overlay = document.getElementById('checkModalOverlay');
+      if (!overlay) return;
+      const modal = overlay.querySelector('.check-modal');
+      if (modal) modal.style.animation = 'modalSlideOut .25s ease forwards';
+      overlay.style.animation = 'fadeIn .25s ease reverse forwards';
+      setTimeout(() => overlay.remove(), 260);
+    }
+
     async function runCheck() {
       if (!R || !R.schedule) return;
       const btn = document.getElementById('checkBtn');
-      btn.disabled = true; btn.textContent = '🔍 チェック中...';
+      btn.disabled = true;
+      showCheckModal();
       try {
-        const res = await fetch('/api/check');
-        const d = await res.json();
+        // ステップアニメーションを順に表示しながらAPIを呼ぶ
+        const stepDelay = (ms) => new Promise(r => setTimeout(r, ms));
+        updateCheckStep(0);
+        const fetchPromise = fetch('/api/check').then(r => r.json());
+        // 各ステップを順に表示（APIは並行で実行中）
+        for (let i = 1; i < CHECK_STEPS.length; i++) {
+          await stepDelay(200);
+          completeCheckStep(i - 1);
+          updateCheckStep(i);
+        }
+        const d = await fetchPromise;
+        completeCheckStep(CHECK_STEPS.length - 1);
+        await stepDelay(400);
+        closeCheckModal();
+        await stepDelay(300);
         showCheckResults(d);
       } catch (e) {
+        closeCheckModal();
         showUpErr('チェックエラー: ' + escHtml(e.message));
       } finally {
-        btn.disabled = false; btn.textContent = '🔍 チェック';
+        btn.disabled = false;
       }
     }
 
