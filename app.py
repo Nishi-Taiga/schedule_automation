@@ -582,9 +582,15 @@ def adjust_weights(current_weights, signals, alpha=0.3):
 def to_short(name):
     if not name: return None
     name = str(name).strip()
+    if not name: return None
     if name in NAME_MAP: return NAME_MAP[name]
     parts = name.replace('\u3000',' ').split()
-    return parts[0]+'T' if parts else name
+    if len(parts) >= 2:
+        return parts[0] + 'T'
+    # 単一パート: 既に 'T' 末尾なら短縮済み（二重付与を防止）
+    if name.endswith('T'):
+        return name
+    return name + 'T'
 
 # ========== パーサー ==========
 def get_skill_keys(grade, subject):
@@ -2031,9 +2037,55 @@ def _upload_surveys_impl():
         'teacherCount': len(teacher_names),
         'weeks': len(weekly_teachers),
         'weeklyTeachers': weekly_teachers,
+        'surveyNameMap': survey_name_map,
         'errors': errors,
         'files': {k: (os.path.basename(v) if isinstance(v, str) else [os.path.basename(p) for p in v]) for k, v in sd.get('files', {}).items()},
     })
+
+@app.route('/api/resolve_name_conflict', methods=['POST'])
+@login_required
+def resolve_name_conflict():
+    """手動追加講師名がサーベイ講師と衝突した場合、サーベイ側をリネームする"""
+    sd = get_session_data()
+    data = request.get_json(force=True)
+    manual_name = data.get('name', '').strip()
+    if not manual_name:
+        return jsonify({'conflict': False})
+
+    survey_name_map = sd.get('survey_name_map', {})
+    if manual_name not in survey_name_map:
+        return jsonify({'conflict': False})
+
+    full_name = survey_name_map[manual_name]
+    parts = full_name.replace('\u3000', ' ').split()
+    if len(parts) < 2:
+        return jsonify({'conflict': False})
+
+    new_short = parts[1] + 'T'
+    print(f"[resolve_name_conflict] 衝突: 手動「{manual_name}」⇔ サーベイ「{full_name}」→「{new_short}」", flush=True)
+
+    # セッション内の weekly_teachers をリネーム
+    res = sd.get('result', {})
+    wt = res.get('weekly_teachers')
+    if wt:
+        for wi in range(len(wt)):
+            for day in wt[wi]:
+                for ts in wt[wi][day]:
+                    wt[wi][day][ts] = [new_short if t == manual_name else t for t in wt[wi][day][ts]]
+        res['weekly_teachers'] = wt
+        sd['result'] = res
+        save_session_result(sd)
+
+    # survey_name_map も更新
+    survey_name_map[new_short] = full_name
+    del survey_name_map[manual_name]
+    sd['survey_name_map'] = survey_name_map
+    save_session_files(sd)
+
+    # NAME_MAP も更新
+    NAME_MAP[full_name] = new_short
+
+    return jsonify({'conflict': True, 'oldName': manual_name, 'newName': new_short, 'fullName': full_name})
 
 @app.route('/api/consolidate_booth', methods=['POST'])
 @login_required
@@ -2195,21 +2247,6 @@ def generate():
         # 手動追加講師はブースに配置せず候補リストにのみ表示（手動D&D用）
         if manual_teachers:
             print(f"[generate] manual teachers (候補のみ): {manual_teachers}", flush=True)
-
-        # 手動追加講師とサーベイ講師の名前衝突を解消
-        survey_name_map = sd.get('survey_name_map', {})
-        for mt in manual_teachers:
-            if mt in survey_name_map:
-                full_name = survey_name_map[mt]
-                parts = full_name.replace('\u3000', ' ').split()
-                if len(parts) >= 2:
-                    new_short = parts[1] + 'T'
-                    print(f"[generate] 名前衝突: 手動追加「{mt}」とサーベイ「{full_name}」→「{new_short}」に変更", flush=True)
-                    for wi in range(len(wt)):
-                        for day in wt[wi]:
-                            for ts in wt[wi][day]:
-                                wt[wi][day][ts] = [new_short if t == mt else t for t in wt[wi][day][ts]]
-                    NAME_MAP[full_name] = new_short
 
         # 週ファイルリストから週数を制限
         week_file_paths = files.get('week_files', [])
@@ -2427,9 +2464,6 @@ def _build_state_json(sd):
     if not wt:
         wt = res.get('weekly_teachers')
 
-    placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
-    total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
-
     state_json = {
         'schedule': schedule,
         'unplaced': res.get('unplaced', []),
@@ -2438,9 +2472,7 @@ def _build_state_json(sd):
         'boothPref': res.get('booth_pref', {}),
         'manualTeachers': res.get('manual_teachers', []),
         'weekDates': res.get('week_dates'),
-        'total': total,
         'students': students_json,
-        'placed': placed,
     }
     if wt:
         state_json['weeklyTeachers'] = wt
@@ -2500,6 +2532,15 @@ def cloud_save():
             'manualTeachers': res.get('manual_teachers', []),
         }
 
+        # メタデータ (skills等) — スケジュール生成に必要だが編集中は変わらない
+        metadata = data.get('metadata')
+        if metadata is None:
+            raw_skills = res.get('skills', {})
+            # skills の set を list に変換 (JSONシリアライズ用)
+            skills_json = {t: sorted(list(s)) if isinstance(s, set) else s
+                          for t, s in raw_skills.items()} if raw_skills else {}
+            metadata = {'skills': skills_json}
+
         sb_url = f"{SUPABASE_URL}/rest/v1/schedule_snapshots?on_conflict=year,month,label"
         sb_body = json.dumps({
             'year': year,
@@ -2507,8 +2548,7 @@ def cloud_save():
             'label': label,
             'schedule_data': state,
             'settings_data': settings,
-            'placed': state.get('placed', 0),
-            'total': state.get('total', 0),
+            'metadata': metadata,
             'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
         }, ensure_ascii=False).encode('utf-8')
         sb_hdrs = {
@@ -2543,7 +2583,7 @@ def cloud_list():
     """保存済みスナップショット一覧を取得 (メタデータのみ)"""
     try:
         rows = _supabase_request('GET', 'schedule_snapshots',
-            'select=id,year,month,label,placed,total,created_at,updated_at'
+            'select=id,year,month,label,created_at,updated_at'
             '&order=updated_at.desc&limit=50')
         return jsonify({'ok': True, 'snapshots': rows or []})
     except Exception as e:
@@ -2568,6 +2608,12 @@ def cloud_load():
         snap = rows[0]
         state = snap['schedule_data']
         settings = snap.get('settings_data') or {}
+        metadata = snap.get('metadata') or {}
+
+        # メタデータからskillsを復元 (list→set変換)
+        skills = {}
+        for t, subjs in metadata.get('skills', {}).items():
+            skills[t] = set(subjs) if isinstance(subjs, list) else subjs
 
         # セッションに復元
         sd = get_session_data()
@@ -2583,12 +2629,11 @@ def cloud_load():
             'students': state.get('students', []),
             'week_dates': state.get('weekDates'),
             'weekly_teachers': state.get('weeklyTeachers'),
+            'skills': skills,
         }
         save_session_result(sd)
 
         # フロントエンドに返却 (generate/restore_json と同じ形式)
-        placed = state.get('placed', 0)
-        total = state.get('total', 0)
         return jsonify({
             'ok': True,
             'schedule': schedule,
@@ -2600,8 +2645,6 @@ def cloud_load():
             'students': state.get('students', []),
             'weekDates': state.get('weekDates'),
             'weeklyTeachers': state.get('weeklyTeachers'),
-            'placed': placed,
-            'total': total,
         })
     except Exception as e:
         import traceback; traceback.print_exc()
