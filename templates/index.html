@@ -783,12 +783,6 @@
       background: #e0e7ff
     }
 
-    .edit-hint {
-      font-size: 11px;
-      color: var(--orange);
-      font-weight: 600
-    }
-
     /* Calendar */
     .cal-sel {
       display: flex;
@@ -1515,14 +1509,7 @@
           <button class="btn btn-p" onclick="dlExcel()">📥 ブース表DL</button>
           <button class="btn btn-o" onclick="dlJson()">💾 JSON保存</button>
           <button class="btn btn-o" onclick="dlCloudSave()">☁️ クラウド保存</button>
-          <button class="btn btn-o" onclick="go('settings')">↻ 再生成</button>
         </div>
-        <div class="edit-hint">✋ 講師名・生徒チップをD&Dで移動。生徒名クリック→個人カレンダー。カレンダー内の授業クリック→講師/時間変更。<span
-            style="color:var(--red)">赤＝NG</span></div>
-        <details id="learningPanel" style="margin-top:8px;font-size:12px;background:#f8f9fa;padding:6px 10px;border-radius:6px;border:1px solid #e0e0e0">
-          <summary style="cursor:pointer;font-weight:600;color:#555">🧠 学習状況</summary>
-          <div id="learningContent" style="margin-top:6px"></div>
-        </details>
         <details id="fileUpdatePanel" style="margin-top:8px;font-size:12px;background:#f0f7ff;padding:6px 10px;border-radius:6px;border:1px solid #b3d4fc">
           <summary style="cursor:pointer;font-weight:600;color:#1565c0">📂 ファイル更新（メタデータ・講師回答）</summary>
           <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">
@@ -2137,8 +2124,6 @@
       showSaveIndicator('学習データをリセットしました');
       loadLearningStats();
     }
-    document.getElementById('learningPanel').addEventListener('toggle', function() { if (this.open) loadLearningStats(); });
-
     async function runCheck() {
       if (!R || !R.schedule) return;
       const btn = document.getElementById('checkBtn');
