@@ -2500,7 +2500,8 @@ def cloud_save():
             'manualTeachers': res.get('manual_teachers', []),
         }
 
-        _supabase_request('POST', 'schedule_snapshots', '', body={
+        _supabase_request('POST', 'schedule_snapshots',
+            'on_conflict=year,month,label', body={
             'year': year,
             'month': month,
             'label': label,
