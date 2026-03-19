@@ -1365,7 +1365,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.17.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.17.1</span></h1>
     </div>
   </div>
   <div class="container">
@@ -2362,7 +2362,10 @@
       const NW = R.schedule.length; for (let w = 0; w < NW; w++) { const b = document.createElement('button'); b.className = PW === w ? 'active' : ''; const wr = getWeekRange(w); b.textContent = '第' + (w + 1) + '週' + (wr && wr !== 'W' + (w + 1) ? ' ' + wr : ''); b.onclick = () => { PW = w; rR(); }; tabs.appendChild(b); }
       const ub2 = document.createElement('button'); ub2.className = 'warn' + (PW === -1 ? ' active' : ''); ub2.textContent = '未配置'; ub2.onclick = () => { PW = -1; rR(); }; tabs.appendChild(ub2);
       const cb = document.createElement('button'); cb.className = 'cal' + (PW === -2 ? ' active' : ''); cb.textContent = '📅 生徒別'; cb.onclick = () => { PW = -2; rR(); }; tabs.appendChild(cb);
-      const wrap = document.getElementById('pWrap'); wrap.innerHTML = ''; const wCard = wrap.parentElement; if (PW >= 0) { wrap.classList.add('result-layout'); wCard.classList.add('result-card'); rW(wrap, PW); } else { wrap.classList.remove('result-layout'); wCard.classList.remove('result-card'); if (PW === -1) rU(wrap); else rCal(wrap); }
+      const wrap = document.getElementById('pWrap');
+      const _pm = wrap.querySelector('.schedule-main'), _ps = wrap.querySelector('.unplaced-sidebar');
+      const _ss = { mt: _pm ? _pm.scrollTop : 0, ml: _pm ? _pm.scrollLeft : 0, st: _ps ? _ps.scrollTop : 0 };
+      wrap.innerHTML = ''; const wCard = wrap.parentElement; if (PW >= 0) { wrap.classList.add('result-layout'); wCard.classList.add('result-card'); rW(wrap, PW); const _nm = wrap.querySelector('.schedule-main'), _ns = wrap.querySelector('.unplaced-sidebar'); if (_nm) { _nm.scrollTop = _ss.mt; _nm.scrollLeft = _ss.ml; } if (_ns) _ns.scrollTop = _ss.st; } else { wrap.classList.remove('result-layout'); wCard.classList.remove('result-card'); if (PW === -1) rU(wrap); else rCal(wrap); }
     }
 
     // === Teacher D&D ===
