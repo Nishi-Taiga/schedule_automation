@@ -2500,8 +2500,8 @@ def cloud_save():
             'manualTeachers': res.get('manual_teachers', []),
         }
 
-        _supabase_request('POST', 'schedule_snapshots',
-            'on_conflict=year,month,label', body={
+        sb_url = f"{SUPABASE_URL}/rest/v1/schedule_snapshots?on_conflict=year,month,label"
+        sb_body = json.dumps({
             'year': year,
             'month': month,
             'label': label,
@@ -2510,7 +2510,25 @@ def cloud_save():
             'placed': state.get('placed', 0),
             'total': state.get('total', 0),
             'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
-        }, headers_extra={'Prefer': 'resolution=merge-duplicates'})
+        }, ensure_ascii=False).encode('utf-8')
+        sb_hdrs = {
+            'apikey': SUPABASE_SERVICE_KEY,
+            'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates',
+        }
+        sb_req = Request(sb_url, data=sb_body, headers=sb_hdrs, method='POST')
+        try:
+            with urlopen(sb_req, timeout=30) as resp:
+                raw = resp.read().decode('utf-8')
+                print(f"[cloud_save] Supabase resp: {resp.status} len={len(raw)}", flush=True)
+        except HTTPError as he:
+            err_body = he.read().decode('utf-8')[:500]
+            print(f"[cloud_save] Supabase HTTPError: {he.code} {err_body}", flush=True)
+            return jsonify({'ok': False, 'error': f'Supabase error: {he.code}', 'detail': err_body}), 502
+        except URLError as ue:
+            print(f"[cloud_save] Supabase URLError: {ue}", flush=True)
+            return jsonify({'ok': False, 'error': f'Supabase connection error: {ue}'}), 502
 
         print(f"[cloud_save] saved {year}/{month} label={label}", flush=True)
         return jsonify({'ok': True, 'year': year, 'month': month, 'label': label})
