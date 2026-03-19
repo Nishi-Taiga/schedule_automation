@@ -2464,6 +2464,9 @@ def _build_state_json(sd):
     if not wt:
         wt = res.get('weekly_teachers')
 
+    placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+    total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
+
     state_json = {
         'schedule': schedule,
         'unplaced': res.get('unplaced', []),
@@ -2473,6 +2476,8 @@ def _build_state_json(sd):
         'manualTeachers': res.get('manual_teachers', []),
         'weekDates': res.get('week_dates'),
         'students': students_json,
+        'placed': placed,
+        'total': total,
     }
     if wt:
         state_json['weeklyTeachers'] = wt
@@ -2645,6 +2650,8 @@ def cloud_load():
             'students': state.get('students', []),
             'weekDates': state.get('weekDates'),
             'weeklyTeachers': state.get('weeklyTeachers'),
+            'placed': state.get('placed', 0),
+            'total': state.get('total', 0),
         })
     except Exception as e:
         import traceback; traceback.print_exc()
