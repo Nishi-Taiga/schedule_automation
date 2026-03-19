@@ -1490,9 +1490,8 @@
           </div>
           <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
             <div style="font-weight:600;margin-bottom:4px;font-size:12px">ブース表テンプレート</div>
-            <div style="color:#888;font-size:11px;margin-bottom:6px">DL時のフォーマット用ブース表Excel</div>
-            <input type="file" id="postRestoreBoothInput" accept=".xlsx,.xls" style="font-size:11px;max-width:100%"
-                   onchange="doUpdateBoothTemplate(this)">
+            <div style="color:#888;font-size:11px;margin-bottom:6px">週別ブース表フォルダを選択（メタ自動検出）</div>
+            <button class="folder-btn" style="font-size:11px;margin-bottom:4px" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="doUpdateBoothTemplate(this)">
             <div id="postRestoreBoothStatus" style="margin-top:4px;font-size:11px"></div>
           </div>
         </div>
@@ -1553,9 +1552,8 @@
             </div>
             <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
               <div style="font-weight:600;margin-bottom:4px">ブース表テンプレート</div>
-              <div style="color:#888;font-size:11px;margin-bottom:6px">DL時のフォーマット用ブース表Excel</div>
-              <input type="file" id="updateBoothInput" accept=".xlsx,.xls" style="font-size:11px;max-width:100%"
-                     onchange="doUpdateBoothTemplate(this)">
+              <div style="color:#888;font-size:11px;margin-bottom:6px">週別ブース表フォルダを選択（メタ自動検出）</div>
+              <button class="folder-btn" style="font-size:11px;margin-bottom:4px" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="doUpdateBoothTemplate(this)">
               <div id="updateBoothStatus" style="margin-top:4px;font-size:11px"></div>
             </div>
           </div>
@@ -1697,7 +1695,7 @@
           sec.style.display = 'block';
           let restoreMsg = '✅ スケジュール再開準備完了 (' + d.placed + '/' + d.total + 'コマ)';
           if (d.hasBoothTemplate === false) {
-            restoreMsg += '\n⚠️ ブース表テンプレートが含まれていません。ブース表DLの出力にはブース表シートが含まれません。元のブース表Excelを「メタデータ更新」から再アップロードしてください。';
+            restoreMsg += '\n⚠️ ブース表テンプレートが含まれていません。「ブース表テンプレート」からフォルダを選択して再アップロードしてください。';
           }
           document.getElementById('postRestoreMsg').textContent = restoreMsg;
           document.getElementById('postRestoreMsg').style.whiteSpace = 'pre-line';
@@ -1856,7 +1854,7 @@
             R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
             const sec = document.getElementById('postRestoreSection'); sec.style.display = 'block';
             let rmsg2 = '✅ スケジュール再開準備完了 (' + d.placed + '/' + d.total + 'コマ)';
-            if (d.hasBoothTemplate === false) rmsg2 += '\n⚠️ ブース表テンプレートが含まれていません。元のブース表Excelを「メタデータ更新」から再アップロードしてください。';
+            if (d.hasBoothTemplate === false) rmsg2 += '\n⚠️ ブース表テンプレートが含まれていません。「ブース表テンプレート」からフォルダを選択して再アップロードしてください。';
             document.getElementById('postRestoreMsg').textContent = rmsg2;
             document.getElementById('postRestoreMsg').style.whiteSpace = 'pre-line';
             document.getElementById('postRestoreMetaStatus').textContent = ''; document.getElementById('postRestoreSurveyStatus').textContent = '';
@@ -2888,17 +2886,19 @@
     }
 
     async function doUpdateBoothTemplate(input) {
-      const file = input.files[0];
-      if (!file) return;
-      const statusEl = input.parentElement.querySelector('[id$="BoothStatus"]');
-      if (statusEl) { statusEl.textContent = 'アップロード中...'; statusEl.style.color = '#1565c0'; }
+      const files = filterXlsx(input.files);
+      if (!files.length) { showUpErr('フォルダ内に .xlsx ファイルが見つかりません'); return; }
+      const statusEl = input.closest('div').querySelector('[id$="BoothStatus"]');
+      if (statusEl) { statusEl.textContent = files.length + '件アップロード中...'; statusEl.style.color = '#1565c0'; }
       const fd = new FormData();
-      fd.append('booth', file);
+      const preloaded = await preloadFiles(files);
+      for (const f of preloaded.files) fd.append('weeks', f);
       try {
         const res = await fetch('/api/upload_booth_template', { method: 'POST', body: fd });
         const j = await res.json();
         if (!res.ok || !j.ok) { if (statusEl) { statusEl.textContent = j.error || 'エラー'; statusEl.style.color = 'red'; } return; }
-        if (statusEl) { statusEl.textContent = j.filename + (j.cloudSaved ? ' (クラウド更新済)' : ''); statusEl.style.color = 'green'; }
+        const msg = j.weeks + '週' + (j.meta ? '+メタ' : '') + (j.cloudSaved ? ' (クラウド更新済)' : '');
+        if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'green'; }
         showSaveIndicator('ブース表テンプレート更新');
       } catch (e) { if (statusEl) { statusEl.textContent = 'エラー: ' + e.message; statusEl.style.color = 'red'; } }
       input.value = '';

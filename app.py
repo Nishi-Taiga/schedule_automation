@@ -19,6 +19,8 @@ import traceback
 import datetime as _dt
 import calendar
 import base64
+import zipfile
+import io
 from copy import copy, deepcopy
 from collections import defaultdict
 from functools import wraps
@@ -357,27 +359,56 @@ def _supabase_request(method, table, params='', body=None, headers_extra=None):
         print(f"[learning] Supabase {method} {table} error: {e}", flush=True)
         return None
 
-def _encode_booth_file(sd):
-    """セッションのブース表ファイルをbase64エンコード。b64_str or None"""
-    booth_path = sd.get('files', {}).get('booth')
-    if not booth_path or not os.path.exists(booth_path):
+def _encode_booth_files(sd):
+    """セッションのブース表ファイル群(meta+week_files)をZIP→base64エンコード。b64_str or None"""
+    files = sd.get('files', {})
+    booth_path = files.get('booth')
+    week_file_paths = files.get('week_files', [])
+
+    # メタもウィークもなければスキップ
+    if (not booth_path or not os.path.exists(booth_path)) and not week_file_paths:
         return None
-    with open(booth_path, 'rb') as f:
-        data = f.read()
-    if len(data) > 5 * 1024 * 1024:
-        print(f"[cloud_save] booth file too large: {len(data)} bytes, skipping", flush=True)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        if booth_path and os.path.exists(booth_path):
+            zf.write(booth_path, 'meta/' + os.path.basename(booth_path))
+        for wp in week_file_paths:
+            if os.path.exists(wp):
+                zf.write(wp, 'weeks/' + os.path.basename(wp))
+    data = buf.getvalue()
+    if len(data) > 10 * 1024 * 1024:  # 10MB上限
+        print(f"[cloud_save] booth zip too large: {len(data)} bytes, skipping", flush=True)
         return None
+    print(f"[cloud_save] booth zip size: {len(data)} bytes (meta={'yes' if booth_path else 'no'}, weeks={len(week_file_paths)})", flush=True)
     return base64.b64encode(data).decode('ascii')
 
-def _restore_booth_file(b64_str, session_dir):
-    """base64からブース表ファイルを復元。ファイルパスを返す or None"""
+def _restore_booth_files(b64_str, session_dir):
+    """base64 ZIPからブース表ファイル群を復元。{'booth': path, 'week_files': [paths]} or None"""
     if not b64_str:
         return None
-    raw = base64.b64decode(b64_str)
-    path = os.path.join(session_dir, 'booth_restored.xlsx')
-    with open(path, 'wb') as f:
-        f.write(raw)
-    return path
+    try:
+        raw = base64.b64decode(b64_str)
+        buf = io.BytesIO(raw)
+        result = {}
+        with zipfile.ZipFile(buf, 'r') as zf:
+            for name in zf.namelist():
+                dest = os.path.join(session_dir, name.replace('/', os.sep))
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with zf.open(name) as src, open(dest, 'wb') as dst:
+                    dst.write(src.read())
+                if name.startswith('meta/'):
+                    result['booth'] = dest
+                elif name.startswith('weeks/'):
+                    result.setdefault('week_files', []).append(dest)
+        # week_filesをソート
+        if 'week_files' in result:
+            result['week_files'] = sorted(result['week_files'])
+        print(f"[cloud_load] booth files restored: meta={'booth' in result}, weeks={len(result.get('week_files', []))}", flush=True)
+        return result if result else None
+    except Exception as e:
+        print(f"[cloud_load] booth restore failed: {e}", flush=True)
+        return None
 
 def load_learning_weights():
     """Supabaseから学習済み重みを読み込む。なければデフォルト値を返す"""
@@ -2611,7 +2642,7 @@ def cloud_save():
             'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
         }
         if include_template:
-            b64 = _encode_booth_file(sd)
+            b64 = _encode_booth_files(sd)
             if b64:
                 sb_body_dict['booth_template'] = b64
                 print(f"[cloud_save] booth template included ({len(b64)} chars)", flush=True)
@@ -2715,11 +2746,15 @@ def cloud_load():
         # ブース表テンプレート復元
         has_booth = False
         if booth_b64:
-            restored_path = _restore_booth_file(booth_b64, sd['dir'])
-            if restored_path:
-                sd['files'] = {**sd.get('files', {}), 'booth': restored_path}
+            restored = _restore_booth_files(booth_b64, sd['dir'])
+            if restored:
+                new_files = {**sd.get('files', {})}
+                if 'booth' in restored:
+                    new_files['booth'] = restored['booth']
+                if 'week_files' in restored:
+                    new_files['week_files'] = restored['week_files']
+                sd['files'] = new_files
                 has_booth = True
-                print(f"[cloud_load] booth template restored: {restored_path}", flush=True)
 
         save_session_result(sd)
         save_session_files(sd)
@@ -2763,22 +2798,71 @@ def cloud_delete():
 @app.route('/api/upload_booth_template', methods=['POST'])
 @login_required
 def upload_booth_template():
-    """結果画面からブース表テンプレートを（再）アップロード"""
+    """結果画面からブース表テンプレートを（再）アップロード — フォルダ一括対応"""
     sd = get_session_data()
-    f = request.files.get('booth')
-    if not f:
+    week_files = request.files.getlist('weeks')
+    if not week_files or not any(f.filename for f in week_files):
         return jsonify({'error': 'ブース表ファイルが必要です'}), 400
-    ok, err = validate_file(f)
-    if not ok:
-        return jsonify({'error': err}), 400
-    path = os.path.join(sd['dir'], 'booth_' + os.path.basename(f.filename))
-    try:
-        f.save(path)
-    except Exception as e:
-        return jsonify({'error': f'ファイル保存に失敗しました: {e}'}), 500
-    sd['files'] = {**sd.get('files', {}), 'booth': path}
+
+    # メタデータファイルの自動検出 + 週ファイル保存 (consolidate_booth と同じロジック)
+    detected_meta = None
+    remaining_weeks = []
+    saved_week_paths = []
+    meta_path = None
+    errors = []
+
+    for f in sorted(week_files, key=lambda x: x.filename):
+        if not f.filename:
+            continue
+        # 出力ファイルスキップ
+        if '出力' in os.path.basename(f.filename):
+            continue
+        ok, err = validate_file(f)
+        if not ok:
+            errors.append(f'{f.filename}: {err}')
+            continue
+
+        temp_path = os.path.join(sd['dir'], 'bt_' + os.path.basename(f.filename))
+        try:
+            f.save(temp_path)
+            wb = openpyxl.load_workbook(temp_path, read_only=True)
+            sheet_names = wb.sheetnames
+
+            # 出力ファイル（_schedule_data含む）はスキップ
+            if any(sn.startswith('_schedule_data') for sn in sheet_names):
+                wb.close()
+                os.remove(temp_path)
+                continue
+
+            has_meta = any(any(k in sn for k in META_KEYWORDS) for sn in sheet_names)
+            has_booth = any('ブース表' in sn and wb[sn].sheet_state == 'visible' for sn in sheet_names)
+            wb.close()
+
+            if has_meta and not detected_meta:
+                detected_meta = temp_path
+                meta_path = temp_path
+                print(f"[upload_booth_template] meta detected: {f.filename}", flush=True)
+            elif has_booth:
+                saved_week_paths.append(temp_path)
+                print(f"[upload_booth_template] week file: {f.filename}", flush=True)
+            else:
+                os.remove(temp_path)
+        except Exception as e:
+            errors.append(f'{f.filename}: {str(e)}')
+
+    if not saved_week_paths and not meta_path:
+        return jsonify({'error': '有効なブース表ファイルが見つかりません', 'details': errors}), 400
+
+    # セッションに反映
+    new_files = {**sd.get('files', {})}
+    if meta_path:
+        new_files['booth'] = meta_path
+    if saved_week_paths:
+        new_files['week_files'] = sorted(saved_week_paths)
+    sd['files'] = new_files
     save_session_files(sd)
-    print(f"[upload_booth_template] saved booth -> {path}", flush=True)
+    count = len(saved_week_paths) + (1 if meta_path else 0)
+    print(f"[upload_booth_template] saved {count} files (meta={'yes' if meta_path else 'no'}, weeks={len(saved_week_paths)})", flush=True)
 
     # クラウドの既存スナップショットにもテンプレートを反映
     res = sd.get('result', {})
@@ -2787,7 +2871,7 @@ def upload_booth_template():
     month = week_dates.get('month', 0)
     booth_saved = False
     if year and month and SUPABASE_URL and SUPABASE_SERVICE_KEY:
-        b64 = _encode_booth_file(sd)
+        b64 = _encode_booth_files(sd)
         if b64:
             try:
                 _supabase_request('PATCH', 'schedule_snapshots',
@@ -2798,7 +2882,13 @@ def upload_booth_template():
                 print(f"[upload_booth_template] cloud updated ({len(b64)} chars)", flush=True)
             except Exception as e:
                 print(f"[upload_booth_template] cloud update failed: {e}", flush=True)
-    return jsonify({'ok': True, 'filename': os.path.basename(path), 'cloudSaved': booth_saved})
+    return jsonify({
+        'ok': True,
+        'count': count,
+        'meta': bool(meta_path),
+        'weeks': len(saved_week_paths),
+        'cloudSaved': booth_saved,
+    })
 
 
 def parse_schedule_from_wb(wb):
@@ -3097,7 +3187,7 @@ def load_saved():
 
     resp = {'ok': True, 'hasBoothTemplate': has_booth_template, **state}
     if weekly_teachers:
-        resp['weeklyTeachers'] = weekly_teachers
+        resp['weeklyTeachers'] = _sanitize_weekly_teachers(weekly_teachers)
     return jsonify(resp)
 
 # ========== メタデータ・講師回答の事後更新 API ==========
