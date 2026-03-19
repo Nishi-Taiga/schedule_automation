@@ -2223,10 +2223,22 @@ def consolidate_booth():
     sd['files'] = {**sd.get('files', {}), 'booth': meta_path, 'week_files': saved_week_paths}
     save_session_files(sd)
 
+    # 最終シート構成を取得
+    final_sheets = []
+    for wp in saved_week_paths:
+        try:
+            wb = openpyxl.load_workbook(wp, read_only=True)
+            final_sheets.extend(sn for sn in wb.sheetnames if sn not in final_sheets)
+            wb.close()
+        except Exception:
+            pass
+
     return jsonify({
         'ok': True,
         'weekCount': week_count,
         'metaSheets': meta_sheet_names,
+        'removedSheets': [],
+        'finalSheets': final_sheets,
         'errors': errors,
         'files': {k: (os.path.basename(v) if isinstance(v, str) else [os.path.basename(p) for p in v]) for k, v in sd.get('files', {}).items()},
     })
