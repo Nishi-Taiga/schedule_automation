@@ -610,10 +610,28 @@ def to_short(name):
     parts = name.replace('\u3000',' ').split()
     if len(parts) >= 2:
         return parts[0] + 'T'
+    # 既存の破損データ("TT")を修復
+    while len(name) > 1 and name.endswith('TT'):
+        name = name[:-1]
     # 単一パート: 既に 'T' 末尾なら短縮済み（二重付与を防止）
     if name.endswith('T'):
         return name
     return name + 'T'
+
+def _sanitize_weekly_teachers(wt):
+    """weeklyTeachers内の全講師名から重複末尾Tを除去する"""
+    if not wt:
+        return wt
+    result = []
+    for week in wt:
+        w = {}
+        for day, day_data in week.items():
+            d = {}
+            for ts, teachers in day_data.items():
+                d[ts] = [to_short(t) for t in (teachers or [])]
+            w[day] = d
+        result.append(w)
+    return result
 
 # ========== パーサー ==========
 def get_skill_keys(grade, subject):
@@ -2059,7 +2077,7 @@ def _upload_surveys_impl():
         'teachers': teacher_names,
         'teacherCount': len(teacher_names),
         'weeks': len(weekly_teachers),
-        'weeklyTeachers': weekly_teachers,
+        'weeklyTeachers': _sanitize_weekly_teachers(weekly_teachers),
         'surveyNameMap': survey_name_map,
         'errors': errors,
         'files': {k: (os.path.basename(v) if isinstance(v, str) else [os.path.basename(p) for p in v]) for k, v in sd.get('files', {}).items()},
@@ -2382,7 +2400,7 @@ def generate():
             'boothPref': booth_pref,
             'students': students_json,
             'weekDates': week_dates,
-            'weeklyTeachers': wt,
+            'weeklyTeachers': _sanitize_weekly_teachers(wt),
         })
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -2435,7 +2453,7 @@ def download():
         if not wt:
             wt = res.get('weekly_teachers')
         if wt:
-            state_json['weeklyTeachers'] = wt
+            state_json['weeklyTeachers'] = _sanitize_weekly_teachers(wt)
         # placed count
         placed = 0
         for w in res.get('schedule', []):
@@ -2515,7 +2533,7 @@ def _build_state_json(sd):
         'total': total,
     }
     if wt:
-        state_json['weeklyTeachers'] = wt
+        state_json['weeklyTeachers'] = _sanitize_weekly_teachers(wt)
     return state_json
 
 
@@ -2690,7 +2708,7 @@ def cloud_load():
             'manual_teachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
             'students': state.get('students', []),
             'week_dates': state.get('weekDates'),
-            'weekly_teachers': state.get('weeklyTeachers'),
+            'weekly_teachers': _sanitize_weekly_teachers(state.get('weeklyTeachers')),
             'skills': skills,
         }
 
@@ -2717,7 +2735,7 @@ def cloud_load():
             'manualTeachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
             'students': state.get('students', []),
             'weekDates': state.get('weekDates'),
-            'weeklyTeachers': state.get('weeklyTeachers'),
+            'weeklyTeachers': _sanitize_weekly_teachers(state.get('weeklyTeachers')),
             'placed': state.get('placed', 0),
             'total': state.get('total', 0),
             'hasBoothTemplate': has_booth,
@@ -3669,7 +3687,7 @@ def restore_json():
         'manual_teachers': manual_teachers,
         'students': students,
         'week_dates': week_dates,
-        'weekly_teachers': weekly_teachers,  # ダウンロード時のフォールバック用
+        'weekly_teachers': _sanitize_weekly_teachers(weekly_teachers),  # ダウンロード時のフォールバック用
     }
     save_session_result(sd)
 
@@ -3703,7 +3721,7 @@ def restore_json():
         'weekDates': week_dates,
         'hasBooth': 'booth' in files,
         'hasWeekFiles': bool(files.get('week_files')),
-        'weeklyTeachers': weekly_teachers or [],
+        'weeklyTeachers': _sanitize_weekly_teachers(weekly_teachers) or [],
         'surveyTeacherCount': survey_teacher_count,
         'surveyErrors': survey_errors,
     }
