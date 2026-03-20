@@ -369,7 +369,7 @@ SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
 
 DEFAULT_WEIGHTS = {
     'ng_date': -5000,
-    'backup_time': -150,
+    'backup_time': -2100,
     'continuous_block': 2000,
     'skip_interval': -200,
     'same_day_2nd': 50,
@@ -381,7 +381,7 @@ DEFAULT_WEIGHTS = {
 
 WEIGHT_BOUNDS = {
     'ng_date': (-10000, -1000),
-    'backup_time': (-500, 0),
+    'backup_time': (-3000, 0),
     'continuous_block': (500, 5000),
     'skip_interval': (-1000, 0),
     'same_day_2nd': (-50, 200),
@@ -1807,30 +1807,54 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                     remaining[s['name']][subj] -= 1
                     _update_index(wi, s['name'], subj, day, ts_str)
 
-    # Phase2: 通常配置（希望講師ありの生徒を完全に先に配置してから、その他の生徒を配置）
-    order = sorted(students, key=lambda s: (
-        len(s['avail']) if s['avail'] else 999, sum(s['needs'].values())
-    ))
-    wish_order = [s for s in order if s['wish_teachers']]
-    no_wish_order = [s for s in order if not s['wish_teachers']]
+    # viable_slots: 週wiにおいて生徒sの希望時間帯に担当可能講師がいるスロット数
+    # avail=None(制限なし)は999を返す。制約が多い生徒ほど小さい値になる。
+    def viable_slots(s, wi):
+        if s['avail'] is None:
+            return 999
+        wt = weekly_teachers[wi] if wi < len(weekly_teachers) else {}
+        count = 0
+        for day, ts in s['avail']:
+            for b in wt.get(day, {}).get(ts, []):
+                t = b.get('teacher', '') if isinstance(b, dict) else ''
+                if t and t not in s.get('ng_teachers', set()):
+                    if any(can_teach(t, s['grade'], subj, skills) for subj in s['needs']):
+                        count += 1
+                        break
+        return count
+
+    # Phase2: 通常配置（希望講師ありの生徒を先に全て配置してから、その他の生徒を配置）
+    # 週単位でviable_slots数（担当可能講師のある希望スロット数）が少ない順に配置
+    all_students = sorted(students, key=lambda s: sum(s['needs'].values()))
+    wish_order = [s for s in all_students if s['wish_teachers']]
+    no_wish_order = [s for s in all_students if not s['wish_teachers']]
     unplaced_reasons = {}  # (name, subj) -> reason
 
     def _place_phase2(student_list):
+        # 週ごとの配置数を事前に決定（distribute）
+        dist = {}
         for s in student_list:
-            for subj, total in s['needs'].items():
+            dist[s['name']] = {}
+            for subj in s['needs']:
                 still = remaining[s['name']].get(subj, 0)
-                if still <= 0: continue
-                targets = distribute(still, num_weeks)
-                for wi in range(num_weeks):
-                    for _ in range(targets[wi]):
-                        if remaining[s['name']].get(subj,0) <= 0: break
+                dist[s['name']][subj] = distribute(still, num_weeks) if still > 0 else [0] * num_weeks
+
+        for wi in range(num_weeks):
+            # この週において担当可能スロット数が少ない順（最制約優先）にソート
+            sorted_list = sorted(student_list, key=lambda s: viable_slots(s, wi))
+            for s in sorted_list:
+                for subj in s['needs']:
+                    n = dist[s['name']][subj][wi]
+                    for _ in range(n):
+                        if remaining[s['name']].get(subj, 0) <= 0:
+                            break
                         pd = get_placed_days(None, s['name'], subj, wi)
                         ex = get_student_slots(None, s['name'], wi)
                         apd = get_any_placed_days(None, s['name'], wi)
                         best, reason = find_slot(schedule[wi], s, subj, pd, ex, wi, apd)
                         if best:
                             day, ts, bi = best
-                            schedule[wi][day][ts][bi]['slots'].append((s['grade'],s['name'],subj))
+                            schedule[wi][day][ts][bi]['slots'].append((s['grade'], s['name'], subj))
                             remaining[s['name']][subj] -= 1
                             _update_index(wi, s['name'], subj, day, ts)
                         elif reason:
@@ -1859,6 +1883,107 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                     _update_index(wi, s['name'], subj, day, ts)
                 elif reason:
                     unplaced_reasons[(s['name'], subj)] = reason
+
+    # Phase4: スワップ最適化（希望時間帯遵守率向上）
+    # backup スロットにいる生徒を primary スロットの生徒とスワップして遵守率を改善。
+    # 最大 MAX_SWAP_ITER 回繰り返し、スワップがゼロになった時点で早期終了。
+    MAX_SWAP_ITER = 10
+
+    def _is_primary_slot(s, day, ts):
+        return s['avail'] is None or (day, ts) in s['avail']
+
+    def _remove_index_entry(wi, name, subj, day, ts):
+        """配置インデックスから1エントリを削除する"""
+        idx_placed_days[wi].setdefault(name, {}).setdefault(subj, set()).discard(day)
+        idx_student_slots[wi].setdefault(name, set()).discard((day, ts))
+        if not any(d == day for d, _ in idx_student_slots[wi].get(name, set())):
+            idx_any_days[wi].setdefault(name, set()).discard(day)
+
+    for _iter in range(MAX_SWAP_ITER):
+        total_swaps = 0
+        for wi in range(num_weeks):
+            ws = schedule[wi]
+            # 配置済みエントリを収集: (day, ts, bi, slot_idx, student, subj)
+            placed = []
+            for day in DAYS:
+                for ts, booths in ws.get(day, {}).items():
+                    for bi, b in enumerate(booths):
+                        for si, (grade, name, subj) in enumerate(b['slots']):
+                            s = smap.get(name)
+                            if s:
+                                placed.append((day, ts, bi, si, s, subj))
+
+            swapped = set()  # このイテレーションで処理済みのエントリインデックス
+            for i in range(len(placed)):
+                if i in swapped:
+                    continue
+                day_a, ts_a, bi_a, si_a, s_a, subj_a = placed[i]
+                # 固定授業は交換しない
+                if any((day_a, ts_a) == (fd, ft) for fd, ft, _ in s_a.get('fixed', [])):
+                    continue
+                # すでに primary なら交換不要
+                if _is_primary_slot(s_a, day_a, ts_a):
+                    continue
+
+                for j in range(len(placed)):
+                    if j == i or j in swapped:
+                        continue
+                    day_b, ts_b, bi_b, si_b, s_b, subj_b = placed[j]
+                    if s_a['name'] == s_b['name']:
+                        continue
+                    # 固定授業は交換しない
+                    if any((day_b, ts_b) == (fd, ft) for fd, ft, _ in s_b.get('fixed', [])):
+                        continue
+
+                    prim_b = _is_primary_slot(s_b, day_b, ts_b)
+                    new_prim_a = _is_primary_slot(s_a, day_b, ts_b)
+                    new_prim_b = _is_primary_slot(s_b, day_a, ts_a)
+                    # prim_a は False（上でチェック済み）
+                    if int(new_prim_a) + int(new_prim_b) <= int(prim_b):
+                        continue  # 合計 primary 数が増えない
+
+                    # 同曜日・同科目重複チェック
+                    if day_b != day_a:
+                        if day_b in idx_placed_days[wi].get(s_a['name'], {}).get(subj_a, set()):
+                            continue
+                        if day_a in idx_placed_days[wi].get(s_b['name'], {}).get(subj_b, set()):
+                            continue
+
+                    # 同一 (day, ts) への重複配置チェック
+                    if (day_b, ts_b) in idx_student_slots[wi].get(s_a['name'], set()):
+                        continue
+                    if (day_a, ts_a) in idx_student_slots[wi].get(s_b['name'], set()):
+                        continue
+
+                    b_a = ws[day_a][ts_a][bi_a]
+                    b_b = ws[day_b][ts_b][bi_b]
+
+                    # 一時的に両エントリを取り外してブース制約を確認
+                    slot_a = b_a['slots'].pop(si_a)
+                    slot_b = b_b['slots'].pop(si_b)
+
+                    ok_a = check_booth(b_b, bi_b, s_a, day_b, subj_a, ws)
+                    ok_b = check_booth(b_a, bi_a, s_b, day_a, subj_b, ws)
+
+                    if ok_a and ok_b:
+                        # スワップ実行
+                        b_b['slots'].insert(si_b, slot_a)
+                        b_a['slots'].insert(si_a, slot_b)
+                        _remove_index_entry(wi, s_a['name'], subj_a, day_a, ts_a)
+                        _remove_index_entry(wi, s_b['name'], subj_b, day_b, ts_b)
+                        _update_index(wi, s_a['name'], subj_a, day_b, ts_b)
+                        _update_index(wi, s_b['name'], subj_b, day_a, ts_a)
+                        swapped.add(i)
+                        swapped.add(j)
+                        total_swaps += 1
+                        break
+                    else:
+                        # 元に戻す
+                        b_a['slots'].insert(si_a, slot_a)
+                        b_b['slots'].insert(si_b, slot_b)
+
+        if total_swaps == 0:
+            break
 
     unplaced = []
     for s in students:
