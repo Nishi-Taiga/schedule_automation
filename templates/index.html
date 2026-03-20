@@ -318,6 +318,65 @@
       font-size: 12.5px
     }
 
+    .student-breakdown {
+      margin-top: 8px;
+      font-size: 12px;
+      background: #f8fafc;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+    }
+    .student-breakdown > summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--accent);
+      font-size: 13px;
+    }
+    .student-breakdown table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+    .student-breakdown th {
+      text-align: left;
+      font-size: 11px;
+      color: var(--ink3);
+      border-bottom: 1px solid #e2e8f0;
+      padding: 4px 6px;
+    }
+    .student-breakdown td {
+      padding: 3px 6px;
+      font-size: 11.5px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .student-breakdown .subj-tags {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .student-breakdown .subj-tag {
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+    .student-breakdown .subj-ok { background: #ecfdf5; color: var(--green); }
+    .student-breakdown .subj-ng { background: #fef2f2; color: var(--red); }
+    .student-breakdown .subj-over { background: #fff7ed; color: var(--orange); }
+    .student-breakdown .stu-link {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .student-breakdown .stu-link:hover { opacity: 0.7; }
+    .student-breakdown .bd-summary-line {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--ink3);
+    }
+    .student-breakdown .total-ok { color: var(--green); font-weight: 600; }
+    .student-breakdown .total-ng { color: var(--red); font-weight: 600; }
+
     .wt {
       display: flex;
       gap: 5px;
@@ -1533,6 +1592,10 @@
           <button class="btn btn-o" onclick="dlJson()">💾 JSON保存</button>
           <button class="btn btn-o" onclick="dlCloudSave()">☁️ クラウド保存</button>
         </div>
+        <details id="studentBreakdown" class="student-breakdown" style="display:none">
+          <summary>📊 生徒別 内訳</summary>
+          <div id="studentBreakdownBody"></div>
+        </details>
         <details id="fileUpdatePanel" style="margin-top:8px;font-size:12px;background:#f0f7ff;padding:6px 10px;border-radius:6px;border:1px solid #b3d4fc">
           <summary style="cursor:pointer;font-weight:600;color:#1565c0">📂 ファイル更新（メタデータ・講師回答）</summary>
           <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">
@@ -1597,7 +1660,7 @@
     // === Auto-save/restore ===
     function showSaveIndicator(msg) { const el = document.getElementById('saveIndicator'); el.textContent = msg || '保存しました'; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
     async function cloudSave(label, includeTemplate) { if (!R || !R.schedule) return; try { const body = { label: label || 'latest' }; if (includeTemplate) body.include_template = true; await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { console.warn('Cloud save failed:', e); } }
-    async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) }); showSaveIndicator('自動保存しました'); cloudSave('latest').catch(() => {}); } catch (e) { } }
+    async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced, students: R.students }) }); showSaveIndicator('自動保存しました'); cloudSave('latest').catch(() => {}); } catch (e) { } }
     let autoSaveTimer = null;
     function scheduleAutoSave() { if (autoSaveTimer) clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(autoSave, 3000); }
 
@@ -2337,6 +2400,90 @@
       return s.needs;
     }
 
+    // 必要コマ数ベースのサマリー計算（1パスで全生徒分を集計）
+    function computeStudentSummary() {
+      if (!R || !R.schedule || !R.students) {
+        return { students: [], grandTotalPlaced: 0, grandTotalRequired: 0 };
+      }
+      // 1パスで全生徒の科目別配置数を構築
+      const placedMap = {}; // { studentName: { subj: count } }
+      R.schedule.forEach(w => {
+        Object.values(w).forEach(d => {
+          Object.values(d).forEach(bs => {
+            bs.forEach(b => {
+              b.slots.forEach(s => {
+                const name = s[1], subj = s[2];
+                if (!placedMap[name]) placedMap[name] = {};
+                placedMap[name][subj] = (placedMap[name][subj] || 0) + 1;
+              });
+            });
+          });
+        });
+      });
+      let grandTotalPlaced = 0;
+      let grandTotalRequired = 0;
+      const students = R.students.map(st => {
+        const needs = st.needs || {};
+        const placed = placedMap[st.name] || {};
+        const allSubjs = new Set([...Object.keys(needs), ...Object.keys(placed)]);
+        const subjects = {};
+        let totalPlaced = 0;
+        let totalRequired = 0;
+        allSubjs.forEach(subj => {
+          const p = placed[subj] || 0;
+          const r = needs[subj] || 0;
+          subjects[subj] = { placed: p, required: r };
+          totalPlaced += p;
+          totalRequired += r;
+        });
+        grandTotalPlaced += totalPlaced;
+        grandTotalRequired += totalRequired;
+        return { name: st.name, grade: st.grade, subjects, totalPlaced, totalRequired };
+      });
+      return { students, grandTotalPlaced, grandTotalRequired };
+    }
+
+    // 生徒別内訳テーブルの描画
+    function renderStudentBreakdown(summary) {
+      const container = document.getElementById('studentBreakdown');
+      const body = document.getElementById('studentBreakdownBody');
+      if (!container || !body) return;
+      if (!summary.students.length) { container.style.display = 'none'; return; }
+      container.style.display = '';
+      // 不足生徒を先頭にソート
+      const sorted = [...summary.students].sort((a, b) => {
+        const defA = a.totalRequired - a.totalPlaced;
+        const defB = b.totalRequired - b.totalPlaced;
+        if (defA > 0 && defB <= 0) return -1;
+        if (defA <= 0 && defB > 0) return 1;
+        return defB - defA;
+      });
+      let completeCount = 0, deficitCount = 0;
+      sorted.forEach(s => {
+        if (s.totalPlaced >= s.totalRequired) completeCount++;
+        else deficitCount++;
+      });
+      let html = '<table><thead><tr><th>学年</th><th>生徒</th><th>科目別</th><th>合計</th></tr></thead><tbody>';
+      sorted.forEach(s => {
+        const isOk = s.totalPlaced >= s.totalRequired;
+        html += '<tr>';
+        html += '<td>' + escHtml(s.grade) + '</td>';
+        html += '<td><span class="stu-link" onclick="goStudent(\'' + escHtml(s.name).replace(/'/g, "\\'") + '\')">' + escHtml(s.name) + '</span></td>';
+        html += '<td><div class="subj-tags">';
+        for (const [subj, v] of Object.entries(s.subjects)) {
+          if (v.required === 0 && v.placed === 0) continue;
+          const cls = v.placed >= v.required ? (v.placed > v.required ? 'subj-over' : 'subj-ok') : 'subj-ng';
+          html += '<span class="subj-tag ' + cls + '">' + escHtml(subj) + ':' + v.placed + '/' + v.required + '</span>';
+        }
+        html += '</div></td>';
+        html += '<td class="' + (isOk ? 'total-ok' : 'total-ng') + '">' + s.totalPlaced + '/' + s.totalRequired + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '<div class="bd-summary-line">完了: ' + completeCount + '人 / 不足: ' + deficitCount + '人</div>';
+      body.innerHTML = html;
+    }
+
     function rR() {
       const cp = document.getElementById('checkPanel'); if (cp) cp.innerHTML = '';
       // 時間キーを正規化（古いファイルの '16:00' 形式 → '16' 形式）
@@ -2349,11 +2496,13 @@
         }
       }
       if (edited) scheduleAutoSave();
-      const p = countPlaced();
-      const tot = R.total || 0;
+      const summary = computeStudentSummary();
+      const p = summary.grandTotalPlaced;
+      const tot = summary.grandTotalRequired;
       document.getElementById('pNum').innerHTML = p + '<span>/' + tot + 'コマ</span>';
       const rate = tot > 0 ? (p / tot * 100).toFixed(1) : (p > 0 ? '100.0' : '0.0');
       document.getElementById('rTxt').textContent = '配置率 ' + rate + '%';
+      renderStudentBreakdown(summary);
       const ub = document.getElementById('uBadge'), uT = R.unplaced.reduce((s, u) => s + u.count, 0); if (uT > 0) { ub.style.display = ''; ub.textContent = '⚠️ 未配置: ' + uT + 'コマ'; } else ub.style.display = 'none';
       const mb = document.getElementById('mBadge'); if (edited) { mb.style.display = ''; mb.textContent = '✏️ 手動編集あり'; } else mb.style.display = 'none';
       const tabs = document.getElementById('wTabs'); tabs.innerHTML = '';

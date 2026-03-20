@@ -32,12 +32,29 @@ from openpyxl.styles import Font, Alignment, PatternFill
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB上限
-# SECRET_KEYが未設定の場合は固定のフォールバックキーを使用
-# （Render再起動でセッションが消えないようにするため）
-app.secret_key = os.environ.get('SECRET_KEY', 'booth-schedule-generator-default-key-2026')
+# SECRET_KEY: 環境変数推奨。未設定時はランダム生成（再起動でセッション無効化）
+_secret_key = os.environ.get('SECRET_KEY', '')
+if not _secret_key:
+    _secret_key = secrets.token_hex(32)
+    print("[SECURITY WARNING] SECRET_KEY が未設定です。ランダムキーを生成しました。"
+          "再起動でセッションが無効化されます。本番環境では環境変数に設定してください。", flush=True)
+app.secret_key = _secret_key
 
-# パスワード（環境変数 or デフォルト）
-APP_PASSWORD = os.environ.get('APP_PASSWORD', 'booth2026')
+# パスワード（環境変数必須。未設定時はランダム生成＋ログ表示）
+APP_PASSWORD = os.environ.get('APP_PASSWORD', '')
+if not APP_PASSWORD:
+    APP_PASSWORD = secrets.token_urlsafe(12)
+    print(f"[SECURITY WARNING] APP_PASSWORD が未設定です。一時パスワード: {APP_PASSWORD}", flush=True)
+
+# ========== セキュリティヘッダー ==========
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    return response
 
 # 一時ファイル管理（ディスクベース: gunicornマルチワーカー対応）
 UPLOAD_BASE = os.path.join(tempfile.gettempdir(), 'booth_sessions')
@@ -175,6 +192,7 @@ def _save_result_to_disk(sid, result):
 def _save_result_to_supabase(sid, saveable):
     """スケジュール結果をSupabaseに永続保存 (upsert)"""
     try:
+        sid = _sanitize_postgrest_value(sid, 'sid')
         _supabase_request('POST', 'schedule_sessions', '', body={
             'sid': sid,
             'result_data': saveable,
@@ -197,6 +215,7 @@ def _load_result_from_disk(sid):
 def _load_result_from_supabase(sid):
     """Supabaseからスケジュール結果を読み込む"""
     try:
+        sid = _sanitize_postgrest_value(sid, 'sid')
         rows = _supabase_request('GET', 'schedule_sessions', f'sid=eq.{sid}&select=result_data')
         if rows and len(rows) > 0:
             return rows[0].get('result_data')
@@ -215,14 +234,47 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+# ========== ログインレートリミッター ==========
+_login_attempts = {}  # {ip: [(timestamp, ...), ...]}
+_login_lock = threading.Lock()
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_WINDOW_SEC = 60
+_LOGIN_LOCKOUT_SEC = 300
+
+def _check_login_rate_limit(ip):
+    """ログイン試行のレートリミット。ロックアウト中なら残り秒数を返す、OKなら0"""
+    now = time.time()
+    with _login_lock:
+        attempts = _login_attempts.get(ip, [])
+        # 古いエントリを除去
+        attempts = [t for t in attempts if now - t < _LOGIN_LOCKOUT_SEC]
+        _login_attempts[ip] = attempts
+        # ウィンドウ内の試行回数
+        recent = [t for t in attempts if now - t < _LOGIN_WINDOW_SEC]
+        if len(recent) >= _LOGIN_MAX_ATTEMPTS:
+            oldest = min(recent)
+            return int(_LOGIN_LOCKOUT_SEC - (now - oldest))
+    return 0
+
+def _record_login_failure(ip):
+    """ログイン失敗を記録"""
+    with _login_lock:
+        _login_attempts.setdefault(ip, []).append(time.time())
+
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     error = None
     if request.method == 'POST':
+        ip = request.remote_addr or 'unknown'
+        lockout = _check_login_rate_limit(ip)
+        if lockout > 0:
+            error = f'ログイン試行回数を超えました。{lockout}秒後に再試行してください'
+            return render_template('login.html', error=error)
         pw = request.form.get('password', '')
         if pw == APP_PASSWORD:
             session['authenticated'] = True
             return redirect(url_for('index'))
+        _record_login_failure(ip)
         error = 'パスワードが違います'
     return render_template('login.html', error=error)
 
@@ -235,7 +287,11 @@ def logout():
             shutil.rmtree(sdir, ignore_errors=True)
         if hasattr(get_session_data, '_cache') and sid in get_session_data._cache:
             del get_session_data._cache[sid]
-        _supabase_request('DELETE', 'schedule_sessions', f'sid=eq.{sid}')
+        try:
+            safe_sid = _sanitize_postgrest_value(sid, 'sid')
+            _supabase_request('DELETE', 'schedule_sessions', f'sid=eq.{safe_sid}')
+        except ValueError:
+            pass  # 不正なsidの場合はSupabase削除をスキップ
     session.clear()
     return redirect(url_for('login_page'))
 
@@ -335,6 +391,41 @@ WEIGHT_BOUNDS = {
     'empty_booth': (0, 100),
 }
 
+def _sanitize_postgrest_value(value, expected_type='string'):
+    """PostgREST クエリパラメータのバリデーション。不正値は ValueError を送出"""
+    if value is None:
+        raise ValueError('値が必要です')
+    s = str(value).strip()
+    if not s:
+        raise ValueError('空の値は許可されません')
+    if expected_type == 'uuid':
+        if not re.match(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$', s):
+            raise ValueError('不正なID形式です')
+        return s
+    if expected_type == 'int':
+        try:
+            n = int(s)
+        except (ValueError, TypeError):
+            raise ValueError('整数値が必要です')
+        if n < 0 or n > 9999:
+            raise ValueError('数値が範囲外です')
+        return n
+    if expected_type == 'label':
+        if len(s) > 50:
+            raise ValueError('ラベルが長すぎます')
+        if not re.match(r'^[\w\u3000-\u9FFF\u30A0-\u30FF\u3040-\u309F\-]+$', s):
+            raise ValueError('ラベルに不正な文字が含まれています')
+        return s
+    if expected_type == 'sid':
+        if not re.match(r'^[a-zA-Z0-9_\-]{8,64}$', s):
+            raise ValueError('不正なセッションID形式です')
+        return s
+    # default: 危険文字を拒否 (PostgREST演算子注入防止)
+    if any(c in s for c in '&=|;'):
+        raise ValueError('不正な文字が含まれています')
+    return s
+
+
 def _supabase_request(method, table, params='', body=None, headers_extra=None):
     """Supabase REST API へのリクエストヘルパー"""
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
@@ -391,9 +482,14 @@ def _restore_booth_files(b64_str, session_dir):
         raw = base64.b64decode(b64_str)
         buf = io.BytesIO(raw)
         result = {}
+        real_session_dir = os.path.realpath(session_dir)
         with zipfile.ZipFile(buf, 'r') as zf:
             for name in zf.namelist():
-                dest = os.path.join(session_dir, name.replace('/', os.sep))
+                dest = os.path.realpath(os.path.join(session_dir, name.replace('/', os.sep)))
+                # パストラバーサル防止: セッションディレクトリ外への展開をブロック
+                if not dest.startswith(real_session_dir + os.sep) and dest != real_session_dir:
+                    print(f"[cloud_load] path traversal blocked: {name}", flush=True)
+                    continue
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with zf.open(name) as src, open(dest, 'wb') as dst:
                     dst.write(src.read())
@@ -2023,7 +2119,8 @@ def get_teachers():
             'boothPref': booth_pref,
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'teachers error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
 @app.route('/api/upload', methods=['POST'])
 @login_required
@@ -2434,8 +2531,8 @@ def generate():
             'weeklyTeachers': _sanitize_weekly_teachers(wt),
         })
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'API error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
 @app.route('/api/download')
 @login_required
@@ -2517,8 +2614,8 @@ def download():
         )
         return send_file(output_path, as_attachment=True, download_name='時間割_出力.xlsx')
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'API error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
 def _build_state_json(sd):
     """セッションデータからスケジュール全状態のJSONシリアライズ用dictを構築"""
@@ -2588,8 +2685,8 @@ def download_json():
         return send_file(json_path, as_attachment=True, download_name='schedule_data.json',
                          mimetype='application/json')
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'API error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
 
 # ========== クラウド保存/復元 (schedule_snapshots) ==========
@@ -2605,7 +2702,10 @@ def cloud_save():
 
     try:
         data = request.get_json(silent=True) or {}
-        label = data.get('label', 'latest')
+        try:
+            label = _sanitize_postgrest_value(data.get('label', 'latest'), 'label')
+        except ValueError as ve:
+            return jsonify({'error': str(ve)}), 400
 
         state = _build_state_json(sd)
         week_dates = res.get('week_dates') or {}
@@ -2614,6 +2714,11 @@ def cloud_save():
         if not year or not month:
             year = data.get('year', _dt.datetime.now().year)
             month = data.get('month', _dt.datetime.now().month)
+        try:
+            year = _sanitize_postgrest_value(year, 'int')
+            month = _sanitize_postgrest_value(month, 'int')
+        except ValueError as ve:
+            return jsonify({'error': str(ve)}), 400
 
         settings = {
             'officeRule': res.get('office_rule', {}),
@@ -2663,16 +2768,16 @@ def cloud_save():
         except HTTPError as he:
             err_body = he.read().decode('utf-8')[:500]
             print(f"[cloud_save] Supabase HTTPError: {he.code} {err_body}", flush=True)
-            return jsonify({'ok': False, 'error': f'Supabase error: {he.code}', 'detail': err_body}), 502
+            return jsonify({'ok': False, 'error': 'クラウド保存に失敗しました'}), 502
         except URLError as ue:
             print(f"[cloud_save] Supabase URLError: {ue}", flush=True)
-            return jsonify({'ok': False, 'error': f'Supabase connection error: {ue}'}), 502
+            return jsonify({'ok': False, 'error': 'クラウド接続に失敗しました'}), 502
 
         print(f"[cloud_save] saved {year}/{month} label={label}", flush=True)
         return jsonify({'ok': True, 'year': year, 'month': month, 'label': label})
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'API error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
 
 @app.route('/api/cloud_list')
@@ -2685,7 +2790,8 @@ def cloud_list():
             '&order=updated_at.desc&limit=50')
         return jsonify({'ok': True, 'snapshots': rows or []})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'cloud_list error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
 
 @app.route('/api/cloud_load', methods=['POST'])
@@ -2693,9 +2799,10 @@ def cloud_list():
 def cloud_load():
     """スナップショットをセッションに復元"""
     data = request.get_json(silent=True) or {}
-    snapshot_id = data.get('id')
-    if not snapshot_id:
-        return jsonify({'error': 'スナップショットIDが必要です'}), 400
+    try:
+        snapshot_id = _sanitize_postgrest_value(data.get('id'), 'uuid')
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
 
     try:
         # booth_template は大きいため、専用リクエストで取得 (timeout長め)
@@ -2711,7 +2818,7 @@ def cloud_load():
                 rows = json.loads(resp.read().decode('utf-8'))
         except (URLError, HTTPError) as e:
             print(f"[cloud_load] Supabase fetch error: {e}", flush=True)
-            return jsonify({'error': f'Supabase接続エラー: {e}'}), 502
+            return jsonify({'error': 'クラウド接続に失敗しました'}), 502
         if not rows:
             return jsonify({'error': 'スナップショットが見つかりません'}), 404
 
@@ -2776,8 +2883,8 @@ def cloud_load():
             'hasBoothTemplate': has_booth,
         })
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'API error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
 
 @app.route('/api/cloud_delete', methods=['POST'])
@@ -2785,14 +2892,16 @@ def cloud_load():
 def cloud_delete():
     """スナップショットを削除"""
     data = request.get_json(silent=True) or {}
-    snapshot_id = data.get('id')
-    if not snapshot_id:
-        return jsonify({'error': 'IDが必要です'}), 400
+    try:
+        snapshot_id = _sanitize_postgrest_value(data.get('id'), 'uuid')
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
     try:
         _supabase_request('DELETE', 'schedule_snapshots', f'id=eq.{snapshot_id}')
         return jsonify({'ok': True})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'cloud_delete error: {traceback.format_exc()}')
+        return jsonify({'error': '削除中にエラーが発生しました'}), 500
 
 
 @app.route('/api/upload_booth_template', methods=['POST'])
@@ -2870,6 +2979,11 @@ def upload_booth_template():
     year = week_dates.get('year', 0)
     month = week_dates.get('month', 0)
     booth_saved = False
+    try:
+        year = _sanitize_postgrest_value(year, 'int') if year else 0
+        month = _sanitize_postgrest_value(month, 'int') if month else 0
+    except ValueError:
+        year, month = 0, 0
     if year and month and SUPABASE_URL and SUPABASE_SERVICE_KEY:
         b64 = _encode_booth_files(sd)
         if b64:
@@ -3134,8 +3248,8 @@ def load_saved():
     except json.JSONDecodeError as e:
         return jsonify({'error': f'スケジュールデータの解析に失敗: {e}'}), 500
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f'API error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
 
     # weeklyTeachers を取得（_schedule_data JSONに含まれている場合）
     weekly_teachers = state.get('weeklyTeachers') or state.get('weekly_teachers')
@@ -3335,6 +3449,8 @@ def update_schedule():
     res['schedule'] = schedule
     res['schedule_json'] = sched_json
     res['unplaced'] = data.get('unplaced', [])
+    if data.get('students'):
+        res['students'] = data['students']
     sd['result'] = res
     save_session_result(sd)
 
