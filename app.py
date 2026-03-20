@@ -2585,6 +2585,16 @@ def generate():
         )
         placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
 
+        # 自動チェック（生成直後に実行）
+        try:
+            check_issues = check_all(schedule, wt, office_teachers, students, skills)
+        except Exception:
+            app.logger.warning(f'auto check_all failed: {traceback.format_exc()}')
+            check_issues = []
+        _err_count = sum(1 for ci in check_issues if ci['level'] == 'error')
+        _warn_count = sum(1 for ci in check_issues if ci['level'] == 'warn')
+        check_summary = {'errors': _err_count, 'warnings': _warn_count, 'issues': check_issues}
+
         # JSON用にtupleをlistに変換
         schedule_json = []
         for w in schedule:
@@ -2657,6 +2667,7 @@ def generate():
             'students': students_json,
             'weekDates': week_dates,
             'weeklyTeachers': _sanitize_weekly_teachers(wt),
+            'checkSummary': check_summary,
         })
     except Exception as e:
         app.logger.error(f'API error: {traceback.format_exc()}')

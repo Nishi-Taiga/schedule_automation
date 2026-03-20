@@ -2163,9 +2163,11 @@
         updateProgress(100, '完了！ ' + d.placed + '/' + d.total + 'コマ配置');
         await new Promise(r => setTimeout(r, 600));
         R = d; R.originalSchedule = JSON.parse(JSON.stringify(d.schedule)); R.originalUnplaced = JSON.parse(JSON.stringify(d.unplaced));
+        if (d.checkSummary) R.checkSummary = d.checkSummary;
         PW = 0; edited = false; calStudent = null; buildNgMap();
         if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
         hideProgress(); go('result'); rR();
+        if (R.checkSummary) showCheckResults(R.checkSummary);
         cloudSave('latest', true).catch(() => {});
       } catch (e) { hideProgress(); st.textContent = 'エラー: ' + e.message; st.className = 'status err'; } finally { btn.disabled = false; btn.innerHTML = '🚀 スケジュール生成'; }
     }
@@ -2300,6 +2302,7 @@
         await stepDelay(400);
         closeCheckModal();
         await stepDelay(300);
+        R.checkSummary = d;
         showCheckResults(d);
       } catch (e) {
         closeCheckModal();
@@ -2317,8 +2320,10 @@
         const tabs = document.getElementById('wTabs');
         tabs.parentNode.insertBefore(panel, tabs.nextSibling);
       }
+      const pc = computePrimaryCompliance();
+      const pcHtml = pc ? ' <span style="font-size:11px;color:#555;margin-left:10px">希望時間帯率: <b>' + pc.primaryRate + '%</b> (' + pc.primary + '/' + pc.total + ')</span>' : '';
       if (!d.issues || !d.issues.length) {
-        panel.innerHTML = '<div class="check-panel"><div class="check-header all-ok">✅ すべてのチェックに合格しました</div></div>';
+        panel.innerHTML = '<div class="check-panel"><div class="check-header all-ok">✅ すべてのチェックに合格しました' + pcHtml + '</div></div>';
         return;
       }
       const errors = d.issues.filter(i => i.level === 'error');
@@ -2327,6 +2332,7 @@
       html += '<div class="check-header ' + (errors.length ? 'has-error' : 'has-warn') + '" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'">';
       html += (errors.length ? '❌ ' : '⚠️ ');
       html += escHtml(errors.length + '件のエラー / ' + warns.length + '件の警告');
+      html += pcHtml;
       html += ' <span style="font-size:10px;font-weight:400">(クリックで開閉)</span></div>';
       html += '<div class="check-list">';
       for (const issue of d.issues) {
@@ -2443,6 +2449,37 @@
       return { students, grandTotalPlaced, grandTotalRequired };
     }
 
+    // 希望時間帯遵守率（primary compliance）を計算
+    function computePrimaryCompliance() {
+      if (!R || !R.schedule || !R.students) return null;
+      const availMap = {}, backupMap = {};
+      for (const s of R.students) {
+        availMap[s.name] = s.avail ? new Set(s.avail.map(a => a[0] + '|' + a[1])) : null;
+        backupMap[s.name] = s.backup_avail ? new Set(s.backup_avail.map(a => a[0] + '|' + a[1])) : new Set();
+      }
+      let primary = 0, backup = 0, other = 0;
+      for (const week of R.schedule) {
+        for (const [day, dayData] of Object.entries(week)) {
+          for (const [ts, booths] of Object.entries(dayData)) {
+            for (const b of booths) {
+              for (const slot of b.slots) {
+                const sname = slot[1];
+                const key = day + '|' + ts;
+                const avail = availMap[sname];
+                const bkp = backupMap[sname] || new Set();
+                if (avail === null || avail.has(key)) primary++;
+                else if (bkp.has(key)) backup++;
+                else other++;
+              }
+            }
+          }
+        }
+      }
+      const total = primary + backup + other;
+      return { primary, backup, other, total,
+               primaryRate: total > 0 ? (primary / total * 100).toFixed(1) : '0.0' };
+    }
+
     // 生徒別内訳テーブルの描画
     function renderStudentBreakdown(summary) {
       const container = document.getElementById('studentBreakdown');
@@ -2486,6 +2523,7 @@
 
     function rR() {
       const cp = document.getElementById('checkPanel'); if (cp) cp.innerHTML = '';
+      if (R && R.checkSummary) showCheckResults(R.checkSummary);
       // 時間キーを正規化（古いファイルの '16:00' 形式 → '16' 形式）
       if (R.schedule && R.schedule.length > 0 && R.schedule[0]) {
         const firstWeek = R.schedule[0];
