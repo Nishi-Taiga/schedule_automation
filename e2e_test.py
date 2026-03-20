@@ -1,4 +1,4 @@
-"""Playwright E2E test for schedule_automation v0.17.2 deployed environment."""
+"""Playwright E2E test for schedule_automation v0.18.0 deployed environment."""
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -65,9 +65,9 @@ def run_tests():
             page.goto(BASE_URL, wait_until="networkidle", timeout=60000)
             page.fill('input[type="password"]', PASSWORD)
             page.click('button[type="submit"]')
-            page.wait_for_selector("text=v0.17.2", timeout=30000)
+            page.wait_for_selector("text=v0.18.0", timeout=30000)
             page.screenshot(path=os.path.join(SCREENSHOT_DIR, "01_login.png"))
-            print("  PASS: Login successful, v0.17.2 confirmed")
+            print("  PASS: Login successful, v0.18.0 confirmed")
             results.append(("Login", True))
         except Exception as e:
             page.screenshot(path=os.path.join(SCREENSHOT_DIR, "01_login_fail.png"))
@@ -190,7 +190,7 @@ def run_tests():
         page2.set_default_timeout(120000)
         try:
             page2.goto(BASE_URL, wait_until="networkidle", timeout=60000)
-            page2.wait_for_selector("text=v0.17.2", timeout=15000)
+            page2.wait_for_selector("text=v0.18.0", timeout=15000)
 
             page2.click('#advancedResumeOptions summary')
             page2.wait_for_timeout(500)
@@ -218,7 +218,7 @@ def run_tests():
                 results.append(("JSON restore", False))
             else:
                 restore_btn.click()
-                # v0.17.2: JSON restore now goes to settings screen first
+                # v0.18.0: JSON restore now goes to settings screen first
                 page2.wait_for_selector("#pSettings", state="visible", timeout=120000)
                 page2.wait_for_timeout(2000)
                 page2.screenshot(path=os.path.join(SCREENSHOT_DIR, "06c_json_settings.png"))
@@ -262,7 +262,7 @@ def run_tests():
             results.append(("JSON restore", False))
 
         # ==================== Test 7: Excel restore -> download (KEY FIX TEST) ====================
-        print("[Test 7] Excel restore -> download booth sheets (v0.17.2 key test)...")
+        print("[Test 7] Excel restore -> download booth sheets (v0.18.0 key test)...")
         restore_file = downloaded_path if downloaded_path and os.path.exists(downloaded_path) else OUTPUT_FILE
         if os.path.exists(restore_file):
             print(f"  Using: {os.path.basename(restore_file)}")
@@ -270,7 +270,7 @@ def run_tests():
             page3.set_default_timeout(120000)
             try:
                 page3.goto(BASE_URL, wait_until="networkidle", timeout=60000)
-                page3.wait_for_selector("text=v0.17.2", timeout=15000)
+                page3.wait_for_selector("text=v0.18.0", timeout=15000)
 
                 page3.click('#advancedResumeOptions summary')
                 page3.wait_for_timeout(500)
@@ -316,7 +316,7 @@ def run_tests():
 
     # Summary
     print("\n" + "=" * 50)
-    print("E2E Test Summary (v0.17.2)")
+    print("E2E Test Summary (v0.18.0)")
     print("=" * 50)
     passed = sum(1 for _, r in results if r is True)
     failed = sum(1 for _, r in results if r is False)
