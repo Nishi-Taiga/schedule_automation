@@ -1816,7 +1816,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         count = 0
         for day, ts in s['avail']:
             for b in wt.get(day, {}).get(ts, []):
-                t = b.get('teacher', '') if isinstance(b, dict) else ''
+                t = b.get('teacher', '') if isinstance(b, dict) else b
                 if t and t not in s.get('ng_teachers', set()):
                     if any(can_teach(t, s['grade'], subj, skills) for subj in s['needs']):
                         count += 1
@@ -1930,6 +1930,9 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                         continue
                     day_b, ts_b, bi_b, si_b, s_b, subj_b = placed[j]
                     if s_a['name'] == s_b['name']:
+                        continue
+                    # 同一ブース内のエントリは交換しない（同一オブジェクトへの二重pop防止）
+                    if day_a == day_b and ts_a == ts_b and bi_a == bi_b:
                         continue
                     # 固定授業は交換しない
                     if any((day_b, ts_b) == (fd, ft) for fd, ft, _ in s_b.get('fixed', [])):
