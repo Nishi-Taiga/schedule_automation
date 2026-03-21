@@ -477,7 +477,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 11px;
-      min-width: 920px;
+      min-width: 736px;
       table-layout: fixed;
       border: 2px solid #b8c5d4
     }
@@ -1361,6 +1361,15 @@
       line-height: 1.6
     }
 
+    .step-list { text-align: left; margin: 16px 0 8px; }
+    .step-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; color: var(--ink3); transition: color .3s; }
+    .step-item.active { color: var(--ink); font-weight: 600; }
+    .step-item.done { color: #16a34a; }
+    .step-item.error { color: #dc2626; }
+    .step-icon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .step-icon svg { width: 18px; height: 18px; }
+    .step-spinner { width: 18px; height: 18px; border: 2.5px solid #e2e8f0; border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+
     .check-panel { margin: 12px 0; border-radius: 10px; overflow: hidden; }
     .check-header { padding: 10px 16px; font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
     .check-header.has-error { background: #fef2f2; color: #b91c1c; }
@@ -2212,15 +2221,68 @@
       } catch (e) { hideProgress(); st.textContent = 'エラー: ' + e.message; st.className = 'status err'; } finally { btn.disabled = false; btn.innerHTML = '🚀 スケジュール生成'; }
     }
 
+    /* ---- Step progress helpers ---- */
+    const STEP_PENDING_ICON = '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="#cbd5e1" stroke-width="2"/></svg>';
+    const STEP_DONE_ICON = '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" fill="#16a34a"/><path d="M6.5 10.5l2 2 5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const STEP_ERROR_ICON = '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" fill="#dc2626"/><path d="M7 7l6 6M13 7l-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>';
+    function showStepProgress(title, steps) {
+      const root = document.getElementById('modalRoot');
+      let h = '<div class="progress-bg"><div class="progress-box"><div class="progress-spinner"></div><div class="progress-title">' + title + '</div><div class="step-list" id="stepList">';
+      steps.forEach((s, i) => { h += '<div class="step-item" id="step' + i + '"><div class="step-icon">' + STEP_PENDING_ICON + '</div><span>' + s + '</span></div>'; });
+      h += '</div></div></div>';
+      root.innerHTML = h;
+    }
+    function setStep(idx, status) {
+      const el = document.getElementById('step' + idx); if (!el) return;
+      el.className = 'step-item ' + status;
+      const iconEl = el.querySelector('.step-icon');
+      if (status === 'active') iconEl.innerHTML = '<div class="step-spinner"></div>';
+      else if (status === 'done') iconEl.innerHTML = STEP_DONE_ICON;
+      else if (status === 'error') iconEl.innerHTML = STEP_ERROR_ICON;
+    }
+    function finishStepProgress(ok) {
+      const spinner = document.querySelector('#modalRoot .progress-spinner'); if (spinner) spinner.style.display = 'none';
+      const title = document.querySelector('#modalRoot .progress-title');
+      if (title) { title.textContent = ok ? 'ダウンロード完了' : 'エラーが発生しました'; title.style.color = ok ? '#16a34a' : '#dc2626'; }
+      setTimeout(hideProgress, ok ? 1500 : 3000);
+    }
+
     async function dlExcel() {
-      if (edited) {
-        await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) });
-        try {
-          const fb = await fetch('/api/submit_feedback', { method: 'POST' }).then(r => r.json());
-          if (fb.changes_count > 0) showSaveIndicator('学習データに' + fb.changes_count + '件の変更を記録');
-        } catch (e) { console.warn('学習フィードバック送信失敗:', e); }
+      const steps = [];
+      if (edited) { steps.push('スケジュールを保存'); steps.push('学習データを送信'); }
+      steps.push('Excelファイルを生成');
+      steps.push('ダウンロード');
+      showStepProgress('ブース表ダウンロード', steps);
+      let si = 0;
+      try {
+        if (edited) {
+          setStep(si, 'active');
+          await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced }) });
+          setStep(si, 'done'); si++;
+          setStep(si, 'active');
+          try {
+            const fb = await fetch('/api/submit_feedback', { method: 'POST' }).then(r => r.json());
+            if (fb.changes_count > 0) showSaveIndicator('学習データに' + fb.changes_count + '件の変更を記録');
+          } catch (e) { console.warn('学習フィードバック送信失敗:', e); }
+          setStep(si, 'done'); si++;
+        }
+        setStep(si, 'active');
+        const res = await fetch('/api/download');
+        if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'ダウンロードに失敗しました'); }
+        const blob = await res.blob();
+        setStep(si, 'done'); si++;
+        setStep(si, 'active');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = '時間割_出力.xlsx'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        setStep(si, 'done');
+        finishStepProgress(true);
+      } catch (e) {
+        setStep(si, 'error');
+        const title = document.querySelector('#modalRoot .progress-title');
+        if (title) { title.textContent = e.message; title.style.color = '#dc2626'; }
+        const spinner = document.querySelector('#modalRoot .progress-spinner'); if (spinner) spinner.style.display = 'none';
+        setTimeout(hideProgress, 3000);
       }
-      window.location.href = '/api/download';
     }
     async function dlJson() {
       if (edited) {
@@ -2921,7 +2983,7 @@
     function rW(wrap, wi) {
       const ws = R.schedule[wi];
       const tbl = document.createElement('table'); tbl.className = 'sch';
-      let hd = '<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>'; for (const d of D) { const dl = getDateLabel(wi, d); hd += '<th style="width:calc((100% - 82px)/6)' + (d === '土' ? ';background:#edf2f7' : '') + '">' + d + (dl ? '<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">' + dl + '</span>' : '') + '</th>'; }
+      let hd = '<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>'; for (const d of D) { const dl = getDateLabel(wi, d); hd += '<th style="width:calc((100% - 82px)/6*0.8)' + (d === '土' ? ';background:#edf2f7' : '') + '">' + d + (dl ? '<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">' + dl + '</span>' : '') + '</th>'; }
       hd += '</tr><tr class="or"><td colspan="2">教室業務</td>';
       for (const d of D) {
         const ov = (R.officeTeachers[wi] || {})[d] || '';
