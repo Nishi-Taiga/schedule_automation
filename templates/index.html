@@ -1458,40 +1458,46 @@
       <button class="step-btn" id="sb3" onclick="go('result')">3. 結果</button>
     </div>
     <div id="pUpload" class="card">
-      <h2>ファイルアップロード</h2>
-      <h3 style="font-size:13px;margin-bottom:6px">元シート（講師回答ファイルから集約）</h3>
-      <div id="srcSurveyMode">
-        <div class="survey-zone" id="surveyZone">
-          <div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div>
-          <div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx"
-            multiple onchange="onSurveyFiles(this)">
-          <div style="margin-top:6px;position:relative;z-index:2"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂
-              フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSurvey(this)">
+      <h2>新規作成</h2>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1;min-width:280px">
+          <h3 style="font-size:13px;margin-bottom:6px;margin-top:0">元シート（講師回答ファイルから集約）</h3>
+          <div id="srcSurveyMode">
+            <div class="survey-zone" id="surveyZone">
+              <div class="survey-label">📋 講師回答ファイル (.xlsx 複数選択可)</div>
+              <div class="survey-desc" id="surveyDesc">各講師の出勤可能日時の回答ファイルをまとめて選択</div><input type="file" accept=".xlsx"
+                multiple onchange="onSurveyFiles(this)">
+              <div style="margin-top:6px;position:relative;z-index:2"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂
+                  フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="onFolderSurvey(this)">
+              </div>
+              <div class="survey-files" id="surveyFileList"></div>
+            </div>
           </div>
-          <div class="survey-files" id="surveyFileList"></div>
         </div>
-      </div>
-      <h3 style="font-size:13px;margin-bottom:6px;margin-top:16px">ブース表（メタデータ＋週別ブース表）</h3>
-      <div id="boothConsolMode">
-        <div class="consol-zone" id="consolMetaZone">
-          <div class="consol-label">📋 メタデータファイル (.xlsx)</div>
-          <div class="consol-desc" id="consolMetaDesc">必要コマ数・一覧表(指導科目)・ブース希望シートを含むファイル</div><input type="file"
-            accept=".xlsx" onchange="onConsolMeta(this)">
-        </div>
-        <div class="consol-zone" id="consolWeekZone">
-          <div class="consol-label">📁 週別ブース表ファイル (.xlsx 複数選択可)</div>
-          <div class="consol-desc" id="consolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx"
-            multiple onchange="onConsolWeeks(this)">
-          <div style="margin-top:6px;position:relative;z-index:2"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂
-              フォルダから一括選択</button><input type="file" webkitdirectory style="display:none"
-              onchange="onFolderWeeks(this)">
+        <div style="flex:1;min-width:280px">
+          <h3 style="font-size:13px;margin-bottom:6px;margin-top:0">ブース表（メタデータ＋週別ブース表）</h3>
+          <div id="boothConsolMode">
+            <div class="consol-zone" id="consolMetaZone">
+              <div class="consol-label">📋 メタデータファイル (.xlsx)</div>
+              <div class="consol-desc" id="consolMetaDesc">必要コマ数・一覧表(指導科目)・ブース希望シートを含むファイル</div><input type="file"
+                accept=".xlsx" onchange="onConsolMeta(this)">
+            </div>
+            <div class="consol-zone" id="consolWeekZone">
+              <div class="consol-label">📁 週別ブース表ファイル (.xlsx 複数選択可)</div>
+              <div class="consol-desc" id="consolWeekDesc">第1週、第2週...の週別ブース表ファイルを選択</div><input type="file" accept=".xlsx"
+                multiple onchange="onConsolWeeks(this)">
+              <div style="margin-top:6px;position:relative;z-index:2"><button class="folder-btn" onclick="this.nextElementSibling.click()">📂
+                  フォルダから一括選択</button><input type="file" webkitdirectory style="display:none"
+                  onchange="onFolderWeeks(this)">
+              </div>
+              <div class="consol-files" id="consolWeekList"></div>
+            </div>
+            <div class="bg" style="margin-top:8px"><button class="btn btn-s" id="consolBtn" disabled
+                onclick="doConsolidate()">集約して統合</button></div>
+            <div id="consolResult"></div>
+            <div class="file-note">※ メタデータファイルの古い週シートは自動削除されます</div>
           </div>
-          <div class="consol-files" id="consolWeekList"></div>
         </div>
-        <div class="bg" style="margin-top:8px"><button class="btn btn-s" id="consolBtn" disabled
-            onclick="doConsolidate()">集約して統合</button></div>
-        <div id="consolResult"></div>
-        <div class="file-note">※ メタデータファイルの古い週シートは自動削除されます</div>
       </div>
       <div class="bg"><button class="btn btn-p" id="toS" disabled onclick="go('settings')">次へ: 設定 →</button></div>
       <div class="status" id="upSt"></div>
