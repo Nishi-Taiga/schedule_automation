@@ -2051,6 +2051,37 @@ def extract_week_dates(booth_wb, num_weeks):
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== Excel出力 ==========
+def _copy_worksheet_fast(src_ws, dst_ws):
+    """Cross-workbook worksheet copy with style caching."""
+    style_cache = {}
+    for row in src_ws.iter_rows():
+        for cell in row:
+            dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
+            dst_cell.value = cell.value
+            if cell.has_style:
+                style_key = (
+                    str(cell.font), str(cell.border), str(cell.fill),
+                    cell.number_format, str(cell.protection), str(cell.alignment)
+                )
+                if style_key not in style_cache:
+                    style_cache[style_key] = (
+                        copy(cell.font), copy(cell.border), copy(cell.fill),
+                        cell.number_format, copy(cell.protection), copy(cell.alignment)
+                    )
+                cached = style_cache[style_key]
+                dst_cell.font = cached[0]
+                dst_cell.border = cached[1]
+                dst_cell.fill = cached[2]
+                dst_cell.number_format = cached[3]
+                dst_cell.protection = cached[4]
+                dst_cell.alignment = cached[5]
+    for merged_range in src_ws.merged_cells.ranges:
+        dst_ws.merge_cells(str(merged_range))
+    for col_letter, dim in src_ws.column_dimensions.items():
+        dst_ws.column_dimensions[col_letter].width = dim.width
+    for row_num, dim in src_ws.row_dimensions.items():
+        dst_ws.row_dimensions[row_num].height = dim.height
+
 def _write_schedule_to_ws(ws, wsched, office_data):
     """1つの週シートにスケジュールデータを書き込む共通処理"""
     teacher_font = Font(name='MS PGothic', size=8)
@@ -2065,11 +2096,11 @@ def _write_schedule_to_ws(ws, wsched, office_data):
             for day in DAYS:
                 _, lc, gc, sc, sjc = DAY_COLS[day]
                 try: ws.cell(r1, lc).value = None
-                except: pass
+                except Exception: pass
                 for c in [gc, sc, sjc]:
                     for r in [r1, r2]:
                         try: ws.cell(r, c).value = None
-                        except: pass
+                        except Exception: pass
 
     # 書き込み
     for tl, (sr, nb) in LAYOUT.items():
@@ -2119,7 +2150,7 @@ def _write_schedule_to_ws(ws, wsched, office_data):
                         c.fill = holiday_fill
                         c.font = holiday_font
                         c.alignment = Alignment(horizontal='center', vertical='center')
-                except: pass
+                except Exception: pass
             if t == '休塾日':
                 all_cols = DAY_COLS[day]
                 for tl, (sr, nb) in LAYOUT.items():
@@ -2130,7 +2161,7 @@ def _write_schedule_to_ws(ws, wsched, office_data):
                                 try:
                                     cell = ws.cell(r, col)
                                     cell.fill = holiday_fill
-                                except: pass
+                                except Exception: pass
 
 def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None, week_file_paths=None, progress_fn=None):
     num_weeks = len(schedule)
@@ -2160,24 +2191,8 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
             src_ws = week_wb[src_sn]
             dst_ws = wb.create_sheet(src_sn)
 
-            # セル・スタイル・結合・列幅・行高さをコピー
-            for row in src_ws.iter_rows():
-                for cell in row:
-                    dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
-                    dst_cell.value = cell.value
-                    if cell.has_style:
-                        dst_cell.font = copy(cell.font)
-                        dst_cell.border = copy(cell.border)
-                        dst_cell.fill = copy(cell.fill)
-                        dst_cell.number_format = cell.number_format
-                        dst_cell.protection = copy(cell.protection)
-                        dst_cell.alignment = copy(cell.alignment)
-            for merged_range in src_ws.merged_cells.ranges:
-                dst_ws.merge_cells(str(merged_range))
-            for col_letter, dim in src_ws.column_dimensions.items():
-                dst_ws.column_dimensions[col_letter].width = dim.width
-            for row_num, dim in src_ws.row_dimensions.items():
-                dst_ws.row_dimensions[row_num].height = dim.height
+            # セル・スタイル・結合・列幅・行高さをコピー（スタイルキャッシュ付き）
+            _copy_worksheet_fast(src_ws, dst_ws)
 
             week_wb.close()
 
@@ -2238,7 +2253,24 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
             ws_state.cell(i // CHUNK + 1, 1, data_str[i:i+CHUNK])
 
     _prog(92, 'ファイルを保存中...')
-    wb.save(output_path)
+    save_error = [None]
+    save_done = threading.Event()
+    def _do_save():
+        try:
+            wb.save(output_path)
+        except Exception as e:
+            save_error[0] = e
+        finally:
+            save_done.set()
+    save_thread = threading.Thread(target=_do_save, daemon=True)
+    save_thread.start()
+    pct = 92
+    while not save_done.wait(timeout=3.0):
+        pct = min(pct + 1, 99)
+        _prog(pct, 'ファイルを保存中...')
+    save_thread.join(timeout=5)
+    if save_error[0]:
+        raise RuntimeError(f'Excelファイルの保存に失敗しました: {save_error[0]}') from save_error[0]
     wb.close()
     _prog(100, '完了')
 
@@ -2712,51 +2744,7 @@ def _prepare_excel(sd, progress_fn=None):
     _prog(5, 'データを準備中...')
 
     # スケジュール全状態をJSON化してExcelに埋め込む（再読み込み用）
-    state_json = {
-        'schedule': res.get('schedule_json', []),
-        'unplaced': res.get('unplaced', []),
-        'officeTeachers': res.get('office_teachers', []),
-        'officeRule': res.get('office_rule', {}),
-        'boothPref': res.get('booth_pref', {}),
-        'manualTeachers': res.get('manual_teachers', []),
-        'weekDates': res.get('week_dates'),
-        'total': sum(sum(s['needs'].values()) for s in res.get('students', [])),
-    }
-    # students JSON化
-    students_json = []
-    for s in res.get('students', []):
-        students_json.append({
-            'grade': s['grade'], 'name': s['name'],
-            'needs': s['needs'],
-            'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
-            'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
-            'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
-            'notes': s.get('notes', ''),
-            'ng_teachers': s['ng_teachers'],
-            'wish_teachers': s['wish_teachers'],
-            'ng_students': s['ng_students'],
-            'ng_dates': [list(d) for d in s.get('ng_dates', set())],
-        })
-    state_json['students'] = students_json
-    # weeklyTeachers: srcファイルがあれば再取得、なければresultのキャッシュを利用
-    wt = None
-    if 'src' in sd.get('files', {}):
-        try:
-            wt = load_weekly_teachers(sd['files']['src'])
-        except Exception:
-            pass
-    if not wt:
-        wt = res.get('weekly_teachers')
-    if wt:
-        state_json['weeklyTeachers'] = _sanitize_weekly_teachers(wt)
-    # placed count
-    placed = 0
-    for w in res.get('schedule', []):
-        for d_data in w.values():
-            for bs in d_data.values():
-                for b in bs:
-                    placed += len(b['slots'])
-    state_json['placed'] = placed
+    state_json = _build_state_json(sd)
 
     _prog(10, 'テンプレートを読み込み中...')
 
@@ -2834,7 +2822,7 @@ def download_stream():
     def generate():
         while True:
             try:
-                item = q.get(timeout=120)
+                item = q.get(timeout=300)
             except _queue.Empty:
                 yield f"data: {json.dumps({'error': 'タイムアウト'})}\n\n"
                 break
@@ -2873,14 +2861,7 @@ def _build_state_json(sd):
             'ng_dates': [list(d) for d in s.get('ng_dates', set())],
         })
 
-    wt = None
-    if 'src' in sd.get('files', {}):
-        try:
-            wt = load_weekly_teachers(sd['files']['src'])
-        except Exception:
-            pass
-    if not wt:
-        wt = res.get('weekly_teachers')
+    wt = res.get('weekly_teachers')
 
     placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
     total = sum(sum(s.get('needs', {}).values()) for s in res.get('students', []))
