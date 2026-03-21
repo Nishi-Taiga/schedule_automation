@@ -1467,7 +1467,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.18.2</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.18.3</span></h1>
     </div>
   </div>
   <div class="container">
@@ -2296,13 +2296,28 @@
         setStep(si, 'active', 'Excelファイルを生成 (0%)');
         await new Promise((resolve, reject) => {
           const es = new EventSource('/api/download_stream');
+          let lastProgress = 0;
           es.onmessage = (e) => {
-            const d = JSON.parse(e.data);
-            if (d.error) { es.close(); reject(new Error(d.error)); return; }
-            if (d.progress !== undefined) setStep(si, 'active', 'Excelファイルを生成 (' + d.progress + '%)');
-            if (d.ready) { es.close(); resolve(); }
+            try {
+              const d = JSON.parse(e.data);
+              if (d.error) { es.close(); reject(new Error(d.error)); return; }
+              if (d.progress !== undefined) { lastProgress = d.progress; setStep(si, 'active', 'Excelファイルを生成 (' + d.progress + '%)'); }
+              if (d.ready) { es.close(); resolve(); }
+            } catch (_) {}
           };
-          es.onerror = () => { es.close(); reject(new Error('Excel生成中に接続が切れました')); };
+          es.onerror = () => {
+            es.close();
+            if (lastProgress >= 85) {
+              // 仕上げフェーズ以降で切断 → ファイル生成済みの可能性大、直接DLを試行
+              setStep(si, 'active', 'Excelファイルを生成 (再接続中...)');
+              setTimeout(async () => {
+                try { const r = await fetch('/api/download'); if (r.ok) { resolve(); return; } } catch (_) {}
+                reject(new Error('Excel生成中に接続が切れました'));
+              }, 2000);
+            } else {
+              reject(new Error('Excel生成中に接続が切れました'));
+            }
+          };
         });
         setStep(si, 'done', 'Excelファイルを生成'); si++;
         setStep(si, 'active');

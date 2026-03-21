@@ -2051,8 +2051,10 @@ def extract_week_dates(booth_wb, num_weeks):
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== Excel出力 ==========
-def _copy_worksheet_fast(src_ws, dst_ws):
-    """Cross-workbook worksheet copy with style caching."""
+def _copy_worksheet_fast(src_ws, dst_ws, on_row_done=None):
+    """Cross-workbook worksheet copy with style caching.
+    on_row_done: optional callback called after each row is copied.
+    """
     style_cache = {}
     for row in src_ws.iter_rows():
         for cell in row:
@@ -2075,6 +2077,8 @@ def _copy_worksheet_fast(src_ws, dst_ws):
                 dst_cell.number_format = cached[3]
                 dst_cell.protection = cached[4]
                 dst_cell.alignment = cached[5]
+        if on_row_done:
+            on_row_done()
     for merged_range in src_ws.merged_cells.ranges:
         dst_ws.merge_cells(str(merged_range))
     for col_letter, dim in src_ws.column_dimensions.items():
@@ -2082,8 +2086,10 @@ def _copy_worksheet_fast(src_ws, dst_ws):
     for row_num, dim in src_ws.row_dimensions.items():
         dst_ws.row_dimensions[row_num].height = dim.height
 
-def _write_schedule_to_ws(ws, wsched, office_data):
-    """1つの週シートにスケジュールデータを書き込む共通処理"""
+def _write_schedule_to_ws(ws, wsched, office_data, on_batch_done=None):
+    """1つの週シートにスケジュールデータを書き込む共通処理
+    on_batch_done: optional callback called after each time_label is written.
+    """
     teacher_font = Font(name='MS PGothic', size=8)
     teacher_align = Alignment(textRotation=255, vertical='center', horizontal='center')
     data_font = Font(name='MS PGothic', size=11)
@@ -2130,6 +2136,8 @@ def _write_schedule_to_ws(ws, wsched, office_data):
                         cell.value = v
                         cell.font = data_font
                         cell.alignment = data_align
+        if on_batch_done:
+            on_batch_done()
 
     # 教室業務・チューター
     holiday_fill = PatternFill(start_color='C0C0C0', end_color='C0C0C0', fill_type='solid')
@@ -2162,23 +2170,41 @@ def _write_schedule_to_ws(ws, wsched, office_data):
                                     cell = ws.cell(r, col)
                                     cell.fill = holiday_fill
                                 except Exception: pass
+    if on_batch_done:
+        on_batch_done()
 
 def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None, week_file_paths=None, progress_fn=None):
     num_weeks = len(schedule)
-    def _prog(pct, msg):
-        if progress_fn:
+
+    # --- セル数ベース進捗 ---
+    # フェーズ配分:  準備 0-10%  |  週処理 10-85%  |  仕上げ 85-100%
+    PHASE_WEEKS_START = 10
+    PHASE_WEEKS_END = 85
+    PHASE_FINAL = 85
+    _last_pct = [-1]
+
+    def _emit(pct, msg):
+        pct = max(0, int(pct))
+        if progress_fn and pct != _last_pct[0]:
+            _last_pct[0] = pct
             progress_fn(pct, msg)
 
+    _emit(0, '準備中...')
+    week_range = PHASE_WEEKS_END - PHASE_WEEKS_START  # 75
+
+    # 1週あたりのスケジュール書き込みバッチ数 (time_labels + office = 7)
+    SCHED_BATCHES = len(LAYOUT) + 1  # 6 time_labels + 1 office = 7
+
     if week_file_paths:
-        # 週ファイルから直接読み込んで出力ブックを構築（週シートのみ、メタなし）
         wb = openpyxl.Workbook()
-        # デフォルトシートを削除
         wb.remove(wb.active)
 
         for wi in range(min(num_weeks, len(week_file_paths))):
-            _prog(15 + int(wi / num_weeks * 65), f'第{wi+1}週を書き込み中...')
+            w_base = PHASE_WEEKS_START + (wi / num_weeks) * week_range
+            w_alloc = week_range / num_weeks
+
+            _emit(w_base, f'第{wi+1}週を読み込み中...')
             week_wb = openpyxl.load_workbook(week_file_paths[wi])
-            # ブース表シートを探す
             src_sn = None
             for sn in week_wb.sheetnames:
                 if 'ブース表' in sn and week_wb[sn].sheet_state == 'visible':
@@ -2191,21 +2217,34 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
             src_ws = week_wb[src_sn]
             dst_ws = wb.create_sheet(src_sn)
 
-            # セル・スタイル・結合・列幅・行高さをコピー（スタイルキャッシュ付き）
-            _copy_worksheet_fast(src_ws, dst_ws)
+            # セルコピー (週配分の80%) — 行数ベース進捗
+            copy_alloc = w_alloc * 0.8
+            total_rows = max(src_ws.max_row or 1, 1)
+            rows_done = [0]
 
+            def _on_row(rd=rows_done, tr=total_rows, base=w_base, ca=copy_alloc, w=wi):
+                rd[0] += 1
+                _emit(base + (rd[0] / tr) * ca, f'第{w+1}週 セルコピー中 ({rd[0]}/{tr}行)')
+
+            _copy_worksheet_fast(src_ws, dst_ws, on_row_done=_on_row)
             week_wb.close()
 
-            # スケジュールデータを書き込み
+            # スケジュール書き込み (週配分の20%) — バッチベース進捗
+            sched_base = w_base + copy_alloc
+            sched_alloc = w_alloc * 0.2
+            batches_done = [0]
+
+            def _on_batch(bd=batches_done, tb=SCHED_BATCHES, sb=sched_base, sa=sched_alloc, w=wi):
+                bd[0] += 1
+                _emit(sb + (bd[0] / tb) * sa, f'第{w+1}週 スケジュール書き込み中')
+
             ot = office_teachers[wi] if wi < len(office_teachers) else {}
-            _write_schedule_to_ws(dst_ws, schedule[wi], ot)
+            _write_schedule_to_ws(dst_ws, schedule[wi], ot, on_batch_done=_on_batch)
 
         week_sheets = [sn for sn in wb.sheetnames]
     elif booth_path:
-        # 後方互換: 統合ブックから読み込み
-        _prog(15, 'テンプレートを読み込み中...')
+        _emit(PHASE_WEEKS_START, 'テンプレートを読み込み中...')
         wb = openpyxl.load_workbook(booth_path)
-        # メタシート・システムシートを除外して週シートを特定
         exclude_sheets = set()
         for sn in wb.sheetnames:
             if any(k in sn for k in META_KEYWORDS):
@@ -2216,43 +2255,57 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         num_weeks = min(num_weeks, len(week_sheets))
 
         for wi in range(num_weeks):
-            _prog(20 + int(wi / num_weeks * 60), f'第{wi+1}週を書き込み中...')
+            w_base = PHASE_WEEKS_START + (wi / num_weeks) * week_range
+            w_alloc = week_range / num_weeks
+            batches_done = [0]
+
+            def _on_batch(bd=batches_done, tb=SCHED_BATCHES, base=w_base, alloc=w_alloc, w=wi):
+                bd[0] += 1
+                _emit(base + (bd[0] / tb) * alloc, f'第{w+1}週 スケジュール書き込み中')
+
             ws = wb[week_sheets[wi]]
             ot = office_teachers[wi] if wi < len(office_teachers) else {}
-            _write_schedule_to_ws(ws, schedule[wi], ot)
+            _write_schedule_to_ws(ws, schedule[wi], ot, on_batch_done=_on_batch)
     else:
-        # テンプレートなし: データのみのワークブックを生成
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
 
-    # 古い未配置コマ・データシートがあれば削除（重複防止）
+    # --- 仕上げフェーズ (85-100%) ---
     for old_sn in list(wb.sheetnames):
         if old_sn == '未配置コマ' or old_sn.startswith('_schedule_data'):
             del wb[old_sn]
 
-    # 未配置コマシート
+    # 未配置コマシート (85-88%)
+    _emit(PHASE_FINAL, '未配置データを書き込み中...')
     ws_up = wb.create_sheet('未配置コマ')
     for c, h in enumerate(['学年','生徒名','科目','未配置数'], 1):
         ws_up.cell(1, c, h).font = Font(name='MS PGothic', bold=True)
+    total_up = max(len(unplaced), 1)
     for i, u in enumerate(unplaced, 2):
         ws_up.cell(i,1,u['grade']); ws_up.cell(i,2,u['name'])
         ws_up.cell(i,3,u['subject']); ws_up.cell(i,4,u['count'])
+        if (i - 1) % max(total_up // 5, 1) == 0:
+            _emit(85 + ((i - 1) / total_up) * 3, f'未配置データ ({i-1}/{total_up}件)')
     ws_up.column_dimensions['A'].width = 6
     ws_up.column_dimensions['B'].width = 12
     ws_up.column_dimensions['C'].width = 6
     ws_up.column_dimensions['D'].width = 10
 
-    # スケジュール状態を隠しシートに保存（再読み込み用）
-    _prog(85, 'データを埋め込み中...')
+    # JSON埋め込み (88-92%)
+    _emit(88, 'データを埋め込み中...')
     if state_json:
         ws_state = wb.create_sheet('_schedule_data')
         ws_state.sheet_state = 'hidden'
         data_str = json.dumps(state_json, ensure_ascii=False)
         CHUNK = 30000
-        for i in range(0, len(data_str), CHUNK):
-            ws_state.cell(i // CHUNK + 1, 1, data_str[i:i+CHUNK])
+        total_chunks = max(len(data_str) // CHUNK + 1, 1)
+        for idx in range(0, len(data_str), CHUNK):
+            chunk_num = idx // CHUNK
+            ws_state.cell(chunk_num + 1, 1, data_str[idx:idx+CHUNK])
+            _emit(88 + ((chunk_num + 1) / total_chunks) * 4, f'データ埋め込み中 ({chunk_num+1}/{total_chunks})')
 
-    _prog(92, 'ファイルを保存中...')
+    # 保存 (92-100%) — サブスレッド + キープアライブ
+    _emit(92, 'ファイルを保存中...')
     save_error = [None]
     save_done = threading.Event()
     def _do_save():
@@ -2267,12 +2320,13 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
     pct = 92
     while not save_done.wait(timeout=3.0):
         pct = min(pct + 1, 99)
-        _prog(pct, 'ファイルを保存中...')
+        _emit(pct, 'ファイルを保存中...')
     save_thread.join(timeout=5)
     if save_error[0]:
         raise RuntimeError(f'Excelファイルの保存に失敗しました: {save_error[0]}') from save_error[0]
     wb.close()
-    _prog(100, '完了')
+    if progress_fn:
+        progress_fn(100, '完了')
 
 # ========== Error Handlers ==========
 @app.errorhandler(413)
@@ -2820,12 +2874,17 @@ def download_stream():
     t.start()
 
     def generate():
+        start = time.time()
         while True:
             try:
-                item = q.get(timeout=300)
+                item = q.get(timeout=5)
             except _queue.Empty:
-                yield f"data: {json.dumps({'error': 'タイムアウト'})}\n\n"
-                break
+                # 5秒ごとにSSEコメントを送信して接続を維持
+                if time.time() - start > 300:
+                    yield f"data: {json.dumps({'error': 'タイムアウト'})}\n\n"
+                    break
+                yield ": keepalive\n\n"
+                continue
             if item is None:
                 yield f"data: {json.dumps({'progress': 100, 'step': '完了', 'ready': True})}\n\n"
                 break
