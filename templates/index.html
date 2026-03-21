@@ -278,44 +278,44 @@
 
     .summary {
       display: flex;
-      gap: 20px;
+      gap: 10px;
       align-items: center;
       flex-wrap: wrap;
-      padding: 16px 0
+      padding: 6px 0
     }
 
     .big-num {
       font-family: 'Outfit', sans-serif;
-      font-size: 34px;
+      font-size: 24px;
       font-weight: 800;
       color: var(--accent)
     }
 
     .big-num span {
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 400;
       color: var(--ink3)
     }
 
     .rate {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--ink3)
     }
 
     .badge-w {
       background: #fef2f2;
       color: var(--red);
-      padding: 6px 14px;
-      border-radius: 8px;
-      font-size: 12.5px
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11.5px
     }
 
     .badge-m {
       background: #fff7ed;
       color: var(--orange);
-      padding: 6px 14px;
-      border-radius: 8px;
-      font-size: 12.5px
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11.5px
     }
 
     .student-breakdown {
@@ -1699,8 +1699,8 @@
 
     // === Auto-save/restore ===
     function showSaveIndicator(msg) { const el = document.getElementById('saveIndicator'); el.textContent = msg || '保存しました'; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
-    async function cloudSave(label, includeTemplate) { if (!R || !R.schedule) return; try { const body = { label: label || 'latest' }; if (includeTemplate) body.include_template = true; await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { console.warn('Cloud save failed:', e); } }
-    async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced, students: R.students }) }); showSaveIndicator('自動保存しました'); cloudSave('latest').catch(() => {}); } catch (e) { } }
+    async function cloudSave(label, includeTemplate, scheduleOnly) { if (!R || !R.schedule) return; try { const body = { label: label || 'latest' }; if (includeTemplate) body.include_template = true; if (scheduleOnly) body.schedule_only = true; await fetch('/api/cloud_save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (e) { console.warn('Cloud save failed:', e); } }
+    async function autoSave() { if (!R || !edited) return; try { await fetch('/api/update_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schedule: R.schedule, unplaced: R.unplaced, students: R.students }) }); showSaveIndicator('自動保存しました'); cloudSave('latest', false, true).catch(() => {}); } catch (e) { } }
     let autoSaveTimer = null;
     function scheduleAutoSave() { if (autoSaveTimer) clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(autoSave, 3000); }
 
