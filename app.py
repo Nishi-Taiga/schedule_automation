@@ -1584,7 +1584,7 @@ def extract_week_dates_from_files(week_file_paths):
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== スケジューラー ==========
-def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None, weights=None):
+def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None, weights=None, week_dates=None):
     if weights is None:
         weights = dict(DEFAULT_WEIGHTS)
     remaining = {s['name']: dict(s['needs']) for s in students}
@@ -1593,6 +1593,17 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
     office_teachers = []
     num_weeks = len(weekly_teachers)
 
+    # 各週の有効な曜日を算出（部分週対応: 月初・月末で存在しない曜日を除外）
+    if week_dates and week_dates.get('weeks'):
+        valid_days_per_week = []
+        for wi in range(num_weeks):
+            if wi < len(week_dates['weeks']):
+                valid_days_per_week.append(set(week_dates['weeks'][wi].keys()))
+            else:
+                valid_days_per_week.append(set(DAYS))
+    else:
+        valid_days_per_week = [set(DAYS)] * num_weeks
+
     # 全生徒の希望講師を集約
     wish_teachers_set = set()
     for s in students:
@@ -1600,9 +1611,13 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
 
     for wi in range(num_weeks):
         ot = {}
+        valid_days = valid_days_per_week[wi]
         for d in DAYS:
+            # 存在しない曜日チェック（部分週: 月初・月末）
+            if d not in valid_days:
+                ot[d] = '休塾日'
             # 休塾日チェック
-            if holidays and wi < len(holidays) and holidays[wi].get(d):
+            elif holidays and wi < len(holidays) and holidays[wi].get(d):
                 ot[d] = '休塾日'
             else:
                 candidates = office_rule.get(d, [])
@@ -1702,6 +1717,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         reject_skill = 0
         reject_other = 0
         for day in DAYS:
+            if day not in valid_days_per_week[wi]: continue  # 存在しない曜日をスキップ
             if day in placed_days: continue  # 同一科目の同曜日配置を防止
             # NG日程チェック: 配置自体は許可するがペナルティ
             is_ng_date = (wi, day) in s.get('ng_dates', set())
@@ -1797,12 +1813,12 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         random.shuffle(t)
         return t
 
-    # Phase1: 固定授業
+    # Phase1: 固定授業（必要コマ数を超えても配置する — 固定曜日は全有効週に配置）
     for s in students:
         for day, ts_str, subj in s['fixed']:
             for wi in range(num_weeks):
+                if day not in valid_days_per_week[wi]: continue  # 存在しない曜日をスキップ
                 if (wi, day) in s.get('ng_dates', set()): continue
-                if remaining[s['name']].get(subj, 0) <= 0: continue  # 必要コマ数を超えたら配置しない
                 if place_student(schedule[wi], s, day, ts_str, subj):
                     remaining[s['name']][subj] -= 1
                     _update_index(wi, s['name'], subj, day, ts_str)
@@ -1815,6 +1831,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
         wt = weekly_teachers[wi] if wi < len(weekly_teachers) else {}
         count = 0
         for day, ts in s['avail']:
+            if day not in valid_days_per_week[wi]: continue  # 存在しない曜日をスキップ
             for b in wt.get(day, {}).get(ts, []):
                 t = b.get('teacher', '') if isinstance(b, dict) else b
                 if t and t not in s.get('ng_teachers', set()):
@@ -2574,6 +2591,14 @@ def generate():
             holidays = load_holidays(booth_wb, len(wt))
             booth_wb.close()
 
+        # 週ごとの日付情報を取得（build_scheduleに渡すために先に計算）
+        if week_file_paths:
+            week_dates = extract_week_dates_from_files(week_file_paths[:len(wt)])
+        else:
+            booth_wb = openpyxl.load_workbook(files['booth'])
+            week_dates = extract_week_dates(booth_wb, len(wt))
+            booth_wb.close()
+
         total = sum(sum(s['needs'].values()) for s in students)
 
         # 学習済み重みをロード
@@ -2581,7 +2606,7 @@ def generate():
 
         schedule, unplaced, office_teachers = build_schedule(
             students, wt, skills, office_rule, booth_pref, holidays=holidays,
-            weights=learned_weights
+            weights=learned_weights, week_dates=week_dates
         )
         placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
 
@@ -2612,14 +2637,6 @@ def generate():
         # 自動生成結果のスナップショットを保存（学習用diff比較のため）
         original_schedule_json = deepcopy(schedule_json)
         original_unplaced = deepcopy(unplaced)
-
-        # 週ごとの日付情報を取得
-        if week_file_paths:
-            week_dates = extract_week_dates_from_files(week_file_paths[:len(schedule)])
-        else:
-            booth_wb = openpyxl.load_workbook(files['booth'])
-            week_dates = extract_week_dates(booth_wb, len(schedule))
-            booth_wb.close()
 
         sd['result'] = {
             'schedule': schedule,
@@ -3110,7 +3127,114 @@ def upload_booth_template():
     sd['files'] = new_files
     save_session_files(sd)
     count = len(saved_week_paths) + (1 if meta_path else 0)
-    print(f"[upload_booth_template] saved {count} files (meta={'yes' if meta_path else 'no'}, weeks={len(saved_week_paths)})", flush=True)
+    print(f"[upload_booth_excel] saved {count} files (meta={'yes' if meta_path else 'no'}, weeks={len(saved_week_paths)})", flush=True)
+
+    # ======== 週ファイルから配置済みスケジュールの読み取りを試みる ========
+    schedule_data = None
+    has_placed = False
+    try:
+        # 統合ブック（メタ+週シート一体型）か、個別週ファイルかを判定
+        if meta_path and not saved_week_paths:
+            # メタファイルのみ（週シートも含まれている可能性）
+            wb = openpyxl.load_workbook(meta_path, data_only=True)
+            vis_schedule, vis_ot = parse_schedule_from_wb(wb)
+            wb.close()
+            if vis_schedule:
+                placed_count_total = sum(
+                    len(b['slots']) for w in vis_schedule
+                    for d in w.values() for bs in d.values() for b in bs
+                )
+                schedule_data = {'schedule': vis_schedule, 'officeTeachers': vis_ot}
+                has_placed = placed_count_total > 0
+                print(f"[upload_booth_excel] parsed schedule from meta file: {placed_count_total} slots", flush=True)
+        elif saved_week_paths:
+            # 個別週ファイルを順番に読み、統合スケジュールを構築
+            all_schedule = []
+            all_ot = []
+            total_slots = 0
+            for wp in sorted(saved_week_paths):
+                wb = openpyxl.load_workbook(wp, data_only=True)
+                vis_schedule, vis_ot = parse_schedule_from_wb(wb)
+                wb.close()
+                if vis_schedule:
+                    for ws_data in vis_schedule:
+                        all_schedule.append(ws_data)
+                    for ot_data in vis_ot:
+                        all_ot.append(ot_data)
+                    total_slots += sum(
+                        len(b['slots']) for w in vis_schedule
+                        for d in w.values() for bs in d.values() for b in bs
+                    )
+            if all_schedule:
+                schedule_data = {'schedule': all_schedule, 'officeTeachers': all_ot}
+                has_placed = total_slots > 0
+                print(f"[upload_booth_excel] parsed schedule from {len(all_schedule)} week files: {total_slots} slots", flush=True)
+    except Exception as e:
+        print(f"[upload_booth_excel] schedule parse warning: {e}", flush=True)
+
+    # ======== スケジュールデータをセッションに反映 ========
+    schedule_response = None
+    if schedule_data and has_placed:
+        try:
+            res = sd.get('result', {})
+            schedule = schedule_data['schedule']
+            office_teachers = schedule_data['officeTeachers']
+
+            # 既存の生徒データを取得
+            students = res.get('students', [])
+
+            # placed / total / unplaced を再計算
+            placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
+            total = sum(sum(s.get('needs', {}).values()) for s in students)
+            if total == 0:
+                total = placed
+
+            # 未配置コマを再計算
+            placed_map = {}
+            for week in schedule:
+                for day_slots in week.values():
+                    for booths in day_slots.values():
+                        for b in booths:
+                            for slot in b.get('slots', []):
+                                key = (slot[1], slot[2])
+                                placed_map[key] = placed_map.get(key, 0) + 1
+
+            unplaced = []
+            for s in students:
+                name = s['name']
+                grade = s.get('grade', '')
+                for subj, need in s.get('needs', {}).items():
+                    done = placed_map.get((name, subj), 0)
+                    if done < need:
+                        unplaced.append({
+                            'grade': grade, 'name': name, 'subject': subj,
+                            'count': need - done, 'reason': ''
+                        })
+
+            # セッション結果を更新
+            res['schedule_json'] = schedule
+            res['schedule'] = schedule
+            res['office_teachers'] = office_teachers
+            res['unplaced'] = unplaced
+            sd['result'] = res
+            save_session_result(sd)
+
+            schedule_response = {
+                'schedule': schedule,
+                'officeTeachers': office_teachers,
+                'unplaced': unplaced,
+                'placed': placed,
+                'total': total,
+                'students': students,
+            }
+            # weeklyTeachers
+            wt = res.get('weekly_teachers')
+            if wt:
+                schedule_response['weeklyTeachers'] = _sanitize_weekly_teachers(wt)
+            print(f"[upload_booth_excel] schedule applied: {placed}/{total} placed", flush=True)
+        except Exception as e:
+            print(f"[upload_booth_excel] schedule apply error: {e}", flush=True)
+            schedule_response = None
 
     # クラウドの既存スナップショットにもテンプレートを反映
     res = sd.get('result', {})
@@ -3132,16 +3256,21 @@ def upload_booth_template():
                     body={'booth_template': b64, 'updated_at': _dt.datetime.utcnow().isoformat() + 'Z'},
                     headers_extra={'Prefer': 'return=minimal'})
                 booth_saved = True
-                print(f"[upload_booth_template] cloud updated ({len(b64)} chars)", flush=True)
+                print(f"[upload_booth_excel] cloud updated ({len(b64)} chars)", flush=True)
             except Exception as e:
-                print(f"[upload_booth_template] cloud update failed: {e}", flush=True)
-    return jsonify({
+                print(f"[upload_booth_excel] cloud update failed: {e}", flush=True)
+
+    resp = {
         'ok': True,
         'count': count,
         'meta': bool(meta_path),
         'weeks': len(saved_week_paths),
         'cloudSaved': booth_saved,
-    })
+        'hasSchedule': schedule_response is not None,
+    }
+    if schedule_response:
+        resp.update(schedule_response)
+    return jsonify(resp)
 
 
 def parse_schedule_from_wb(wb):

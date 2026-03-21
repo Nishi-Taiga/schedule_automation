@@ -1549,8 +1549,8 @@
             <div id="postRestoreSurveyStatus" style="margin-top:4px;font-size:11px"></div>
           </div>
           <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
-            <div style="font-weight:600;margin-bottom:4px;font-size:12px">ブース表テンプレート</div>
-            <div style="color:#888;font-size:11px;margin-bottom:6px">週別ブース表フォルダを選択（メタ自動検出）</div>
+            <div style="font-weight:600;margin-bottom:4px;font-size:12px">ブース表エクセル</div>
+            <div style="color:#888;font-size:11px;margin-bottom:6px">配置済みの場合は授業も反映されます</div>
             <button class="folder-btn" style="font-size:11px;margin-bottom:4px" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="doUpdateBoothTemplate(this)">
             <div id="postRestoreBoothStatus" style="margin-top:4px;font-size:11px"></div>
           </div>
@@ -1624,8 +1624,8 @@
               <div id="updateSurveyStatus" style="margin-top:4px;font-size:11px"></div>
             </div>
             <div style="flex:1;min-width:200px;background:#fff;padding:8px 10px;border-radius:6px;border:1px solid #e0e0e0">
-              <div style="font-weight:600;margin-bottom:4px">ブース表テンプレート</div>
-              <div style="color:#888;font-size:11px;margin-bottom:6px">週別ブース表フォルダを選択（メタ自動検出）</div>
+              <div style="font-weight:600;margin-bottom:4px">ブース表エクセル</div>
+              <div style="color:#888;font-size:11px;margin-bottom:6px">配置済みの場合は授業も反映されます</div>
               <button class="folder-btn" style="font-size:11px;margin-bottom:4px" onclick="this.nextElementSibling.click()">📂 フォルダから選択</button><input type="file" webkitdirectory style="display:none" onchange="doUpdateBoothTemplate(this)">
               <div id="updateBoothStatus" style="margin-top:4px;font-size:11px"></div>
             </div>
@@ -1784,7 +1784,7 @@
           sec.style.display = 'block';
           let restoreMsg = '✅ スケジュール再開準備完了 (' + d.placed + '/' + d.total + 'コマ)';
           if (d.hasBoothTemplate === false) {
-            restoreMsg += '\n⚠️ ブース表テンプレートが含まれていません。「ブース表テンプレート」からフォルダを選択して再アップロードしてください。';
+            restoreMsg += '\n⚠️ ブース表エクセルが含まれていません。「ブース表エクセル」からフォルダを選択して再アップロードしてください。';
           }
           document.getElementById('postRestoreMsg').textContent = restoreMsg;
           document.getElementById('postRestoreMsg').style.whiteSpace = 'pre-line';
@@ -1943,7 +1943,7 @@
             R = d; PW = 0; edited = false; calStudent = null; buildNgMap(); if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
             const sec = document.getElementById('postRestoreSection'); sec.style.display = 'block';
             let rmsg2 = '✅ スケジュール再開準備完了 (' + d.placed + '/' + d.total + 'コマ)';
-            if (d.hasBoothTemplate === false) rmsg2 += '\n⚠️ ブース表テンプレートが含まれていません。「ブース表テンプレート」からフォルダを選択して再アップロードしてください。';
+            if (d.hasBoothTemplate === false) rmsg2 += '\n⚠️ ブース表エクセルが含まれていません。「ブース表エクセル」からフォルダを選択して再アップロードしてください。';
             document.getElementById('postRestoreMsg').textContent = rmsg2;
             document.getElementById('postRestoreMsg').style.whiteSpace = 'pre-line';
             document.getElementById('postRestoreMetaStatus').textContent = ''; document.getElementById('postRestoreSurveyStatus').textContent = '';
@@ -3102,9 +3102,19 @@
         const res = await fetch('/api/upload_booth_template', { method: 'POST', body: fd });
         const j = await res.json();
         if (!res.ok || !j.ok) { if (statusEl) { statusEl.textContent = j.error || 'エラー'; statusEl.style.color = 'red'; } return; }
-        const msg = j.weeks + '週' + (j.meta ? '+メタ' : '') + (j.cloudSaved ? ' (クラウド更新済)' : '');
+        let msg = j.weeks + '週' + (j.meta ? '+メタ' : '') + (j.cloudSaved ? ' (クラウド更新済)' : '');
+        if (j.hasSchedule && j.schedule) {
+          R.schedule = j.schedule;
+          R.unplaced = j.unplaced || [];
+          if (j.officeTeachers) R.officeTeachers = j.officeTeachers;
+          if (j.students) R.students = j.students;
+          if (j.weeklyTeachers) R.weeklyTeachers = j.weeklyTeachers;
+          edited = true; buildNgMap();
+          msg += ' — 配置反映 (' + (j.placed || 0) + '/' + (j.total || 0) + 'コマ)';
+          if (PW >= 0 || PW === -2) rR();
+        }
         if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'green'; }
-        showSaveIndicator('ブース表テンプレート更新');
+        showSaveIndicator('ブース表エクセル更新');
       } catch (e) { if (statusEl) { statusEl.textContent = 'エラー: ' + e.message; statusEl.style.color = 'red'; } }
       input.value = '';
     }
