@@ -455,9 +455,6 @@
     }
 
     .unplaced-sidebar {
-      width: auto;
-      min-width: 140px;
-      max-width: 320px;
       max-height: calc(100vh - 220px);
       overflow-y: auto;
       background: var(--card);
@@ -732,8 +729,8 @@
       border-radius: 8px;
       padding: 8px 10px;
       display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
+      flex-direction: column;
+      gap: 2px;
       transition: all .12s;
       margin-top: 6px
     }
@@ -745,7 +742,9 @@
 
     .unplaced-zone .slot-chip {
       background: #ffebee;
-      border-color: #ef9a9a
+      border-color: #ef9a9a;
+      width: auto;
+      white-space: nowrap
     }
 
     .unplaced-zone .slot-chip .s {
@@ -1418,6 +1417,21 @@
       margin-left: auto; padding: 0 4px; transition: color .15s;
     }
     .check-close-btn:hover { color: var(--red); }
+
+    /* タブレット・モバイル: サイドバーをカレンダー下に */
+    @media (max-width: 1024px) {
+      .tw.result-layout {
+        flex-direction: column;
+      }
+      .unplaced-sidebar {
+        max-height: none;
+        width: 100% !important;
+      }
+      .unplaced-sidebar .unplaced-zone {
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+    }
   </style>
 </head>
 
@@ -2993,6 +3007,19 @@
       const addBtn = document.createElement('button'); addBtn.className = 'btn btn-o'; addBtn.style.cssText = 'margin-top:8px;font-size:12px;padding:4px 12px';
       addBtn.textContent = '＋ 未配置コマ追加'; addBtn.onclick = () => showAddUnplacedModal(); sidebar.appendChild(addBtn);
       wrap.appendChild(sidebar);
+      // チップ最大幅を計測してサイドバー幅を合わせる
+      requestAnimationFrame(() => {
+        const chips = zone.querySelectorAll('.slot-chip');
+        if (!chips.length) return;
+        let maxW = 0;
+        chips.forEach(c => { const w = c.scrollWidth; if (w > maxW) maxW = w; });
+        if (maxW > 0) {
+          const chipW = maxW + 2; // border分
+          chips.forEach(c => { c.style.width = chipW + 'px'; });
+          // サイドバー幅 = チップ幅 + zone padding(20) + sidebar padding(24) + border(2)
+          sidebar.style.width = (chipW + 46) + 'px';
+        }
+      });
     }
 
     // ========== ファイル更新ハンドラ ==========
