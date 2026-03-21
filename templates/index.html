@@ -759,35 +759,6 @@
       font-weight: 600
     }
 
-    table.up {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px
-    }
-
-    table.up th {
-      padding: 8px 10px;
-      border-bottom: 2px solid var(--border);
-      text-align: left;
-      font-weight: 700;
-      background: #f7f9fb
-    }
-
-    table.up td {
-      padding: 6px 10px;
-      border-bottom: 1px solid #eef1f5
-    }
-
-    table.up .ct {
-      font-weight: 700;
-      color: var(--red)
-    }
-
-    .ap {
-      color: var(--green);
-      font-weight: 600;
-      font-size: 14px
-    }
 
     .spinner {
       display: inline-block;
@@ -2605,12 +2576,11 @@
       const mb = document.getElementById('mBadge'); if (edited) { mb.style.display = ''; mb.textContent = '✏️ 手動編集あり'; } else mb.style.display = 'none';
       const tabs = document.getElementById('wTabs'); tabs.innerHTML = '';
       const NW = R.schedule.length; for (let w = 0; w < NW; w++) { const b = document.createElement('button'); b.className = PW === w ? 'active' : ''; const wr = getWeekRange(w); b.textContent = '第' + (w + 1) + '週' + (wr && wr !== 'W' + (w + 1) ? ' ' + wr : ''); b.onclick = () => { PW = w; rR(); }; tabs.appendChild(b); }
-      const ub2 = document.createElement('button'); ub2.className = 'warn' + (PW === -1 ? ' active' : ''); ub2.textContent = '未配置'; ub2.onclick = () => { PW = -1; rR(); }; tabs.appendChild(ub2);
       const cb = document.createElement('button'); cb.className = 'cal' + (PW === -2 ? ' active' : ''); cb.textContent = '📅 生徒別'; cb.onclick = () => { PW = -2; rR(); }; tabs.appendChild(cb);
       const wrap = document.getElementById('pWrap');
       const _pm = wrap.querySelector('.schedule-main'), _ps = wrap.querySelector('.unplaced-sidebar');
       const _ss = { mt: _pm ? _pm.scrollTop : 0, ml: _pm ? _pm.scrollLeft : 0, st: _ps ? _ps.scrollTop : 0 };
-      wrap.innerHTML = ''; const wCard = wrap.parentElement; if (PW >= 0) { wrap.classList.add('result-layout'); wCard.classList.add('result-card'); rW(wrap, PW); const _nm = wrap.querySelector('.schedule-main'), _ns = wrap.querySelector('.unplaced-sidebar'); if (_nm) { _nm.scrollTop = _ss.mt; _nm.scrollLeft = _ss.ml; } if (_ns) _ns.scrollTop = _ss.st; } else { wrap.classList.remove('result-layout'); wCard.classList.remove('result-card'); if (PW === -1) rU(wrap); else rCal(wrap); }
+      wrap.innerHTML = ''; const wCard = wrap.parentElement; if (PW >= 0) { wrap.classList.add('result-layout'); wCard.classList.add('result-card'); rW(wrap, PW); const _nm = wrap.querySelector('.schedule-main'), _ns = wrap.querySelector('.unplaced-sidebar'); if (_nm) { _nm.scrollTop = _ss.mt; _nm.scrollLeft = _ss.ml; } if (_ns) _ns.scrollTop = _ss.st; } else { wrap.classList.remove('result-layout'); wCard.classList.remove('result-card'); rCal(wrap); }
     }
 
     // === Teacher D&D ===
@@ -3023,17 +2993,6 @@
       const addBtn = document.createElement('button'); addBtn.className = 'btn btn-o'; addBtn.style.cssText = 'margin-top:8px;font-size:12px;padding:4px 12px';
       addBtn.textContent = '＋ 未配置コマ追加'; addBtn.onclick = () => showAddUnplacedModal(); sidebar.appendChild(addBtn);
       wrap.appendChild(sidebar);
-    }
-
-    function rU(wrap) {
-      if (!R.unplaced.length) { wrap.innerHTML = '<p class="ap">✅ 全コマ配置済み</p>'; }
-      else {
-        let h = '<table class="up"><thead><tr><th>学年</th><th>生徒</th><th>科目</th><th>未配置数</th></tr></thead><tbody>';
-        for (const u of R.unplaced) h += '<tr><td>' + escHtml(u.grade) + '</td><td>' + escHtml(u.name) + '</td><td>' + escHtml(u.subject) + '</td><td class="ct">' + u.count + '</td></tr>'; h += '</tbody></table>';
-        wrap.innerHTML = h;
-      }
-      const addBtn = document.createElement('button'); addBtn.className = 'btn btn-o'; addBtn.style.cssText = 'margin-top:8px;font-size:12px;padding:4px 12px';
-      addBtn.textContent = '＋ 未配置コマ追加'; addBtn.onclick = () => showAddUnplacedModal(); wrap.appendChild(addBtn);
     }
 
     // ========== ファイル更新ハンドラ ==========
