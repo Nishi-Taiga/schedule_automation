@@ -2131,8 +2131,11 @@ def _write_schedule_to_ws(ws, wsched, office_data):
                                     cell.fill = holiday_fill
                                 except: pass
 
-def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None, week_file_paths=None):
+def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None, week_file_paths=None, progress_fn=None):
     num_weeks = len(schedule)
+    def _prog(pct, msg):
+        if progress_fn:
+            progress_fn(pct, msg)
 
     if week_file_paths:
         # 週ファイルから直接読み込んで出力ブックを構築（週シートのみ、メタなし）
@@ -2141,6 +2144,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         wb.remove(wb.active)
 
         for wi in range(min(num_weeks, len(week_file_paths))):
+            _prog(15 + int(wi / num_weeks * 65), f'第{wi+1}週を書き込み中...')
             week_wb = openpyxl.load_workbook(week_file_paths[wi])
             # ブース表シートを探す
             src_sn = None
@@ -2183,6 +2187,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         week_sheets = [sn for sn in wb.sheetnames]
     elif booth_path:
         # 後方互換: 統合ブックから読み込み
+        _prog(15, 'テンプレートを読み込み中...')
         wb = openpyxl.load_workbook(booth_path)
         # メタシート・システムシートを除外して週シートを特定
         exclude_sheets = set()
@@ -2195,6 +2200,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         num_weeks = min(num_weeks, len(week_sheets))
 
         for wi in range(num_weeks):
+            _prog(20 + int(wi / num_weeks * 60), f'第{wi+1}週を書き込み中...')
             ws = wb[week_sheets[wi]]
             ot = office_teachers[wi] if wi < len(office_teachers) else {}
             _write_schedule_to_ws(ws, schedule[wi], ot)
@@ -2221,6 +2227,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
     ws_up.column_dimensions['D'].width = 10
 
     # スケジュール状態を隠しシートに保存（再読み込み用）
+    _prog(85, 'データを埋め込み中...')
     if state_json:
         ws_state = wb.create_sheet('_schedule_data')
         ws_state.sheet_state = 'hidden'
@@ -2229,8 +2236,10 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         for i in range(0, len(data_str), CHUNK):
             ws_state.cell(i // CHUNK + 1, 1, data_str[i:i+CHUNK])
 
+    _prog(92, 'ファイルを保存中...')
     wb.save(output_path)
     wb.close()
+    _prog(100, '完了')
 
 # ========== Error Handlers ==========
 @app.errorhandler(413)
@@ -2882,31 +2891,36 @@ def cloud_save():
             'manualTeachers': res.get('manual_teachers', []),
         }
 
-        # メタデータ (skills等) — スケジュール生成に必要だが編集中は変わらない
-        metadata = data.get('metadata')
-        if metadata is None:
-            raw_skills = res.get('skills', {})
-            # skills の set を list に変換 (JSONシリアライズ用)
-            skills_json = {t: sorted(list(s)) if isinstance(s, set) else s
-                          for t, s in raw_skills.items()} if raw_skills else {}
-            metadata = {'skills': skills_json}
+        # schedule_only=true の場合、スケジュールデータのみ上書き（自動保存用）
+        schedule_only = data.get('schedule_only', False)
 
-        # ブース表テンプレート (include_template=true の場合のみ送信)
-        include_template = data.get('include_template', False)
         sb_body_dict = {
             'year': year,
             'month': month,
             'label': label,
             'schedule_data': state,
-            'settings_data': settings,
-            'metadata': metadata,
             'updated_at': _dt.datetime.utcnow().isoformat() + 'Z',
         }
-        if include_template:
-            b64 = _encode_booth_files(sd)
-            if b64:
-                sb_body_dict['booth_template'] = b64
-                print(f"[cloud_save] booth template included ({len(b64)} chars)", flush=True)
+
+        if not schedule_only:
+            # メタデータ (skills等)
+            metadata = data.get('metadata')
+            if metadata is None:
+                raw_skills = res.get('skills', {})
+                skills_json = {t: sorted(list(s)) if isinstance(s, set) else s
+                              for t, s in raw_skills.items()} if raw_skills else {}
+                metadata = {'skills': skills_json}
+            sb_body_dict['settings_data'] = settings
+            sb_body_dict['metadata'] = metadata
+
+            # ブース表テンプレート (include_template=true の場合のみ送信)
+            if data.get('include_template', False):
+                b64 = _encode_booth_files(sd)
+                if b64:
+                    sb_body_dict['booth_template'] = b64
+                    print(f"[cloud_save] booth template included ({len(b64)} chars)", flush=True)
+
+        print(f"[cloud_save] schedule_only={schedule_only}", flush=True)
 
         sb_url = f"{SUPABASE_URL}/rest/v1/schedule_snapshots?on_conflict=year,month,label"
         sb_body = json.dumps(sb_body_dict, ensure_ascii=False).encode('utf-8')
@@ -3804,7 +3818,7 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                     if t and t not in day_all_teachers:
                         issues.append({'level': 'error', 'code': 'E1', 'title': '講師未出勤',
                             'message': f'{_loc(wi, day, ts, bi)} — {t} はこの日に出勤していません',
-                            'wi': wi, 'day': day, 'ts': ts})
+                            'wi': wi, 'day': day, 'ts': ts, 'bi': bi})
 
                     # E6: 講師重複集計
                     if t:
@@ -3814,7 +3828,7 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                     if ot_active and t == ot_teacher:
                         issues.append({'level': 'error', 'code': 'E7', 'title': '教室業務重複',
                             'message': f'{_loc(wi, day, ts, bi)} — 教室業務担当 {ot_teacher} がブースにも配置されています',
-                            'wi': wi, 'day': day, 'ts': ts})
+                            'wi': wi, 'day': day, 'ts': ts, 'bi': bi})
 
                     # スロットレベルのチェック
                     names_in_booth = []
@@ -3828,7 +3842,7 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                         if t and sname in ng_teacher_sets and t in ng_teacher_sets[sname]:
                             issues.append({'level': 'error', 'code': 'E3', 'title': 'NG講師',
                                 'message': f'{_loc(wi, day, ts, bi)} — {sname} のNG講師 {t} に配置されています',
-                                'wi': wi, 'day': day, 'ts': ts})
+                                'wi': wi, 'day': day, 'ts': ts, 'bi': bi})
 
                         # W1: 希望時間外
                         has_avail = sname in avail_sets
@@ -3840,13 +3854,13 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                             if not in_avail and not in_backup:
                                 issues.append({'level': 'warn', 'code': 'W1', 'title': '希望時間外',
                                     'message': f'{_loc(wi, day, ts, bi)} — {sname} の希望/予備時間外に配置されています',
-                                    'wi': wi, 'day': day, 'ts': ts})
+                                    'wi': wi, 'day': day, 'ts': ts, 'bi': bi})
 
                         # W2: NG日程
                         if sname in ng_date_sets and (wi, day) in ng_date_sets[sname]:
                             issues.append({'level': 'warn', 'code': 'W2', 'title': 'NG日程',
                                 'message': f'{_loc(wi, day, ts, bi)} — {sname} のNG日程に配置されています',
-                                'wi': wi, 'day': day, 'ts': ts})
+                                'wi': wi, 'day': day, 'ts': ts, 'bi': bi})
 
                         # W4: 指導スキル不足
                         if skills and t and len(slot) >= 3:
@@ -3854,7 +3868,7 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                             if not can_teach(t, grade, subj, skills):
                                 issues.append({'level': 'warn', 'code': 'W4', 'title': '指導スキル不足',
                                     'message': f'{_loc(wi, day, ts, bi)} — {t} は {grade} {subj} を指導できません（生徒: {sname}）',
-                                    'wi': wi, 'day': day, 'ts': ts})
+                                    'wi': wi, 'day': day, 'ts': ts, 'bi': bi})
 
                         # W3集計: 同日同科目
                         if len(slot) >= 3:
@@ -3882,7 +3896,7 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                                         ng_pair_seen.add(key)
                                         issues.append({'level': 'error', 'code': 'E4', 'title': 'NG生徒',
                                             'message': f'{_loc(wi, day, ts, bi)} — {a} と {b_name} はNG生徒ペアです',
-                                            'wi': wi, 'day': day, 'ts': ts})
+                                            'wi': wi, 'day': day, 'ts': ts, 'bi': bi})
 
                 # E6: 講師重複判定
                 for t, bis in teacher_booths.items():

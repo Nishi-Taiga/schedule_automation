@@ -1434,6 +1434,17 @@
       margin-left: auto; padding: 0 4px; transition: color .15s;
     }
     .check-close-btn:hover { color: var(--red); }
+    .check-toggle-icon { font-size: 12px; margin-right: 4px; transition: transform .2s; display: inline-block; }
+    .check-toggle-icon.collapsed { transform: rotate(-90deg); }
+    .check-item.clickable { cursor: pointer; transition: background .15s; }
+    .check-item.clickable:hover { background: #f0f4f8; }
+    @keyframes cellHighlight {
+      0% { background: #fbbf24; }
+      30% { background: #fde68a; }
+      70% { background: #fef3c7; }
+      100% { background: transparent; }
+    }
+    .cell-highlight { animation: cellHighlight 2.5s ease-out forwards; }
 
     /* タブレット・モバイル: サイドバーをカレンダー下に */
     @media (max-width: 600px) {
@@ -2401,6 +2412,39 @@
       const p = document.getElementById('checkPanel');
       if (p) { p.innerHTML = ''; R.checkSummary = null; }
     }
+    function toggleCheckPanel() {
+      const list = document.querySelector('#checkPanel .check-list');
+      const icon = document.querySelector('#checkPanel .check-toggle-icon');
+      if (!list) return;
+      const hidden = list.style.display === 'none';
+      list.style.display = hidden ? '' : 'none';
+      if (icon) icon.classList.toggle('collapsed', !hidden);
+    }
+    function navigateToCell(wi, day, ts, bi) {
+      if (wi == null || day == null) return;
+      // Switch to the correct week tab
+      if (PW !== wi) { PW = wi; rR(); }
+      // Find the schedule table in the current view
+      requestAnimationFrame(() => {
+        const wrap = document.querySelector('.schedule-wrap');
+        if (!wrap) return;
+        let selector = '.booth-cell[data-day="' + day + '"]';
+        if (ts != null) selector += '[data-ts="' + ts + '"]';
+        if (bi != null) selector += '[data-bi="' + bi + '"]';
+        const cells = wrap.querySelectorAll(selector);
+        if (!cells.length) return;
+        // Scroll first matching cell into view
+        cells[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        // Apply highlight animation
+        cells.forEach(c => {
+          c.classList.remove('cell-highlight');
+          void c.offsetWidth; // force reflow
+          c.classList.add('cell-highlight');
+        });
+        // Remove class after animation
+        setTimeout(() => { cells.forEach(c => c.classList.remove('cell-highlight')); }, 3000);
+      });
+    }
 
     async function runCheck() {
       if (!R || !R.schedule) return;
@@ -2444,24 +2488,32 @@
       const pc = computePrimaryCompliance();
       const pcHtml = pc ? ' <span style="font-size:11px;color:#555;margin-left:10px">希望時間帯率: <b>' + pc.primaryRate + '%</b> (' + pc.primary + '/' + pc.total + ')</span>' : '';
       if (!d.issues || !d.issues.length) {
-        panel.innerHTML = '<div class="check-panel"><div class="check-header all-ok">✅ すべてのチェックに合格しました' + pcHtml + '<button class="check-close-btn" onclick="closeCheckPanel()">✕</button></div></div>';
+        panel.innerHTML = '<div class="check-panel"><div class="check-header all-ok"><span class="check-toggle-icon">▼</span>✅ すべてのチェックに合格しました' + pcHtml + '</div></div>';
         return;
       }
       const errors = d.issues.filter(i => i.level === 'error');
       const warns = d.issues.filter(i => i.level === 'warn');
       let html = '<div class="check-panel">';
-      html += '<div class="check-header ' + (errors.length ? 'has-error' : 'has-warn') + '">';
-      html += '<span onclick="this.parentElement.nextElementSibling.style.display=this.parentElement.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" style="cursor:pointer;flex:1">';
+      html += '<div class="check-header ' + (errors.length ? 'has-error' : 'has-warn') + '" onclick="toggleCheckPanel()">';
+      html += '<span class="check-toggle-icon">▼</span>';
       html += (errors.length ? '❌ ' : '⚠️ ');
       html += escHtml(errors.length + '件のエラー / ' + warns.length + '件の警告');
       html += pcHtml;
-      html += ' <span style="font-size:10px;font-weight:400">(クリックで開閉)</span></span>';
-      html += '<button class="check-close-btn" onclick="closeCheckPanel()">✕</button></div>';
+      html += '</div>';
       html += '<div class="check-list">';
       for (const issue of d.issues) {
-        html += '<div class="check-item">';
+        const hasLoc = issue.wi != null && issue.day != null;
+        html += '<div class="check-item' + (hasLoc ? ' clickable' : '') + '"';
+        if (hasLoc) {
+          html += ' onclick="navigateToCell(' + issue.wi + ',\'' + escHtml(issue.day) + '\'';
+          html += ',' + (issue.ts != null ? '\'' + escHtml(issue.ts) + '\'' : 'null');
+          html += ',' + (issue.bi != null ? issue.bi : 'null');
+          html += ')"';
+        }
+        html += '>';
         html += '<span class="badge ' + (issue.level === 'error' ? 'err' : 'wrn') + '">' + escHtml(issue.code) + '</span>';
         html += '<span>' + escHtml(issue.message) + '</span>';
+        if (hasLoc) html += '<span style="margin-left:auto;font-size:10px;color:var(--ink3)">→</span>';
         html += '</div>';
       }
       html += '</div></div>';
@@ -3038,7 +3090,7 @@
           for (const d of D) {
             const dt = d === '土' ? ST : WT; const td = document.createElement('td');
             if (!dt.includes(tl)) { td.className = 'cd'; td.textContent = '-'; tr.appendChild(td); continue; }
-            td.className = 'booth-cell'; const bs = ws[d]?.[ts] || [], b = bs[bi];
+            td.className = 'booth-cell'; td.dataset.day = d; td.dataset.ts = ts; td.dataset.bi = bi; const bs = ws[d]?.[ts] || [], b = bs[bi];
             if (b && b.teacher) {
               if (b.slots.length === 0) td.classList.add('empty-booth');
               const isDup = (tCounts[d][b.teacher] > 1);
