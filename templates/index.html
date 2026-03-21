@@ -1770,7 +1770,7 @@
       const f = inp.files[0]; if (!f) return;
       const row = inp.closest('.upload-row'); row.querySelector('.desc').textContent = '読み込み中...'; row.querySelector('.icon').textContent = '📄';
       showProgress(20, '保存済みスケジュールを読み込んでいます...', '読み込み中');
-      const fd = new FormData(); fd.append('file', f);
+      const fd = new FormData(); fd.append('file', await preloadFile(f));
       try {
         const res = await fetch('/api/load_saved', { method: 'POST', body: fd }); const d = await res.json();
         hideProgress();
@@ -3004,7 +3004,7 @@
       status.textContent = '更新中...';
       status.style.color = '#1565c0';
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', await preloadFile(file));
       try {
         const res = await fetch('/api/update_meta', {method: 'POST', body: fd});
         const j = await res.json();
@@ -3028,7 +3028,8 @@
       status.textContent = 'アップロード中...';
       status.style.color = '#1565c0';
       const fd = new FormData();
-      for (const f of files) fd.append('surveys', f);
+      const preloaded = await preloadFiles([...files]);
+      for (const f of preloaded.files) fd.append('surveys', f);
       try {
         const res = await fetch('/api/upload_surveys', {method: 'POST', body: fd});
         const j = await res.json();
@@ -3052,7 +3053,7 @@
       status.textContent = '更新中...';
       status.style.color = '#1565c0';
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', await preloadFile(file));
       try {
         const res = await fetch('/api/update_meta', {method: 'POST', body: fd});
         const j = await res.json();
@@ -3078,7 +3079,8 @@
       status.textContent = 'アップロード中...';
       status.style.color = '#1565c0';
       const fd = new FormData();
-      for (const f of files) fd.append('surveys', f);
+      const preloaded = await preloadFiles([...files]);
+      for (const f of preloaded.files) fd.append('surveys', f);
       try {
         const res = await fetch('/api/upload_surveys', {method: 'POST', body: fd});
         const j = await res.json();
