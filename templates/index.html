@@ -1467,7 +1467,7 @@
   <div class="header">
     <div>
       <h1>📋 ブース表自動生成 <span
-          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.18.0</span></h1>
+          style="font-size:12px;font-weight:400;color:var(--ink3);vertical-align:middle">v0.18.1</span></h1>
     </div>
   </div>
   <div class="container">
@@ -2258,13 +2258,14 @@
       h += '</div></div></div>';
       root.innerHTML = h;
     }
-    function setStep(idx, status) {
+    function setStep(idx, status, label) {
       const el = document.getElementById('step' + idx); if (!el) return;
       el.className = 'step-item ' + status;
       const iconEl = el.querySelector('.step-icon');
       if (status === 'active') iconEl.innerHTML = '<div class="step-spinner"></div>';
       else if (status === 'done') iconEl.innerHTML = STEP_DONE_ICON;
       else if (status === 'error') iconEl.innerHTML = STEP_ERROR_ICON;
+      if (label) el.querySelector('span').textContent = label;
     }
     function finishStepProgress(ok) {
       const spinner = document.querySelector('#modalRoot .progress-spinner'); if (spinner) spinner.style.display = 'none';
@@ -2292,12 +2293,22 @@
           } catch (e) { console.warn('学習フィードバック送信失敗:', e); }
           setStep(si, 'done'); si++;
         }
+        setStep(si, 'active', 'Excelファイルを生成 (0%)');
+        await new Promise((resolve, reject) => {
+          const es = new EventSource('/api/download_stream');
+          es.onmessage = (e) => {
+            const d = JSON.parse(e.data);
+            if (d.error) { es.close(); reject(new Error(d.error)); return; }
+            if (d.progress !== undefined) setStep(si, 'active', 'Excelファイルを生成 (' + d.progress + '%)');
+            if (d.ready) { es.close(); resolve(); }
+          };
+          es.onerror = () => { es.close(); reject(new Error('Excel生成中に接続が切れました')); };
+        });
+        setStep(si, 'done', 'Excelファイルを生成'); si++;
         setStep(si, 'active');
         const res = await fetch('/api/download');
         if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'ダウンロードに失敗しました'); }
         const blob = await res.blob();
-        setStep(si, 'done'); si++;
-        setStep(si, 'active');
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = '時間割_出力.xlsx'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
         setStep(si, 'done');

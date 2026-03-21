@@ -1820,7 +1820,8 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
                 if day not in valid_days_per_week[wi]: continue  # 存在しない曜日をスキップ
                 if (wi, day) in s.get('ng_dates', set()): continue
                 if place_student(schedule[wi], s, day, ts_str, subj):
-                    remaining[s['name']][subj] -= 1
+                    if subj in remaining[s['name']]:
+                        remaining[s['name']][subj] -= 1
                     _update_index(wi, s['name'], subj, day, ts_str)
 
     # viable_slots: 週wiにおいて生徒sの希望時間帯に担当可能講師がいるスロット数
@@ -2699,6 +2700,91 @@ def generate():
         app.logger.error(f'API error: {traceback.format_exc()}')
         return jsonify({'error': '内部エラーが発生しました'}), 500
 
+def _prepare_excel(sd, progress_fn=None):
+    """Excel出力ファイルを準備し、output_pathを返す"""
+    res = sd.get('result', {})
+    output_path = os.path.join(sd['dir'], 'output.xlsx')
+
+    def _prog(pct, msg):
+        if progress_fn:
+            progress_fn(pct, msg)
+
+    _prog(5, 'データを準備中...')
+
+    # スケジュール全状態をJSON化してExcelに埋め込む（再読み込み用）
+    state_json = {
+        'schedule': res.get('schedule_json', []),
+        'unplaced': res.get('unplaced', []),
+        'officeTeachers': res.get('office_teachers', []),
+        'officeRule': res.get('office_rule', {}),
+        'boothPref': res.get('booth_pref', {}),
+        'manualTeachers': res.get('manual_teachers', []),
+        'weekDates': res.get('week_dates'),
+        'total': sum(sum(s['needs'].values()) for s in res.get('students', [])),
+    }
+    # students JSON化
+    students_json = []
+    for s in res.get('students', []):
+        students_json.append({
+            'grade': s['grade'], 'name': s['name'],
+            'needs': s['needs'],
+            'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
+            'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
+            'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
+            'notes': s.get('notes', ''),
+            'ng_teachers': s['ng_teachers'],
+            'wish_teachers': s['wish_teachers'],
+            'ng_students': s['ng_students'],
+            'ng_dates': [list(d) for d in s.get('ng_dates', set())],
+        })
+    state_json['students'] = students_json
+    # weeklyTeachers: srcファイルがあれば再取得、なければresultのキャッシュを利用
+    wt = None
+    if 'src' in sd.get('files', {}):
+        try:
+            wt = load_weekly_teachers(sd['files']['src'])
+        except Exception:
+            pass
+    if not wt:
+        wt = res.get('weekly_teachers')
+    if wt:
+        state_json['weeklyTeachers'] = _sanitize_weekly_teachers(wt)
+    # placed count
+    placed = 0
+    for w in res.get('schedule', []):
+        for d_data in w.values():
+            for bs in d_data.values():
+                for b in bs:
+                    placed += len(b['slots'])
+    state_json['placed'] = placed
+
+    _prog(10, 'テンプレートを読み込み中...')
+
+    # office_teachers が不足している場合（古いバックアップ等）、デフォルト設定で補完
+    ot_list = list(res.get('office_teachers', []))
+    rule = res.get('office_rule') or {d: [] for d in DAYS}
+    num_sched_weeks = len(res.get('schedule', []))
+    while len(ot_list) < num_sched_weeks:
+        if ot_list:
+            ot_list.append(dict(ot_list[-1]))
+        else:
+            ot_list.append({d: rule[d][0] if rule.get(d) else None for d in DAYS})
+
+    week_file_paths = sd.get('files', {}).get('week_files')
+    booth_path = sd.get('files', {}).get('booth')
+    write_excel(
+        res['schedule'],
+        res['unplaced'],
+        ot_list,
+        booth_path,
+        output_path,
+        state_json=state_json,
+        week_file_paths=week_file_paths,
+        progress_fn=progress_fn
+    )
+    return output_path
+
+
 @app.route('/api/download')
 @login_required
 def download():
@@ -2706,81 +2792,67 @@ def download():
     res = sd.get('result', {})
     if 'schedule' not in res:
         return jsonify({'error': '先にスケジュールを生成してください'}), 400
-
-    output_path = os.path.join(sd['dir'], 'output.xlsx')
     try:
-        # スケジュール全状態をJSON化してExcelに埋め込む（再読み込み用）
-        state_json = {
-            'schedule': res.get('schedule_json', []),
-            'unplaced': res.get('unplaced', []),
-            'officeTeachers': res.get('office_teachers', []),
-            'officeRule': res.get('office_rule', {}),
-            'boothPref': res.get('booth_pref', {}),
-            'manualTeachers': res.get('manual_teachers', []),
-            'weekDates': res.get('week_dates'),
-            'total': sum(sum(s['needs'].values()) for s in res.get('students', [])),
-        }
-        # students JSON化
-        students_json = []
-        for s in res.get('students', []):
-            students_json.append({
-                'grade': s['grade'], 'name': s['name'],
-                'needs': s['needs'],
-                'avail': sorted([list(a) for a in s['avail']]) if s.get('avail') else None,
-                'backup_avail': sorted([list(a) for a in s['backup_avail']]) if s.get('backup_avail') else None,
-                'fixed': [[d, t, subj] for d, t, subj in s.get('fixed', [])],
-                'notes': s.get('notes', ''),
-                'ng_teachers': s['ng_teachers'],
-                'wish_teachers': s['wish_teachers'],
-                'ng_students': s['ng_students'],
-                'ng_dates': [list(d) for d in s.get('ng_dates', set())],
-            })
-        state_json['students'] = students_json
-        # weeklyTeachers: srcファイルがあれば再取得、なければresultのキャッシュを利用
-        wt = None
-        if 'src' in sd.get('files', {}):
-            try:
-                wt = load_weekly_teachers(sd['files']['src'])
-            except Exception:
-                pass
-        if not wt:
-            wt = res.get('weekly_teachers')
-        if wt:
-            state_json['weeklyTeachers'] = _sanitize_weekly_teachers(wt)
-        # placed count
-        placed = 0
-        for w in res.get('schedule', []):
-            for d_data in w.values():
-                for bs in d_data.values():
-                    for b in bs:
-                        placed += len(b['slots'])
-        state_json['placed'] = placed
-
-        # office_teachers が不足している場合（古いバックアップ等）、デフォルト設定で補完
-        ot_list = list(res.get('office_teachers', []))
-        rule = res.get('office_rule') or {d: [] for d in DAYS}
-        num_sched_weeks = len(res.get('schedule', []))
-        while len(ot_list) < num_sched_weeks:
-            if ot_list:
-                ot_list.append(dict(ot_list[-1]))
-            else:
-                ot_list.append({d: rule[d][0] if rule.get(d) else None for d in DAYS})
-
-        week_file_paths = sd.get('files', {}).get('week_files')
-        booth_path = sd.get('files', {}).get('booth')
-        write_excel(
-            res['schedule'],
-            res['unplaced'],
-            ot_list,
-            booth_path,
-            output_path,
-            state_json=state_json,
-            week_file_paths=week_file_paths
-        )
+        output_path = os.path.join(sd['dir'], 'output.xlsx')
+        # download_stream で直近に生成済みならそのまま返す
+        if not os.path.exists(output_path) or (time.time() - os.path.getmtime(output_path)) > 30:
+            _prepare_excel(sd)
         return send_file(output_path, as_attachment=True, download_name='時間割_出力.xlsx')
     except Exception as e:
         app.logger.error(f'API error: {traceback.format_exc()}')
         return jsonify({'error': '内部エラーが発生しました'}), 500
+
+
+import queue as _queue
+
+@app.route('/api/download_stream')
+@login_required
+def download_stream():
+    """SSEでExcel生成の進捗を送信し、完了後にファイルをダウンロード可能にする"""
+    sd = get_session_data()
+    res = sd.get('result', {})
+    if 'schedule' not in res:
+        def err_gen():
+            yield f"data: {json.dumps({'error': '先にスケジュールを生成してください'})}\n\n"
+        return app.response_class(err_gen(), mimetype='text/event-stream')
+
+    q = _queue.Queue()
+
+    def on_progress(pct, msg):
+        q.put((pct, msg))
+
+    def work():
+        try:
+            _prepare_excel(sd, progress_fn=on_progress)
+            q.put(None)  # sentinel: done
+        except Exception as e:
+            q.put(('error', str(e)))
+
+    t = threading.Thread(target=work, daemon=True)
+    t.start()
+
+    def generate():
+        while True:
+            try:
+                item = q.get(timeout=120)
+            except _queue.Empty:
+                yield f"data: {json.dumps({'error': 'タイムアウト'})}\n\n"
+                break
+            if item is None:
+                yield f"data: {json.dumps({'progress': 100, 'step': '完了', 'ready': True})}\n\n"
+                break
+            if item[0] == 'error':
+                yield f"data: {json.dumps({'error': item[1]})}\n\n"
+                break
+            pct, msg = item
+            yield f"data: {json.dumps({'progress': pct, 'step': msg}, ensure_ascii=False)}\n\n"
+        t.join(timeout=5)
+
+    return app.response_class(
+        generate(),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
+    )
 
 def _build_state_json(sd):
     """セッションデータからスケジュール全状態のJSONシリアライズ用dictを構築"""
