@@ -2859,6 +2859,20 @@ def download():
     sd = get_session_data()
     res = sd.get('result', {})
     if 'schedule' not in res:
+        # インメモリキャッシュが消えている場合、ディスクから復元を試みる
+        sid = sd.get('_sid')
+        if sid:
+            disk_result = _load_result_from_disk(sid)
+            if disk_result and 'schedule_json' in disk_result:
+                sd['result'] = {
+                    'schedule_json': disk_result['schedule_json'],
+                    'schedule': disk_result['schedule_json'],
+                    'unplaced': disk_result.get('unplaced', []),
+                    'office_teachers': disk_result.get('office_teachers', []),
+                }
+                save_session_result(sd)
+                res = sd['result']
+    if 'schedule' not in res:
         return jsonify({'error': '先にスケジュールを生成してください'}), 400
     try:
         output_path = os.path.join(sd['dir'], 'output.xlsx')
@@ -2878,6 +2892,20 @@ def download_stream():
     """SSEでExcel生成の進捗を送信し、完了後にファイルをダウンロード可能にする"""
     sd = get_session_data()
     res = sd.get('result', {})
+    if 'schedule' not in res:
+        # インメモリキャッシュが消えている場合、ディスクから復元を試みる
+        sid = sd.get('_sid')
+        if sid:
+            disk_result = _load_result_from_disk(sid)
+            if disk_result and 'schedule_json' in disk_result:
+                sd['result'] = {
+                    'schedule_json': disk_result['schedule_json'],
+                    'schedule': disk_result['schedule_json'],
+                    'unplaced': disk_result.get('unplaced', []),
+                    'office_teachers': disk_result.get('office_teachers', []),
+                }
+                save_session_result(sd)
+                res = sd['result']
     if 'schedule' not in res:
         def err_gen():
             yield f"data: {json.dumps({'error': '先にスケジュールを生成してください'})}\n\n"
