@@ -2056,12 +2056,12 @@ def extract_week_dates(booth_wb, num_weeks):
 
 # ========== Excel出力 ==========
 def _copy_worksheet_fast(src_ws, dst_ws, on_row_done=None):
-    """Cross-workbook worksheet copy with direct _style assignment.
+    """Cross-workbook worksheet copy with style caching.
     on_row_done: optional callback called after each row is copied.
     For each unique style combination, registers styles via property setters once,
-    then reuses the cached StyleArray for all subsequent cells (1 assignment vs 6 setters).
+    then reuses cached style tuples for subsequent cells.
     """
-    style_cache = {}  # src _style -> dst _style (StyleArray)
+    style_cache = {}  # src _style -> (font, fill, border, nf, protection, alignment) cached objects
     for row in src_ws.iter_rows():
         for cell in row:
             dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
@@ -2069,17 +2069,17 @@ def _copy_worksheet_fast(src_ws, dst_ws, on_row_done=None):
             if cell.has_style:
                 src_style = cell._style
                 if src_style not in style_cache:
-                    # First occurrence: register via property setters
-                    dst_cell.font = copy(cell.font)
-                    dst_cell.fill = copy(cell.fill)
-                    dst_cell.border = copy(cell.border)
-                    dst_cell.number_format = cell.number_format
-                    dst_cell.protection = copy(cell.protection)
-                    dst_cell.alignment = copy(cell.alignment)
-                    style_cache[src_style] = dst_cell._style
-                else:
-                    # Subsequent: direct _style assignment (bypasses 6 setters)
-                    dst_cell._style = style_cache[src_style]
+                    style_cache[src_style] = (
+                        copy(cell.font), copy(cell.fill), copy(cell.border),
+                        cell.number_format, copy(cell.protection), copy(cell.alignment)
+                    )
+                cached = style_cache[src_style]
+                dst_cell.font = cached[0]
+                dst_cell.fill = cached[1]
+                dst_cell.border = cached[2]
+                dst_cell.number_format = cached[3]
+                dst_cell.protection = cached[4]
+                dst_cell.alignment = cached[5]
         if on_row_done:
             on_row_done()
     for merged_range in src_ws.merged_cells.ranges:
