@@ -2199,7 +2199,7 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
     if week_file_paths:
         # --- 1週目高速化: ファイルコピーでWBを作成し、セルコピーをスキップ ---
         _emit(PHASE_WEEKS_START, '第1週を読み込み中...')
-        tmp_path = output_path + '.tmp'
+        tmp_path = output_path.replace('.xlsx', '_tmp.xlsx')
         shutil.copy2(week_file_paths[0], tmp_path)
         wb = openpyxl.load_workbook(tmp_path)
         try:
