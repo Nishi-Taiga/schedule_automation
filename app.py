@@ -2864,7 +2864,17 @@ def _prepare_excel(sd, progress_fn=None):
         week_file_paths=week_file_paths,
         progress_fn=progress_fn
     )
+    # ハッシュをメタデータに永続化（次回リクエストでキャッシュ判定に使用）
     sd['_excel_hash'] = sched_hash
+    try:
+        sid = sd.get('_sid')
+        if sid:
+            meta = _load_meta(sid)
+            if meta:
+                meta['_excel_hash'] = sched_hash
+                _save_meta(sid, meta)
+    except Exception:
+        pass
     return output_path
 
 
