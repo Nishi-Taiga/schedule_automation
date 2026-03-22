@@ -2307,13 +2307,25 @@
           };
           es.onerror = () => {
             es.close();
-            if (lastProgress >= 85) {
-              // 仕上げフェーズ以降で切断 → ファイル生成済みの可能性大、直接DLを試行
-              setStep(si, 'active', 'Excelファイルを生成 (再接続中...)');
-              setTimeout(async () => {
-                try { const r = await fetch('/api/download'); if (r.ok) { resolve(); return; } } catch (_) {}
-                reject(new Error('Excel生成中に接続が切れました'));
-              }, 2000);
+            if (lastProgress >= 10) {
+              // 生成処理開始後の切断 → バックエンドスレッドは継続中、ポーリングでDLを試行
+              setStep(si, 'active', 'Excelファイルを生成 (' + lastProgress + '% - 再接続中...)');
+              let retries = 0;
+              const maxRetries = 12;  // 5秒 × 12 = 60秒
+              const poll = async () => {
+                retries++;
+                try {
+                  const r = await fetch('/api/download');
+                  if (r.ok) { resolve(); return; }
+                } catch (_) {}
+                if (retries < maxRetries) {
+                  setStep(si, 'active', 'Excelファイルを生成 (バックグラウンド生成中... ' + (retries * 5) + '秒)');
+                  setTimeout(poll, 5000);
+                } else {
+                  reject(new Error('Excel生成がタイムアウトしました。再度お試しください。'));
+                }
+              };
+              setTimeout(poll, 5000);
             } else {
               reject(new Error('Excel生成中に接続が切れました'));
             }
