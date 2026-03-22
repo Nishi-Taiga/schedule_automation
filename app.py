@@ -2056,29 +2056,30 @@ def extract_week_dates(booth_wb, num_weeks):
 
 # ========== Excel出力 ==========
 def _copy_worksheet_fast(src_ws, dst_ws, on_row_done=None):
-    """Cross-workbook worksheet copy with style caching.
+    """Cross-workbook worksheet copy with direct _style assignment.
     on_row_done: optional callback called after each row is copied.
-    Uses openpyxl internal _style tuple as cache key (avoids slow str() conversion).
+    For each unique style combination, registers styles via property setters once,
+    then reuses the cached StyleArray for all subsequent cells (1 assignment vs 6 setters).
     """
-    style_cache = {}
+    style_cache = {}  # src _style -> dst _style (StyleArray)
     for row in src_ws.iter_rows():
         for cell in row:
             dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
             dst_cell.value = cell.value
             if cell.has_style:
-                style_key = cell._style
-                if style_key not in style_cache:
-                    style_cache[style_key] = (
-                        copy(cell.font), copy(cell.border), copy(cell.fill),
-                        cell.number_format, copy(cell.protection), copy(cell.alignment)
-                    )
-                cached = style_cache[style_key]
-                dst_cell.font = cached[0]
-                dst_cell.border = cached[1]
-                dst_cell.fill = cached[2]
-                dst_cell.number_format = cached[3]
-                dst_cell.protection = cached[4]
-                dst_cell.alignment = cached[5]
+                src_style = cell._style
+                if src_style not in style_cache:
+                    # First occurrence: register via property setters
+                    dst_cell.font = copy(cell.font)
+                    dst_cell.fill = copy(cell.fill)
+                    dst_cell.border = copy(cell.border)
+                    dst_cell.number_format = cell.number_format
+                    dst_cell.protection = copy(cell.protection)
+                    dst_cell.alignment = copy(cell.alignment)
+                    style_cache[src_style] = dst_cell._style
+                else:
+                    # Subsequent: direct _style assignment (bypasses 6 setters)
+                    dst_cell._style = style_cache[src_style]
         if on_row_done:
             on_row_done()
     for merged_range in src_ws.merged_cells.ranges:
@@ -2198,7 +2199,23 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, we
     # 1週あたりのスケジュール書き込みバッチ数 (time_labels + office = 7)
     SCHED_BATCHES = len(LAYOUT) + 1  # 6 time_labels + 1 office = 7
 
-    if week_file_paths:
+    # --- booth_pathに週シートがあればセルコピー不要の高速パスを優先 ---
+    booth_has_weeks = False
+    if booth_path and os.path.exists(booth_path) and week_file_paths:
+        try:
+            _bwb = openpyxl.load_workbook(booth_path, read_only=True)
+            _bw_sheets = [sn for sn in _bwb.sheetnames
+                         if not any(k in sn for k in META_KEYWORDS)
+                         and not sn.startswith('_schedule_data')
+                         and sn != '未配置コマ']
+            booth_has_weeks = len(_bw_sheets) >= num_weeks
+            _bwb.close()
+            if booth_has_weeks:
+                print(f"[write_excel] booth has {len(_bw_sheets)} week sheets >= {num_weeks} weeks, using fast booth_path mode", flush=True)
+        except Exception:
+            pass
+
+    if week_file_paths and not booth_has_weeks:
         # --- 1週目高速化: ファイルコピーでWBを作成し、セルコピーをスキップ ---
         _emit(PHASE_WEEKS_START, '第1週を読み込み中...')
         tmp_path = output_path.replace('.xlsx', '_tmp.xlsx')
@@ -3197,6 +3214,20 @@ def cloud_load():
                     new_files['booth'] = restored['booth']
                 if 'week_files' in restored:
                     new_files['week_files'] = restored['week_files']
+                # boothに週シートがあればweek_filesを除去（booth_pathモードで高速DL）
+                if 'booth' in new_files and os.path.exists(new_files['booth']):
+                    try:
+                        _chk = openpyxl.load_workbook(new_files['booth'], read_only=True)
+                        _chk_weeks = [sn for sn in _chk.sheetnames
+                                      if not any(k in sn for k in META_KEYWORDS)
+                                      and not sn.startswith('_schedule_data')
+                                      and sn != '未配置コマ']
+                        _chk.close()
+                        if _chk_weeks:
+                            new_files.pop('week_files', None)
+                            print(f"[cloud_load] unified booth ({len(_chk_weeks)} week sheets), removed week_files for fast DL", flush=True)
+                    except Exception:
+                        pass
                 sd['files'] = new_files
                 has_booth = True
 
