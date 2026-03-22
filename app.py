@@ -183,7 +183,9 @@ def _save_result_to_disk(sid, result):
         if 'weekly_teachers' in result:
             saveable['weekly_teachers'] = result['weekly_teachers']
         if 'skills' in result:
-            saveable['skills'] = result['skills']
+            # set→list変換（JSON保存用）
+            saveable['skills'] = {t: list(v) if isinstance(v, set) else v
+                                  for t, v in result['skills'].items()}
         with open(rp, 'w', encoding='utf-8') as f:
             json.dump(saveable, f, ensure_ascii=False)
         # Supabaseにも永続保存
