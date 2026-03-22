@@ -2088,6 +2088,23 @@ def _copy_worksheet_fast(src_ws, dst_ws, on_row_done=None):
         dst_ws.column_dimensions[col_letter].width = dim.width
     for row_num, dim in src_ws.row_dimensions.items():
         dst_ws.row_dimensions[row_num].height = dim.height
+    # シートレベルのプロパティをコピー（defaultColWidth, defaultRowHeight, 印刷設定等）
+    if src_ws.sheet_format.defaultColWidth is not None:
+        dst_ws.sheet_format.defaultColWidth = src_ws.sheet_format.defaultColWidth
+    if src_ws.sheet_format.defaultRowHeight is not None:
+        dst_ws.sheet_format.defaultRowHeight = src_ws.sheet_format.defaultRowHeight
+        dst_ws.sheet_format.customHeight = src_ws.sheet_format.customHeight
+    dst_ws.page_setup.orientation = src_ws.page_setup.orientation
+    dst_ws.page_setup.paperSize = src_ws.page_setup.paperSize
+    dst_ws.page_setup.scale = src_ws.page_setup.scale
+    dst_ws.page_setup.fitToWidth = src_ws.page_setup.fitToWidth
+    dst_ws.page_setup.fitToHeight = src_ws.page_setup.fitToHeight
+    dst_ws.page_margins.left = src_ws.page_margins.left
+    dst_ws.page_margins.right = src_ws.page_margins.right
+    dst_ws.page_margins.top = src_ws.page_margins.top
+    dst_ws.page_margins.bottom = src_ws.page_margins.bottom
+    dst_ws.page_margins.header = src_ws.page_margins.header
+    dst_ws.page_margins.footer = src_ws.page_margins.footer
 
 def _write_schedule_to_ws(ws, wsched, office_data, on_batch_done=None):
     """1つの週シートにスケジュールデータを書き込む共通処理
@@ -3340,6 +3357,40 @@ def upload_booth_template():
     save_session_files(sd)
     count = len(saved_week_paths) + (1 if meta_path else 0)
     print(f"[upload_booth_excel] saved {count} files (meta={'yes' if meta_path else 'no'}, weeks={len(saved_week_paths)})", flush=True)
+
+    # ======== 週ファイルから日付・月・休塾日を抽出してセッションに反映 ========
+    week_paths_for_extract = sorted(saved_week_paths) if saved_week_paths else None
+    if not week_paths_for_extract and meta_path:
+        # メタファイルに週シートが含まれている場合、meta_path自体から抽出
+        try:
+            _mwb = openpyxl.load_workbook(meta_path, read_only=True)
+            _m_weeks = [sn for sn in _mwb.sheetnames
+                        if 'ブース表' in sn and _mwb[sn].sheet_state == 'visible']
+            _mwb.close()
+            if _m_weeks:
+                week_paths_for_extract = [meta_path]
+        except Exception:
+            pass
+    if week_paths_for_extract:
+        try:
+            wd = extract_week_dates_from_files(week_paths_for_extract)
+            if wd:
+                res = sd.get('result', {})
+                res['week_dates'] = wd
+                sd['result'] = res
+                print(f"[upload_booth_template] week_dates extracted: year={wd['year']} month={wd['month']} weeks={len(wd.get('weeks', []))}", flush=True)
+        except Exception as e:
+            print(f"[upload_booth_template] week_dates extract warning: {e}", flush=True)
+        try:
+            holidays = load_holidays_from_files(week_paths_for_extract)
+            if holidays:
+                res = sd.get('result', {})
+                res['holidays'] = holidays
+                sd['result'] = res
+                print(f"[upload_booth_template] holidays extracted: {sum(len(h) for h in holidays)} days", flush=True)
+        except Exception as e:
+            print(f"[upload_booth_template] holidays extract warning: {e}", flush=True)
+        save_session_result(sd)
 
     # ======== 週ファイルから配置済みスケジュールの読み取りを試みる ========
     schedule_data = None
