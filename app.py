@@ -21,6 +21,8 @@ import calendar
 import base64
 import zipfile
 import io
+import hashlib
+import gzip
 from copy import copy, deepcopy
 from collections import defaultdict
 from functools import wraps
@@ -2054,6 +2056,7 @@ def extract_week_dates(booth_wb, num_weeks):
 def _copy_worksheet_fast(src_ws, dst_ws, on_row_done=None):
     """Cross-workbook worksheet copy with style caching.
     on_row_done: optional callback called after each row is copied.
+    Uses openpyxl internal _style tuple as cache key (avoids slow str() conversion).
     """
     style_cache = {}
     for row in src_ws.iter_rows():
@@ -2061,10 +2064,7 @@ def _copy_worksheet_fast(src_ws, dst_ws, on_row_done=None):
             dst_cell = dst_ws.cell(row=cell.row, column=cell.column)
             dst_cell.value = cell.value
             if cell.has_style:
-                style_key = (
-                    str(cell.font), str(cell.border), str(cell.fill),
-                    cell.number_format, str(cell.protection), str(cell.alignment)
-                )
+                style_key = cell._style
                 if style_key not in style_cache:
                     style_cache[style_key] = (
                         copy(cell.font), copy(cell.border), copy(cell.fill),
@@ -2142,6 +2142,7 @@ def _write_schedule_to_ws(ws, wsched, office_data, on_batch_done=None):
     # 教室業務・チューター
     holiday_fill = PatternFill(start_color='C0C0C0', end_color='C0C0C0', fill_type='solid')
     holiday_font = Font(name='MS PGothic', color='333333', bold=True, size=11)
+    holiday_align = Alignment(horizontal='center', vertical='center')
     for day in DAYS:
         bc = DAY_COLS[day][0]
         t = office_data.get(day)
@@ -2150,14 +2151,14 @@ def _write_schedule_to_ws(ws, wsched, office_data, on_batch_done=None):
             if t == '休塾日':
                 cell.fill = holiday_fill
                 cell.font = holiday_font
-                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.alignment = holiday_align
             for tr in TUTOR_ROWS:
                 try:
                     c = ws.cell(tr, bc, t)
                     if t == '休塾日':
                         c.fill = holiday_fill
                         c.font = holiday_font
-                        c.alignment = Alignment(horizontal='center', vertical='center')
+                        c.alignment = holiday_align
                 except Exception: pass
             if t == '休塾日':
                 all_cols = DAY_COLS[day]
@@ -2196,10 +2197,41 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
     SCHED_BATCHES = len(LAYOUT) + 1  # 6 time_labels + 1 office = 7
 
     if week_file_paths:
-        wb = openpyxl.Workbook()
-        wb.remove(wb.active)
+        # --- 1週目高速化: ファイルコピーでWBを作成し、セルコピーをスキップ ---
+        _emit(PHASE_WEEKS_START, '第1週を読み込み中...')
+        tmp_path = output_path + '.tmp'
+        shutil.copy2(week_file_paths[0], tmp_path)
+        wb = openpyxl.load_workbook(tmp_path)
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
-        for wi in range(min(num_weeks, len(week_file_paths))):
+        # ブース表シートを特定し、不要シートを削除
+        target_sn = None
+        for sn in wb.sheetnames:
+            if 'ブース表' in sn and wb[sn].sheet_state == 'visible':
+                target_sn = sn
+                break
+        for sn in list(wb.sheetnames):
+            if sn != target_sn:
+                del wb[sn]
+
+        # 1週目: スケジュール書き込みのみ（セルコピー不要）
+        w_base_0 = PHASE_WEEKS_START
+        w_alloc_0 = week_range / num_weeks
+        batches_done_0 = [0]
+
+        def _on_batch_0(bd=batches_done_0, tb=SCHED_BATCHES, base=w_base_0, alloc=w_alloc_0):
+            bd[0] += 1
+            _emit(base + (bd[0] / tb) * alloc, '第1週 スケジュール書き込み中')
+
+        if target_sn:
+            ot0 = office_teachers[0] if office_teachers else {}
+            _write_schedule_to_ws(wb[target_sn], schedule[0], ot0, on_batch_done=_on_batch_0)
+
+        # 2週目以降: 従来通りセルコピー
+        for wi in range(1, min(num_weeks, len(week_file_paths))):
             w_base = PHASE_WEEKS_START + (wi / num_weeks) * week_range
             w_alloc = week_range / num_weeks
 
@@ -2224,7 +2256,8 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
 
             def _on_row(rd=rows_done, tr=total_rows, base=w_base, ca=copy_alloc, w=wi):
                 rd[0] += 1
-                _emit(base + (rd[0] / tr) * ca, f'第{w+1}週 セルコピー中 ({rd[0]}/{tr}行)')
+                if rd[0] % 10 == 0 or rd[0] == tr:
+                    _emit(base + (rd[0] / tr) * ca, f'第{w+1}週 セルコピー中 ({rd[0]}/{tr}行)')
 
             _copy_worksheet_fast(src_ws, dst_ws, on_row_done=_on_row)
             week_wb.close()
@@ -2291,18 +2324,16 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
     ws_up.column_dimensions['C'].width = 6
     ws_up.column_dimensions['D'].width = 10
 
-    # JSON埋め込み (88-92%)
+    # JSON埋め込み (88-92%) — gzip圧縮でデータ量70-80%削減
     _emit(88, 'データを埋め込み中...')
     if state_json:
         ws_state = wb.create_sheet('_schedule_data')
         ws_state.sheet_state = 'hidden'
         data_str = json.dumps(state_json, ensure_ascii=False)
-        CHUNK = 30000
-        total_chunks = max(len(data_str) // CHUNK + 1, 1)
-        for idx in range(0, len(data_str), CHUNK):
-            chunk_num = idx // CHUNK
-            ws_state.cell(chunk_num + 1, 1, data_str[idx:idx+CHUNK])
-            _emit(88 + ((chunk_num + 1) / total_chunks) * 4, f'データ埋め込み中 ({chunk_num+1}/{total_chunks})')
+        compressed = base64.b64encode(gzip.compress(data_str.encode('utf-8'))).decode('ascii')
+        # gzip: プレフィックス付きで1セルに保存（復元時に新旧フォーマット自動判別）
+        ws_state.cell(1, 1, 'gzip:' + compressed)
+        _emit(92, 'データ埋め込み完了')
 
     # 保存 (92-100%) — サブスレッド + キープアライブ
     _emit(92, 'ファイルを保存中...')
@@ -2797,6 +2828,15 @@ def _prepare_excel(sd, progress_fn=None):
 
     _prog(5, 'データを準備中...')
 
+    # --- ハッシュキャッシュ: スケジュール未変更ならファイル再生成をスキップ ---
+    sched_hash = hashlib.sha256(
+        json.dumps(res.get('schedule', []), sort_keys=True).encode()
+    ).hexdigest()
+    cached_hash = sd.get('_excel_hash')
+    if cached_hash == sched_hash and os.path.exists(output_path):
+        _prog(100, '完了')
+        return output_path
+
     # スケジュール全状態をJSON化してExcelに埋め込む（再読み込み用）
     state_json = _build_state_json(sd)
 
@@ -2824,6 +2864,7 @@ def _prepare_excel(sd, progress_fn=None):
         week_file_paths=week_file_paths,
         progress_fn=progress_fn
     )
+    sd['_excel_hash'] = sched_hash
     return output_path
 
 
@@ -2836,9 +2877,8 @@ def download():
         return jsonify({'error': '先にスケジュールを生成してください'}), 400
     try:
         output_path = os.path.join(sd['dir'], 'output.xlsx')
-        # download_stream で直近に生成済みならそのまま返す
-        if not os.path.exists(output_path) or (time.time() - os.path.getmtime(output_path)) > 30:
-            _prepare_excel(sd)
+        # ハッシュキャッシュ: _prepare_excel 内で変更有無を判定
+        _prepare_excel(sd)
         return send_file(output_path, as_attachment=True, download_name='時間割_出力.xlsx')
     except Exception as e:
         app.logger.error(f'API error: {traceback.format_exc()}')
@@ -3500,9 +3540,12 @@ def load_saved():
                     chunks.append(str(row[0]))
             data_str = ''.join(chunks)
             try:
+                # gzip圧縮フォーマット（新）とプレーンJSON（旧）を自動判別
+                if data_str.startswith('gzip:'):
+                    data_str = gzip.decompress(base64.b64decode(data_str[5:])).decode('utf-8')
                 state = json.loads(data_str)
-            except:
-                pass # JSON破損時は無視して視覚シートに頼る
+            except Exception:
+                pass  # JSON破損時は無視して視覚シートに頼る
 
         # 2. 視覚シートからスケジュール配置を上書き/復元（こちらを正とする）
         vis_schedule, vis_ot = parse_schedule_from_wb(wb)
