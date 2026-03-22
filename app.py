@@ -2174,7 +2174,7 @@ def _write_schedule_to_ws(ws, wsched, office_data, on_batch_done=None):
     if on_batch_done:
         on_batch_done()
 
-def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, state_json=None, week_file_paths=None, progress_fn=None):
+def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, week_file_paths=None, progress_fn=None):
     num_weeks = len(schedule)
 
     # --- セル数ベース進捗 ---
@@ -2278,13 +2278,18 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
     elif booth_path:
         _emit(PHASE_WEEKS_START, 'テンプレートを読み込み中...')
         wb = openpyxl.load_workbook(booth_path)
-        exclude_sheets = set()
+        # メタシート・不要シートを特定してワークブックから削除（save高速化）
+        remove_sheets = []
+        week_sheets = []
         for sn in wb.sheetnames:
             if any(k in sn for k in META_KEYWORDS):
-                exclude_sheets.add(sn)
+                remove_sheets.append(sn)
             elif sn.startswith('_schedule_data') or sn == '未配置コマ':
-                exclude_sheets.add(sn)
-        week_sheets = [sn for sn in wb.sheetnames if sn not in exclude_sheets]
+                remove_sheets.append(sn)
+            else:
+                week_sheets.append(sn)
+        for sn in remove_sheets:
+            del wb[sn]
         num_weeks = min(num_weeks, len(week_sheets))
 
         for wi in range(num_weeks):
@@ -2304,39 +2309,13 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, st
         wb.remove(wb.active)
 
     # --- 仕上げフェーズ (85-100%) ---
+    # 残存する不要シートを削除（week_file_pathsモードの出力ファイル再生成時など）
     for old_sn in list(wb.sheetnames):
         if old_sn == '未配置コマ' or old_sn.startswith('_schedule_data'):
             del wb[old_sn]
 
-    # 未配置コマシート (85-88%)
-    _emit(PHASE_FINAL, '未配置データを書き込み中...')
-    ws_up = wb.create_sheet('未配置コマ')
-    for c, h in enumerate(['学年','生徒名','科目','未配置数'], 1):
-        ws_up.cell(1, c, h).font = Font(name='MS PGothic', bold=True)
-    total_up = max(len(unplaced), 1)
-    for i, u in enumerate(unplaced, 2):
-        ws_up.cell(i,1,u['grade']); ws_up.cell(i,2,u['name'])
-        ws_up.cell(i,3,u['subject']); ws_up.cell(i,4,u['count'])
-        if (i - 1) % max(total_up // 5, 1) == 0:
-            _emit(85 + ((i - 1) / total_up) * 3, f'未配置データ ({i-1}/{total_up}件)')
-    ws_up.column_dimensions['A'].width = 6
-    ws_up.column_dimensions['B'].width = 12
-    ws_up.column_dimensions['C'].width = 6
-    ws_up.column_dimensions['D'].width = 10
-
-    # JSON埋め込み (88-92%) — gzip圧縮でデータ量70-80%削減
-    _emit(88, 'データを埋め込み中...')
-    if state_json:
-        ws_state = wb.create_sheet('_schedule_data')
-        ws_state.sheet_state = 'hidden'
-        data_str = json.dumps(state_json, ensure_ascii=False)
-        compressed = base64.b64encode(gzip.compress(data_str.encode('utf-8'))).decode('ascii')
-        # gzip: プレフィックス付きで1セルに保存（復元時に新旧フォーマット自動判別）
-        ws_state.cell(1, 1, 'gzip:' + compressed)
-        _emit(92, 'データ埋め込み完了')
-
-    # 保存 (92-100%) — サブスレッド + キープアライブ
-    _emit(92, 'ファイルを保存中...')
+    # 保存 (85-100%) — サブスレッド + キープアライブ
+    _emit(85, 'ファイルを保存中...')
     save_error = [None]
     save_done = threading.Event()
     def _do_save():
@@ -2837,9 +2816,6 @@ def _prepare_excel(sd, progress_fn=None):
         _prog(100, '完了')
         return output_path
 
-    # スケジュール全状態をJSON化してExcelに埋め込む（再読み込み用）
-    state_json = _build_state_json(sd)
-
     _prog(10, 'テンプレートを読み込み中...')
 
     # office_teachers が不足している場合（古いバックアップ等）、デフォルト設定で補完
@@ -2860,7 +2836,6 @@ def _prepare_excel(sd, progress_fn=None):
         ot_list,
         booth_path,
         output_path,
-        state_json=state_json,
         week_file_paths=week_file_paths,
         progress_fn=progress_fn
     )
