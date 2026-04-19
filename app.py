@@ -3204,43 +3204,12 @@ def cloud_load():
         for t, subjs in metadata.get('skills', {}).items():
             skills[t] = set(subjs) if isinstance(subjs, list) else subjs
 
-        # weekDates が null の場合、year/month から再計算
-        week_dates = state.get('weekDates')
-        schedule = state.get('schedule', [])
-        if not week_dates and snap.get('year') and snap.get('month'):
-            try:
-                y, m = int(snap['year']), int(snap['month'])
-                day_names = ['月','火','水','木','金','土']
-                wmap = _compute_month_week_map(y, m)
-                by_week = {}
-                for dn, wn in wmap.items():
-                    dt = _dt.date(y, m, dn)
-                    wd = dt.weekday()
-                    if wd < 6:
-                        by_week.setdefault(wn, {})[day_names[wd]] = dn
-                weeks = [by_week.get(wi + 1, {}) for wi in range(len(schedule))]
-                week_dates = {'year': y, 'month': m, 'weeks': weeks}
-                print(f"[cloud_load] weekDates reconstructed from year={y} month={m}", flush=True)
-            except Exception as e:
-                print(f"[cloud_load] weekDates reconstruction failed: {e}", flush=True)
-
         # セッションに復元
         sd = get_session_data()
-        sd['result'] = {
-            'schedule_json': schedule,
-            'schedule': schedule,
-            'unplaced': state.get('unplaced', []),
-            'office_teachers': state.get('officeTeachers', []),
-            'office_rule': settings.get('officeRule', state.get('officeRule', {})),
-            'booth_pref': settings.get('boothPref', state.get('boothPref', {})),
-            'manual_teachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
-            'students': state.get('students', []),
-            'week_dates': week_dates,
-            'weekly_teachers': _sanitize_weekly_teachers(state.get('weeklyTeachers')),
-            'skills': skills,
-        }
+        schedule = state.get('schedule', [])
+        week_dates = state.get('weekDates')
 
-        # ブース表テンプレート復元
+        # ブース表テンプレート復元（weekDates抽出より先に実行）
         has_booth = False
         if booth_b64:
             restored = _restore_booth_files(booth_b64, sd['dir'])
@@ -3266,6 +3235,53 @@ def cloud_load():
                         pass
                 sd['files'] = new_files
                 has_booth = True
+
+        # weekDates が null の場合、ブース表テンプレートから抽出
+        if not week_dates and has_booth:
+            try:
+                files = sd.get('files', {})
+                if files.get('week_files'):
+                    week_dates = extract_week_dates_from_files(files['week_files'][:len(schedule)])
+                    print(f"[cloud_load] weekDates extracted from week_files", flush=True)
+                elif files.get('booth') and os.path.exists(files['booth']):
+                    booth_wb = openpyxl.load_workbook(files['booth'], read_only=True, data_only=True)
+                    week_dates = extract_week_dates(booth_wb, len(schedule))
+                    booth_wb.close()
+                    print(f"[cloud_load] weekDates extracted from booth template", flush=True)
+            except Exception as e:
+                print(f"[cloud_load] weekDates extraction from booth failed: {e}", flush=True)
+
+        # それでも null の場合、year/month から再計算（最終フォールバック）
+        if not week_dates and snap.get('year') and snap.get('month'):
+            try:
+                y, m = int(snap['year']), int(snap['month'])
+                day_names = ['月','火','水','木','金','土']
+                wmap = _compute_month_week_map(y, m)
+                by_week = {}
+                for dn, wn in wmap.items():
+                    dt = _dt.date(y, m, dn)
+                    wd = dt.weekday()
+                    if wd < 6:
+                        by_week.setdefault(wn, {})[day_names[wd]] = dn
+                weeks = [by_week.get(wi + 1, {}) for wi in range(len(schedule))]
+                week_dates = {'year': y, 'month': m, 'weeks': weeks}
+                print(f"[cloud_load] weekDates reconstructed from year={y} month={m}", flush=True)
+            except Exception as e:
+                print(f"[cloud_load] weekDates reconstruction failed: {e}", flush=True)
+
+        sd['result'] = {
+            'schedule_json': schedule,
+            'schedule': schedule,
+            'unplaced': state.get('unplaced', []),
+            'office_teachers': state.get('officeTeachers', []),
+            'office_rule': settings.get('officeRule', state.get('officeRule', {})),
+            'booth_pref': settings.get('boothPref', state.get('boothPref', {})),
+            'manual_teachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
+            'students': state.get('students', []),
+            'week_dates': week_dates,
+            'weekly_teachers': _sanitize_weekly_teachers(state.get('weeklyTeachers')),
+            'skills': skills,
+        }
 
         save_session_result(sd)
         save_session_files(sd)
