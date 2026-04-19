@@ -3095,6 +3095,37 @@
     }
     function closeSlotEditModal() { const m = document.querySelector('.modal-overlay'); if (m) m.remove(); }
 
+    function showOfficeTeacherPicker(anchor, wi, day) {
+      document.querySelectorAll('.teacher-picker').forEach(p => p.remove());
+      const available = getAvailableTeachers(wi, day);
+      const current = (R.officeTeachers[wi] || {})[day] || '';
+      const picker = document.createElement('div'); picker.className = 'teacher-picker';
+      picker.style.cssText = 'position:absolute;z-index:100;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:6px 0;min-width:120px;max-height:240px;overflow-y:auto';
+      const rect = anchor.getBoundingClientRect();
+      picker.style.left = rect.left + 'px'; picker.style.top = (rect.bottom + 4) + 'px';
+      // 「なし」オプション
+      const noneOpt = document.createElement('div');
+      noneOpt.style.cssText = 'padding:4px 12px;cursor:pointer;font-size:12px;color:var(--ink3)';
+      noneOpt.textContent = '-- なし --';
+      noneOpt.onmouseenter = () => noneOpt.style.background = '#f0f7ff';
+      noneOpt.onmouseleave = () => noneOpt.style.background = '';
+      noneOpt.onclick = () => { R.officeTeachers[wi][day] = ''; picker.remove(); edited = true; rR(); scheduleAutoSave(); };
+      picker.appendChild(noneOpt);
+      // 講師オプション
+      available.forEach(t => {
+        const opt = document.createElement('div');
+        opt.style.cssText = 'padding:4px 12px;cursor:pointer;font-size:12px' + (t === current ? ';font-weight:700;color:var(--accent)' : '');
+        opt.textContent = t;
+        opt.onmouseenter = () => opt.style.background = '#f0f7ff';
+        opt.onmouseleave = () => opt.style.background = '';
+        opt.onclick = () => { if (!R.officeTeachers[wi]) R.officeTeachers[wi] = {}; R.officeTeachers[wi][day] = t; picker.remove(); edited = true; rR(); scheduleAutoSave(); };
+        picker.appendChild(opt);
+      });
+      document.body.appendChild(picker);
+      const close = (e) => { if (!picker.contains(e.target) && e.target !== anchor) { picker.remove(); document.removeEventListener('click', close); } };
+      setTimeout(() => document.addEventListener('click', close), 0);
+    }
+
     function rW(wrap, wi) {
       const ws = R.schedule[wi];
       const tbl = document.createElement('table'); tbl.className = 'sch';
@@ -3107,10 +3138,13 @@
         else {
           const assignedInDay = getAssignedTeachers(wi, d);
           const isDup = assignedInDay.has(ov);
-          hd += '<td><span class="' + (isDup ? 'tn dup' : '') + '">' + escHtml(ov) + '</span></td>';
+          hd += '<td data-office-day="' + d + '" style="cursor:pointer" title="クリックで変更"><span class="' + (isDup ? 'tn dup' : '') + '">' + escHtml(ov || '-- なし --') + '</span></td>';
         }
       }
       hd += '</tr></thead>'; tbl.innerHTML = hd;
+      tbl.querySelectorAll('[data-office-day]').forEach(td => {
+        td.addEventListener('click', () => showOfficeTeacherPicker(td, wi, td.dataset.officeDay));
+      });
       const tbody = document.createElement('tbody');
       const MX = 6;// 常に6ブース行を表示
       for (const tl of TL) {

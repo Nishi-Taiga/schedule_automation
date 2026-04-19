@@ -130,6 +130,8 @@ def save_session_files(sd):
     sid = sd['_sid']
     meta = _load_meta(sid)
     meta['files'] = sd['files']
+    if 'survey_name_map' in sd:
+        meta['survey_name_map'] = sd['survey_name_map']
     meta['last_access'] = time.time()
     _save_meta(sid, meta)
 
