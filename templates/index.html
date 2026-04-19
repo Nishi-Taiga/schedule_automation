@@ -3092,13 +3092,10 @@
       let hd = '<thead><tr><th style="width:50px">時間</th><th style="width:32px">B</th>'; for (const d of D) { const dl = getDateLabel(wi, d); hd += '<th style="width:calc((100% - 82px)/6*0.8)' + (d === '土' ? ';background:#edf2f7' : '') + '">' + d + (dl ? '<br><span style="font-size:10px;font-weight:400;color:var(--ink3)">' + dl + '</span>' : '') + '</th>'; }
       hd += '</tr><tr class="or"><td colspan="2">教室業務</td>';
       for (const d of D) {
+        if (!isInMonth(wi, d)) { hd += '<td></td>'; continue; }
         const ov = (R.officeTeachers[wi] || {})[d] || '';
         if (ov === '休塾日') hd += '<td><span class="holiday-cell">休塾日</span></td>';
         else {
-          // 教室業務の重複チェック（その曜日のいずれかの時間帯で講師として入っているか...ではなく同一時間帯でのチェックが必要）
-          // ただし教室業務は「日単位」なので、全時間帯との重複をチェックするか、あるいは「時間帯ごと」のレンダリング時に判定するか？
-          // ユーザーの要望は「同一時間に2回名前が存在してはいけない」なので、時間帯ごとの tbody 内でのチェックが主。
-          // 教室業務は全時間帯に渡るので、もしその日のいずれかの時間帯のブースにその講師がいたら赤くする、という仕様にする。
           const assignedInDay = getAssignedTeachers(wi, d);
           const isDup = assignedInDay.has(ov);
           hd += '<td><span class="' + (isDup ? 'tn dup' : '') + '">' + escHtml(ov) + '</span></td>';
@@ -3127,7 +3124,7 @@
           const btd = document.createElement('td'); btd.className = 'bc'; btd.textContent = BL[bi] || ''; tr.appendChild(btd);
           for (const d of D) {
             const dt = d === '土' ? ST : WT; const td = document.createElement('td');
-            if (!dt.includes(tl)) { td.className = 'cd'; td.textContent = '-'; tr.appendChild(td); continue; }
+            if (!isInMonth(wi, d) || !dt.includes(tl)) { td.className = 'cd'; td.textContent = '-'; tr.appendChild(td); continue; }
             td.className = 'booth-cell'; td.dataset.day = d; td.dataset.ts = ts; td.dataset.bi = bi; const bs = ws[d]?.[ts] || [], b = bs[bi];
             if (b && b.teacher) {
               if (b.slots.length === 0) td.classList.add('empty-booth');
@@ -3478,6 +3475,11 @@
       const d = wd.weeks[wi][day];
       return d ? wd.month + '/' + d : '';
     }
+    function isInMonth(wi, day) {
+      const wd = R.weekDates;
+      if (!wd || !wd.weeks || !wd.weeks[wi]) return true;
+      return wd.weeks[wi][day] !== undefined;
+    }
     function getWeekRange(wi) {
       const wd = R.weekDates;
       if (!wd || !wd.weeks || !wd.weeks[wi]) return 'W' + (wi + 1);
@@ -3519,6 +3521,10 @@
 
           for (const day of D) {
             const td = document.createElement('td'); td.className = 'cal-drop';
+
+            // 対象月外の日は何も表示しない
+            const inMonth = isInMonth(wi, day);
+            if (!inMonth) { tr.appendChild(td); continue; }
 
             // 休塾日チェック
             const isHoliday = (R.officeTeachers[wi] && R.officeTeachers[wi][day] === '休塾日');
