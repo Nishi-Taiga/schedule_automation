@@ -2734,10 +2734,11 @@ def generate():
                     for day in wt[wi]:
                         for ts in wt[wi][day]:
                             wt[wi][day][ts] = [rename.get(t, t) for t in wt[wi][day][ts]]
-                # office_rule にもリネームを適用
+                # office_rule にもリネームを適用（手動追加講師は除外）
+                manual_set = set(manual_teachers) if manual_teachers else set()
                 for day in office_rule:
                     if isinstance(office_rule[day], list):
-                        office_rule[day] = [rename.get(t, t) for t in office_rule[day]]
+                        office_rule[day] = [rename.get(t, t) if t not in manual_set else t for t in office_rule[day]]
                 # NAME_MAP も更新して以降の to_short() で正しい名前を返す
                 for full_name, custom_short in [(v, k) for k, v in survey_name_map.items()]:
                     NAME_MAP[full_name] = custom_short
