@@ -3204,9 +3204,28 @@ def cloud_load():
         for t, subjs in metadata.get('skills', {}).items():
             skills[t] = set(subjs) if isinstance(subjs, list) else subjs
 
+        # weekDates が null の場合、year/month から再計算
+        week_dates = state.get('weekDates')
+        schedule = state.get('schedule', [])
+        if not week_dates and snap.get('year') and snap.get('month'):
+            try:
+                y, m = int(snap['year']), int(snap['month'])
+                day_names = ['月','火','水','木','金','土']
+                wmap = _compute_month_week_map(y, m)
+                by_week = {}
+                for dn, wn in wmap.items():
+                    dt = _dt.date(y, m, dn)
+                    wd = dt.weekday()
+                    if wd < 6:
+                        by_week.setdefault(wn, {})[day_names[wd]] = dn
+                weeks = [by_week.get(wi + 1, {}) for wi in range(len(schedule))]
+                week_dates = {'year': y, 'month': m, 'weeks': weeks}
+                print(f"[cloud_load] weekDates reconstructed from year={y} month={m}", flush=True)
+            except Exception as e:
+                print(f"[cloud_load] weekDates reconstruction failed: {e}", flush=True)
+
         # セッションに復元
         sd = get_session_data()
-        schedule = state.get('schedule', [])
         sd['result'] = {
             'schedule_json': schedule,
             'schedule': schedule,
@@ -3216,7 +3235,7 @@ def cloud_load():
             'booth_pref': settings.get('boothPref', state.get('boothPref', {})),
             'manual_teachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
             'students': state.get('students', []),
-            'week_dates': state.get('weekDates'),
+            'week_dates': week_dates,
             'weekly_teachers': _sanitize_weekly_teachers(state.get('weeklyTeachers')),
             'skills': skills,
         }
@@ -3261,7 +3280,7 @@ def cloud_load():
             'boothPref': settings.get('boothPref', state.get('boothPref', {})),
             'manualTeachers': settings.get('manualTeachers', state.get('manualTeachers', [])),
             'students': state.get('students', []),
-            'weekDates': state.get('weekDates'),
+            'weekDates': week_dates,
             'weeklyTeachers': _sanitize_weekly_teachers(state.get('weeklyTeachers')),
             'placed': state.get('placed', 0),
             'total': state.get('total', 0),
