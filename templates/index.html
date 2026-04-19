@@ -910,6 +910,12 @@
       color: #ccc;
       font-size: 10px
     }
+    .avail-teacher { font-size:11px; padding:2px 0; border-bottom:1px solid #f0f0f0; display:flex; align-items:baseline; gap:4px; }
+    .avail-teacher:last-child { border-bottom:none; }
+    .avail-name { font-weight:600; color:var(--ink); white-space:nowrap; }
+    .avail-times { font-size:10px; color:#666; }
+    .avail-times span { display:inline-block; background:#e8f0fe; border-radius:3px; padding:0 3px; margin:0 1px; min-width:16px; text-align:center; }
+    .avail-office { font-size:10px; color:var(--accent); margin-bottom:4px; padding:2px 4px; background:#f0f7ff; border-radius:3px; }
 
     /* Student Info Tab */
     .stu-wrap {
@@ -2759,10 +2765,11 @@
       const tabs = document.getElementById('wTabs'); tabs.innerHTML = '';
       const NW = R.schedule.length; for (let w = 0; w < NW; w++) { const b = document.createElement('button'); b.className = PW === w ? 'active' : ''; const wr = getWeekRange(w); b.textContent = '第' + (w + 1) + '週' + (wr && wr !== 'W' + (w + 1) ? ' ' + wr : ''); b.onclick = () => { PW = w; rR(); }; tabs.appendChild(b); }
       const cb = document.createElement('button'); cb.className = 'cal' + (PW === -2 ? ' active' : ''); cb.textContent = '📅 生徒別'; cb.onclick = () => { PW = -2; rR(); }; tabs.appendChild(cb);
+      const tb = document.createElement('button'); tb.className = 'cal' + (PW === -3 ? ' active' : ''); tb.textContent = '👨‍🏫 講師出勤'; tb.onclick = () => { PW = -3; rR(); }; tabs.appendChild(tb);
       const wrap = document.getElementById('pWrap');
       const _pm = wrap.querySelector('.schedule-main'), _ps = wrap.querySelector('.unplaced-sidebar');
       const _ss = { mt: _pm ? _pm.scrollTop : 0, ml: _pm ? _pm.scrollLeft : 0, st: _ps ? _ps.scrollTop : 0 };
-      wrap.innerHTML = ''; const wCard = wrap.parentElement; if (PW >= 0) { wrap.classList.add('result-layout'); wCard.classList.add('result-card'); rW(wrap, PW); const _nm = wrap.querySelector('.schedule-main'), _ns = wrap.querySelector('.unplaced-sidebar'); if (_nm) { _nm.scrollTop = _ss.mt; _nm.scrollLeft = _ss.ml; } if (_ns) _ns.scrollTop = _ss.st; } else { wrap.classList.remove('result-layout'); wCard.classList.remove('result-card'); rCal(wrap); }
+      wrap.innerHTML = ''; const wCard = wrap.parentElement; if (PW >= 0) { wrap.classList.add('result-layout'); wCard.classList.add('result-card'); rW(wrap, PW); const _nm = wrap.querySelector('.schedule-main'), _ns = wrap.querySelector('.unplaced-sidebar'); if (_nm) { _nm.scrollTop = _ss.mt; _nm.scrollLeft = _ss.ml; } if (_ns) _ns.scrollTop = _ss.st; } else if (PW === -3) { wrap.classList.remove('result-layout'); wCard.classList.remove('result-card'); renderTeacherAvail(wrap); } else { wrap.classList.remove('result-layout'); wCard.classList.remove('result-card'); rCal(wrap); }
     }
 
     // === Teacher D&D ===
@@ -3358,6 +3365,83 @@
         edited = true; root.innerHTML = ''; rR();
       };
       bg.addEventListener('click', e => { if (e.target === bg) root.innerHTML = ''; });
+    }
+
+    // === Teacher Availability ===
+    function renderTeacherAvail(wrap) {
+      wrap.innerHTML = '';
+      const wt = R.weeklyTeachers;
+      if (!wt || !wt.length) { wrap.innerHTML = '<p>講師データがありません</p>'; return; }
+
+      const tbl = document.createElement('table'); tbl.className = 'cal-tbl';
+      let hd = '<thead><tr><th style="width:70px">日程</th>';
+      for (const d of D) hd += '<th>' + d + '</th>';
+      hd += '</tr></thead>';
+      tbl.innerHTML = hd;
+
+      const tbody = document.createElement('tbody');
+      for (let wi = 0; wi < R.schedule.length; wi++) {
+        const tr = document.createElement('tr');
+        const wTd = document.createElement('td');
+        wTd.style.cssText = 'text-align:center;font-weight:700;font-size:11px;line-height:1.4;white-space:nowrap';
+        wTd.innerHTML = getWeekRange(wi);
+        tr.appendChild(wTd);
+
+        for (const day of D) {
+          const td = document.createElement('td'); td.style.verticalAlign = 'top';
+
+          if (!isInMonth(wi, day)) { tr.appendChild(td); continue; }
+
+          const isHoliday = (R.officeTeachers[wi] && R.officeTeachers[wi][day] === '休塾日');
+          const dl = getDateLabel(wi, day);
+
+          if (dl) {
+            const dateEl = document.createElement('div');
+            dateEl.className = 'cal-date';
+            dateEl.textContent = dl + (isHoliday ? ' 🎌休塾日' : '');
+            if (isHoliday) dateEl.style.color = '#c62828';
+            td.appendChild(dateEl);
+          }
+          if (isHoliday) { td.style.background = '#ffebee'; tr.appendChild(td); continue; }
+
+          // 教室業務担当
+          const ot = (R.officeTeachers[wi] || {})[day];
+          if (ot) {
+            const offEl = document.createElement('div');
+            offEl.className = 'avail-office';
+            offEl.textContent = '📋 ' + ot;
+            td.appendChild(offEl);
+          }
+
+          // 出勤可能講師を集計
+          const dayData = (wt[wi] && wt[wi][day]) ? wt[wi][day] : {};
+          const teacherMap = {};
+          for (const [ts, teachers] of Object.entries(dayData)) {
+            for (const t of (teachers || [])) {
+              if (!teacherMap[t]) teacherMap[t] = [];
+              teacherMap[t].push(ts);
+            }
+          }
+          const sorted = Object.keys(teacherMap).sort();
+          for (const t of sorted) {
+            const row = document.createElement('div'); row.className = 'avail-teacher';
+            const nameEl = document.createElement('span'); nameEl.className = 'avail-name';
+            nameEl.textContent = t;
+            const timesEl = document.createElement('span'); timesEl.className = 'avail-times';
+            timesEl.innerHTML = teacherMap[t].sort().map(ts => '<span>' + (TSR[ts] ? TSR[ts].slice(0, 5) : ts) + '</span>').join('');
+            row.appendChild(nameEl);
+            row.appendChild(timesEl);
+            td.appendChild(row);
+          }
+          if (!sorted.length && !ot) {
+            const em = document.createElement('span'); em.className = 'cal-empty'; em.textContent = '-'; td.appendChild(em);
+          }
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      tbl.appendChild(tbody);
+      wrap.appendChild(tbl);
     }
 
     // === Student Calendar ===
