@@ -1784,6 +1784,7 @@
           if (d.boothPref) BP = Object.entries(d.boothPref).map(([t, b]) => ({ teacher: t, booth: b }));
           if (d.officeRule) { OR = {}; for (const day of D) OR[day] = d.officeRule[day] || []; }
           if (d.manualTeachers) manualTeachers = [...d.manualTeachers];
+          if (d.surveyNameMap) surveyNameMap = d.surveyNameMap;
           if (d.weeklyTeachers && d.weeklyTeachers.length) {
             const tSet = new Set(teacherList);
             for (const wk of d.weeklyTeachers)

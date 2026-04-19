@@ -3028,6 +3028,9 @@ def _build_state_json(sd):
     }
     if wt:
         state_json['weeklyTeachers'] = _sanitize_weekly_teachers(wt)
+    snm = sd.get('survey_name_map')
+    if snm:
+        state_json['surveyNameMap'] = snm
     return state_json
 
 
@@ -3283,6 +3286,11 @@ def cloud_load():
             'skills': skills,
         }
 
+        # surveyNameMap をセッションに復元
+        snm = state.get('surveyNameMap', {})
+        if snm:
+            sd['survey_name_map'] = snm
+
         save_session_result(sd)
         save_session_files(sd)
 
@@ -3301,6 +3309,7 @@ def cloud_load():
             'placed': state.get('placed', 0),
             'total': state.get('total', 0),
             'hasBoothTemplate': has_booth,
+            'surveyNameMap': snm,
         })
     except Exception as e:
         app.logger.error(f'API error: {traceback.format_exc()}')
