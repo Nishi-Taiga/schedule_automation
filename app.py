@@ -1492,14 +1492,21 @@ def select_teachers_for_day(day, day_data, booth_pref, wish_teachers_set, office
         result[ts] = booths
     return result
 
-def resolve_office_teacher(day, candidates, day_data):
+def resolve_office_teacher(day, candidates, day_data, manual_teachers=None):
     """教室業務担当を優先順位リストから決定する。
     - day_data（その週・その曜日の出勤講師データ）で出勤確認
+    - manual_teachers は全日出勤扱い（出勤チェック不要）
     - 誰も出勤していなければ None（教室業務なし）
     """
     if isinstance(candidates, str):
         candidates = [candidates]
+    manual_set = set(manual_teachers) if manual_teachers else set()
     for candidate in candidates:
+        if not candidate:
+            continue
+        # 手動追加講師は全日出勤扱い
+        if candidate in manual_set:
+            return candidate
         # day_data: {ts: [teacher, ...]} — いずれかの時間帯に出勤していれば可
         for ts, teachers in day_data.items():
             if candidate in teachers:
@@ -1590,7 +1597,7 @@ def extract_week_dates_from_files(week_file_paths):
     return {'year': year, 'month': month, 'weeks': weeks}
 
 # ========== スケジューラー ==========
-def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None, weights=None, week_dates=None):
+def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, holidays=None, weights=None, week_dates=None, manual_teachers=None):
     if weights is None:
         weights = dict(DEFAULT_WEIGHTS)
     remaining = {s['name']: dict(s['needs']) for s in students}
@@ -1628,7 +1635,7 @@ def build_schedule(students, weekly_teachers, skills, office_rule, booth_pref, h
             else:
                 candidates = office_rule.get(d, [])
                 d_data = weekly_teachers[wi].get(d, {})
-                ot[d] = resolve_office_teacher(d, candidates, d_data)
+                ot[d] = resolve_office_teacher(d, candidates, d_data, manual_teachers)
         office_teachers.append(ot)
         ws = {}
         for day in DAYS:
@@ -2772,7 +2779,8 @@ def generate():
 
         schedule, unplaced, office_teachers = build_schedule(
             students, wt, skills, office_rule, booth_pref, holidays=holidays,
-            weights=learned_weights, week_dates=week_dates
+            weights=learned_weights, week_dates=week_dates,
+            manual_teachers=manual_teachers
         )
         placed = sum(len(b['slots']) for w in schedule for d in w.values() for bs in d.values() for b in bs)
 
