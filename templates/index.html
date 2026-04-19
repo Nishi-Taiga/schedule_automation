@@ -913,8 +913,7 @@
     .avail-teacher { font-size:11px; padding:2px 0; border-bottom:1px solid #f0f0f0; display:flex; align-items:baseline; gap:4px; }
     .avail-teacher:last-child { border-bottom:none; }
     .avail-name { font-weight:600; color:var(--ink); white-space:nowrap; }
-    .avail-times { font-size:10px; color:#666; }
-    .avail-times span { display:inline-block; background:#e8f0fe; border-radius:3px; padding:0 3px; margin:0 1px; min-width:16px; text-align:center; }
+    .avail-times { font-size:10px; color:#888; }
     .avail-office { font-size:10px; color:var(--accent); margin-bottom:4px; padding:2px 4px; background:#f0f7ff; border-radius:3px; }
 
     /* Student Info Tab */
@@ -3428,7 +3427,9 @@
             const nameEl = document.createElement('span'); nameEl.className = 'avail-name';
             nameEl.textContent = t;
             const timesEl = document.createElement('span'); timesEl.className = 'avail-times';
-            timesEl.innerHTML = teacherMap[t].sort().map(ts => '<span>' + (TSR[ts] ? TSR[ts].slice(0, 5) : ts) + '</span>').join('');
+            const tsList = teacherMap[t].sort();
+            const first = tsList[0], last = tsList[tsList.length - 1];
+            timesEl.textContent = first === last ? first : first + '‐' + last;
             row.appendChild(nameEl);
             row.appendChild(timesEl);
             td.appendChild(row);
