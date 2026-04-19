@@ -2787,7 +2787,7 @@ def generate():
 
         # 自動チェック（生成直後に実行）
         try:
-            check_issues = check_all(schedule, wt, office_teachers, students, skills)
+            check_issues = check_all(schedule, wt, office_teachers, students, skills, manual_teachers)
         except Exception:
             app.logger.warning(f'auto check_all failed: {traceback.format_exc()}')
             check_issues = []
@@ -4084,7 +4084,7 @@ def _loc(wi, day, ts=None, bi=None):
         s += f' ブース{_BL[bi] if bi < len(_BL) else bi+1}'
     return s
 
-def check_all(schedule, weekly_teachers, office_teachers, students, skills):
+def check_all(schedule, weekly_teachers, office_teachers, students, skills, manual_teachers=None):
     """全チェックを最小パス数で実行する統合チェッカー"""
     issues = []
     # ---- 事前インデックス構築 ----
@@ -4236,11 +4236,14 @@ def check_all(schedule, weekly_teachers, office_teachers, students, skills):
                             'wi': wi, 'day': day, 'ts': ts})
 
     # ---- E2: 教室業務講師出勤チェック（office_teachersループ）----
+    manual_set = set(manual_teachers) if manual_teachers else set()
     for wi, ot in enumerate(office_teachers):
         wt = weekly_teachers[wi] if wi < len(weekly_teachers) else {}
         for day, teacher in ot.items():
             if not teacher or teacher == '休塾日':
                 continue
+            if teacher in manual_set:
+                continue  # 手動追加講師は出勤チェック不要
             day_data = wt.get(day, {})
             found = any(teacher in teachers for teachers in day_data.values())
             if not found:
@@ -4311,7 +4314,8 @@ def check_schedule():
             except Exception:
                 pass
 
-    issues = check_all(schedule, weekly_teachers or [], office_teachers, students, skills)
+    manual_teachers = res.get('manual_teachers', [])
+    issues = check_all(schedule, weekly_teachers or [], office_teachers, students, skills, manual_teachers)
 
     return jsonify({
         'issues': issues,
