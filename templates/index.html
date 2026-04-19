@@ -2187,6 +2187,8 @@
             surveyNameMap[d.newName] = d.fullName; delete surveyNameMap[d.oldName];
             // BP のリネーム
             BP.forEach(bp => { if (bp.teacher === d.oldName) bp.teacher = d.newName; });
+            // OR（教室業務ルール）のリネーム
+            for (const day of D) { if (OR[day]) OR[day] = OR[day].map(t => t === d.oldName ? d.newName : t); }
             console.log(`[name conflict] サーベイ講師「${d.oldName}」→「${d.newName}」(${d.fullName})`);
           }
         } catch (e) { console.error('[resolve_name_conflict]', e); }

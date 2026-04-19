@@ -2712,6 +2712,28 @@ def generate():
         if not wt:
             return jsonify({'error': '元シートから出勤講師データを読み取れませんでした。シートに講師データが含まれているか確認してください。'}), 400
 
+        # survey_name_map のリネームを再適用（_build_name_mapがNAME_MAPをクリアするため）
+        survey_name_map = sd.get('survey_name_map', {})
+        if survey_name_map:
+            rename = {}
+            for custom_short, full_name in survey_name_map.items():
+                default_short = to_short(full_name)
+                if default_short and default_short != custom_short:
+                    rename[default_short] = custom_short
+            if rename:
+                for wi in range(len(wt)):
+                    for day in wt[wi]:
+                        for ts in wt[wi][day]:
+                            wt[wi][day][ts] = [rename.get(t, t) for t in wt[wi][day][ts]]
+                # office_rule にもリネームを適用
+                for day in office_rule:
+                    if isinstance(office_rule[day], list):
+                        office_rule[day] = [rename.get(t, t) for t in office_rule[day]]
+                # NAME_MAP も更新して以降の to_short() で正しい名前を返す
+                for full_name, custom_short in [(v, k) for k, v in survey_name_map.items()]:
+                    NAME_MAP[full_name] = custom_short
+                print(f"[generate] applied survey name renames: {rename}", flush=True)
+
         # 手動追加講師はブースに配置せず候補リストにのみ表示（手動D&D用）
         if manual_teachers:
             print(f"[generate] manual teachers (候補のみ): {manual_teachers}", flush=True)
