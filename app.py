@@ -3067,6 +3067,94 @@ def _build_state_json(sd):
     return state_json
 
 
+@app.route('/api/export_teacher_avail')
+@login_required
+def export_teacher_avail():
+    """講師出勤カレンダーをExcelファイルとしてエクスポート"""
+    sd = get_session_data()
+    res = sd.get('result', {})
+    wt = res.get('weekly_teachers')
+    if not wt:
+        return jsonify({'error': '講師データがありません'}), 400
+    try:
+        schedule = res.get('schedule_json') or res.get('schedule', [])
+        ot_list = res.get('office_teachers', [])
+        week_dates = res.get('week_dates') or {}
+        num_weeks = len(schedule)
+        day_names = ['月', '火', '水', '木', '金', '土']
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = '講師出勤'
+
+        # ヘッダー
+        header_font = Font(name='MS PGothic', size=10, bold=True)
+        header_fill = PatternFill(start_color='D6E4F0', end_color='D6E4F0', fill_type='solid')
+        headers = ['週', '曜日', '日付', '教室業務', '講師名', '出勤時間帯']
+        for ci, h in enumerate(headers, 1):
+            c = ws.cell(1, ci, h)
+            c.font = header_font
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal='center')
+
+        row = 2
+        weeks_data = week_dates.get('weeks', [])
+        month = week_dates.get('month', '')
+        for wi in range(num_weeks):
+            w_label = f'第{wi+1}週'
+            week_info = weeks_data[wi] if wi < len(weeks_data) else {}
+            for day in day_names:
+                if day not in week_info:
+                    continue
+                dl = f'{month}/{week_info[day]}' if week_info.get(day) else ''
+                ot = ot_list[wi].get(day, '') if wi < len(ot_list) else ''
+                if ot == '休塾日':
+                    ws.cell(row, 1, w_label)
+                    ws.cell(row, 2, day)
+                    ws.cell(row, 3, dl)
+                    ws.cell(row, 4, '休塾日')
+                    row += 1
+                    continue
+                day_data = wt[wi].get(day, {}) if wi < len(wt) else {}
+                teacher_map = {}
+                for ts, teachers in day_data.items():
+                    for t in (teachers or []):
+                        teacher_map.setdefault(t, []).append(ts)
+                sorted_teachers = sorted(teacher_map.keys())
+                if not sorted_teachers:
+                    ws.cell(row, 1, w_label)
+                    ws.cell(row, 2, day)
+                    ws.cell(row, 3, dl)
+                    ws.cell(row, 4, ot)
+                    row += 1
+                    continue
+                for t in sorted_teachers:
+                    ts_list = sorted(teacher_map[t])
+                    first, last = ts_list[0], ts_list[-1]
+                    time_range = first if first == last else f'{first}-{last}'
+                    ws.cell(row, 1, w_label)
+                    ws.cell(row, 2, day)
+                    ws.cell(row, 3, dl)
+                    ws.cell(row, 4, ot)
+                    ws.cell(row, 5, t)
+                    ws.cell(row, 6, time_range)
+                    row += 1
+
+        # 列幅調整
+        for ci, w in enumerate([8, 6, 8, 12, 12, 14], 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+
+        year = week_dates.get('year', '')
+        out_path = os.path.join(sd['dir'], 'teacher_avail.xlsx')
+        wb.save(out_path)
+        fname = f'講師出勤_{year}年{month}月.xlsx'
+        return send_file(out_path, as_attachment=True, download_name=fname,
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        app.logger.error(f'API error: {traceback.format_exc()}')
+        return jsonify({'error': '内部エラーが発生しました'}), 500
+
+
 @app.route('/api/download_json')
 @login_required
 def download_json():

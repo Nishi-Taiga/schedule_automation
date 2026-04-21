@@ -3405,37 +3405,8 @@
 
     // === Teacher Availability ===
     function exportTeacherAvail() {
-      const wt = R.weeklyTeachers;
-      if (!wt || !wt.length) return;
-      const rows = [['週', '曜日', '日付', '教室業務', '講師名', '出勤時間帯']];
-      for (let wi = 0; wi < R.schedule.length; wi++) {
-        const wLabel = '第' + (wi + 1) + '週';
-        for (const day of D) {
-          if (!isInMonth(wi, day)) continue;
-          const dl = getDateLabel(wi, day);
-          const isHoliday = (R.officeTeachers[wi] && R.officeTeachers[wi][day] === '休塾日');
-          if (isHoliday) { rows.push([wLabel, day, dl, '休塾日', '', '']); continue; }
-          const ot = (R.officeTeachers[wi] || {})[day] || '';
-          const dayData = (wt[wi] && wt[wi][day]) ? wt[wi][day] : {};
-          const teacherMap = {};
-          for (const [ts, teachers] of Object.entries(dayData)) {
-            for (const t of (teachers || [])) { if (!teacherMap[t]) teacherMap[t] = []; teacherMap[t].push(ts); }
-          }
-          const sorted = Object.keys(teacherMap).sort();
-          if (!sorted.length) { rows.push([wLabel, day, dl, ot, '', '']); continue; }
-          for (const t of sorted) {
-            const tsList = teacherMap[t].sort();
-            const range = tsList[0] === tsList[tsList.length - 1] ? tsList[0] : tsList[0] + '-' + tsList[tsList.length - 1];
-            rows.push([wLabel, day, dl, ot, t, range]);
-          }
-        }
-      }
-      const csv = '\uFEFF' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a');
-      const wd = R.weekDates || {};
-      a.download = '講師出勤_' + (wd.year || '') + '年' + (wd.month || '') + '月.csv';
-      a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
+      a.href = '/api/export_teacher_avail'; a.click();
     }
 
     function renderTeacherAvail(wrap) {
@@ -3444,7 +3415,7 @@
       if (!wt || !wt.length) { wrap.innerHTML = '<p>講師データがありません</p>'; return; }
 
       const dlBtn = document.createElement('button'); dlBtn.className = 'btn btn-s';
-      dlBtn.style.cssText = 'margin-bottom:8px'; dlBtn.textContent = '📥 CSVエクスポート';
+      dlBtn.style.cssText = 'margin-bottom:8px'; dlBtn.textContent = '📥 Excelエクスポート';
       dlBtn.onclick = exportTeacherAvail; wrap.appendChild(dlBtn);
 
       const tbl = document.createElement('table'); tbl.className = 'cal-tbl';
