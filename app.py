@@ -2352,9 +2352,43 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, we
             ot = office_teachers[wi] if wi < len(office_teachers) else {}
             _write_schedule_to_ws(ws, schedule[wi], ot, on_batch_done=_on_batch)
     else:
+        # テンプレートなし: 基本的なスケジュール表を生成
+        _emit(PHASE_WEEKS_START, 'スケジュール表を生成中...')
         wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = 'スケジュール'
+        week_sheets = []
+        for wi in range(num_weeks):
+            ws = wb.create_sheet(f'第{wi+1}週') if wi > 0 else wb.active
+            if wi == 0:
+                ws.title = '第1週'
+            week_sheets.append(ws.title)
+            # ヘッダー行
+            ws.cell(1, 1, '時間')
+            for di, day in enumerate(DAYS):
+                ws.cell(1, 2 + di, day)
+            ws.cell(1, 1).font = Font(bold=True)
+            # 教室業務行
+            ws.cell(2, 1, '教室業務')
+            ot = office_teachers[wi] if wi < len(office_teachers) else {}
+            for di, day in enumerate(DAYS):
+                ws.cell(2, 2 + di, ot.get(day, ''))
+            # スケジュールデータ
+            row = 3
+            wsched = schedule[wi] if wi < len(schedule) else {}
+            for tl in ['14:55', '16:00', '17:05', '18:10', '19:15', '20:20']:
+                ts = TIME_SHORT.get(tl, tl)
+                for bi in range(MAX_BOOTHS):
+                    ws.cell(row, 1, f'{tl} ブース{bi+1}' if bi == 0 else f'  ブース{bi+1}')
+                    for di, day in enumerate(DAYS):
+                        booths = wsched.get(day, {}).get(ts, [])
+                        if bi < len(booths):
+                            b = booths[bi]
+                            parts = []
+                            if b.get('teacher'):
+                                parts.append(b['teacher'])
+                            for sl in b.get('slots', []):
+                                parts.append(f'{sl[0]} {sl[1]} {sl[2]}')
+                            ws.cell(row, 2 + di, ' / '.join(parts))
+                    row += 1
 
     # --- 仕上げフェーズ (85-100%) ---
     # 残存する不要シートを削除（week_file_pathsモードの出力ファイル再生成時など）
@@ -2903,6 +2937,15 @@ def _prepare_excel(sd, progress_fn=None):
 
     week_file_paths = sd.get('files', {}).get('week_files')
     booth_path = sd.get('files', {}).get('booth')
+    # ファイル存在チェック（サーバー再起動でtempが消えた場合に対応）
+    if booth_path and not os.path.exists(booth_path):
+        print(f"[_prepare_excel] booth_path not found: {booth_path}", flush=True)
+        booth_path = None
+    if week_file_paths:
+        existing = [p for p in week_file_paths if os.path.exists(p)]
+        if len(existing) != len(week_file_paths):
+            print(f"[_prepare_excel] week_files: {len(existing)}/{len(week_file_paths)} exist", flush=True)
+        week_file_paths = existing if existing else None
     write_excel(
         res['schedule'],
         res['unplaced'],
@@ -3191,6 +3234,15 @@ def cloud_save():
     """スケジュール状態をSupabaseに永続保存 (upsert)"""
     sd = get_session_data()
     res = sd.get('result', {})
+    # サーバー再起動でインメモリキャッシュが消えた場合、ディスクから復元
+    if 'schedule' not in res and 'schedule_json' not in res:
+        sid = sd.get('_sid')
+        if sid:
+            disk_result = _load_result_from_disk(sid)
+            if disk_result and 'schedule_json' in disk_result:
+                sd['result'] = disk_result
+                save_session_result(sd)
+                res = sd['result']
     if 'schedule' not in res and 'schedule_json' not in res:
         return jsonify({'error': 'スケジュールがありません'}), 400
 
