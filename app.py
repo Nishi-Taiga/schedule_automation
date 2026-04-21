@@ -2258,6 +2258,8 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, we
             if 'ブース表' in sn and wb[sn].sheet_state == 'visible':
                 target_sn = sn
                 break
+        if not target_sn and wb.sheetnames:
+            target_sn = wb.sheetnames[0]  # フォールバック: 最初のシートを使用
         for sn in list(wb.sheetnames):
             if sn != target_sn:
                 del wb[sn]
@@ -2351,13 +2353,15 @@ def write_excel(schedule, unplaced, office_teachers, booth_path, output_path, we
             _write_schedule_to_ws(ws, schedule[wi], ot, on_batch_done=_on_batch)
     else:
         wb = openpyxl.Workbook()
-        wb.remove(wb.active)
+        ws = wb.active
+        ws.title = 'スケジュール'
 
     # --- 仕上げフェーズ (85-100%) ---
     # 残存する不要シートを削除（week_file_pathsモードの出力ファイル再生成時など）
     for old_sn in list(wb.sheetnames):
         if old_sn == '未配置コマ' or old_sn.startswith('_schedule_data'):
-            del wb[old_sn]
+            if len(wb.sheetnames) > 1:  # 最後の1枚は削除しない
+                del wb[old_sn]
 
     # 保存 (85-100%) — サブスレッド + キープアライブ
     _emit(85, 'ファイルを保存中...')
