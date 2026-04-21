@@ -3340,16 +3340,18 @@
         const j = await res.json();
         if (!res.ok || !j.ok) { if (statusEl) { statusEl.textContent = j.error || 'エラー'; statusEl.style.color = 'red'; } return; }
         let msg = j.weeks + '週' + (j.meta ? '+メタ' : '') + (j.cloudSaved ? ' (クラウド更新済)' : '');
+        if (j.weekDates) R.weekDates = j.weekDates;
         if (j.hasSchedule && j.schedule) {
           R.schedule = j.schedule;
           R.unplaced = j.unplaced || [];
+          // officeTeachers: バックエンドが既存設定を保持するためそのまま適用
           if (j.officeTeachers) R.officeTeachers = j.officeTeachers;
           if (j.students) R.students = j.students;
           if (j.weeklyTeachers) R.weeklyTeachers = j.weeklyTeachers;
           edited = true; buildNgMap();
           msg += ' — 配置反映 (' + (j.placed || 0) + '/' + (j.total || 0) + 'コマ)';
-          if (PW >= 0 || PW === -2) rR();
         }
+        rR();
         if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'green'; }
         showSaveIndicator('ブース表エクセル更新');
       } catch (e) { if (statusEl) { statusEl.textContent = 'エラー: ' + e.message; statusEl.style.color = 'red'; } }

@@ -3695,9 +3695,13 @@ def upload_booth_template():
                             'count': need - done, 'reason': ''
                         })
 
-            # セッション結果を更新
+            # セッション結果を更新（教室業務は既存設定を保持）
             res['schedule_json'] = schedule
             res['schedule'] = schedule
+            existing_ot = res.get('office_teachers', [])
+            if existing_ot and len(existing_ot) >= len(office_teachers):
+                # 既存の教室業務設定を保持（ブース表テンプレートの値で上書きしない）
+                office_teachers = existing_ot
             res['office_teachers'] = office_teachers
             res['unplaced'] = unplaced
             sd['result'] = res
@@ -3744,6 +3748,8 @@ def upload_booth_template():
             except Exception as e:
                 print(f"[upload_booth_excel] cloud update failed: {e}", flush=True)
 
+    # weekDates をレスポンスに含める
+    res = sd.get('result', {})
     resp = {
         'ok': True,
         'count': count,
@@ -3751,6 +3757,7 @@ def upload_booth_template():
         'weeks': len(saved_week_paths),
         'cloudSaved': booth_saved,
         'hasSchedule': schedule_response is not None,
+        'weekDates': res.get('week_dates'),
     }
     if schedule_response:
         resp.update(schedule_response)
